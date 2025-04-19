@@ -1,0 +1,28 @@
+.gradient-base-theme-button{
+  background: linear-gradient(126.53deg, #72362E -48.09%, #F27863 116.44%) !important;
+}
+.cake-offer-card{
+  &:hover{
+    transform: scale(1.02);
+  }
+  .cake-image{
+    height: 225px;
+    transition: transform .2s;
+    
+  }
+  .cake-price-section{
+    padding: 1.5rem 0.5rem;
+    min-height: 100px;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .cake-offer-card{
+    .cake-image{
+      height: 150px;
+    }
+    .cake-price-section{
+      padding: 1rem;
+    }
+  }
+}

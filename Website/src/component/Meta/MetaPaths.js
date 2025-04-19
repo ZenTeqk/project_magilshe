@@ -1,0 +1,1 @@
+export const meta_paths = ['home', 'menu', 'gallery', 'contact', 'offers']
