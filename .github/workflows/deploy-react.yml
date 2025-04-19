@@ -19,14 +19,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Get Changed Directory
+      - name: Get Changed Directories
         id: detect_changes
         run: |
-          # Get the changed directories
+          # Get the changed directories using GitHub's commit references
           CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
 
           echo "Changed directories: $CHANGED"
-          echo "::set-output name=changed_dirs::$CHANGED"
+
+          # Use GitHub environment variable to pass the changed directories to next steps
+          echo "changed_dirs=$CHANGED" >> $GITHUB_ENV  # This is the recommended way to pass data
+          
+          # If necessary, you can still set outputs (though GitHub recommends $GITHUB_ENV)
+          echo "::set-output name=changed_dirs::$CHANGED"  # Deprecated but still works for now
+
 
   admin_deploy:
     needs: detect_changes
