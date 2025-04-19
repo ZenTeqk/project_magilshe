@@ -21,15 +21,15 @@ jobs:
       - name: Get Changed Directory
         id: detect_changes
         run: |
-          # Ensure the 'before' commit exists; if not, use the previous commit hash as a fallback
+          # If there is no previous commit (first commit or after a force push)
           if [ -z "${{ github.event.before }}" ]; then
             echo "No previous commit, skipping comparison"
             exit 0
           fi
 
-          # Get the changed files between commits
+          # Get the changed files between the previous commit and the current commit
           CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
-          
+
           if [ -z "$CHANGED" ]; then
             echo "No changes detected."
             exit 0
@@ -37,7 +37,7 @@ jobs:
 
           echo "Changed directories: $CHANGED"
 
-          # Set environment variables based on detected changes
+          # Set environment variables based on the detected changes
           if echo "$CHANGED" | grep -iq "admin"; then
             echo "app_dir=Admin" >> $GITHUB_ENV
             echo "bucket_name=magilshe-admin-panel" >> $GITHUB_ENV
