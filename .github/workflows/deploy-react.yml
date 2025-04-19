@@ -18,9 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Fetch previous commit to compare
+        run: git fetch --depth=2
+
       - name: Get changed files
         id: get_changed_files
         run: |
+          # Compare the previous commit with the current commit
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           echo "Changed files: $CHANGED_FILES"
           echo "::set-output name=files::$CHANGED_FILES"
@@ -28,7 +32,7 @@ jobs:
   deploy-admin:
     name: Deploy Admin Panel
     needs: get-changed-files
-    if: contains(needs.get-changed-files.outputs.files, 'Admin/')
+    if: contains(steps.get-changed-files.outputs.files, 'Admin/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -43,7 +47,7 @@ jobs:
         working-directory: ./Admin
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:    ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npm ci
           npm run build
@@ -58,9 +62,9 @@ jobs:
             --paths "/*"
 
   deploy-website:
-    name: Deploy website
+    name: Deploy Website
     needs: get-changed-files
-    if: contains(needs.get-changed-files.outputs.files, 'Website/')
+    if: contains(steps.get-changed-files.outputs.files, 'Website/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -75,7 +79,7 @@ jobs:
         working-directory: ./Website
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:    ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npm ci
           npm run build
