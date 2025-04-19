@@ -13,10 +13,17 @@ permissions:
 jobs:
   deploy-admin:
     name: Deploy Admin Panel
-    if: ${{ contains(github.event.head_commit.message, 'Admin') || contains(join(github.event.head_commit.modified, ','), 'Admin/') }}
+    if: ${{ contains(steps.get_changed_files.outputs.files, 'Admin/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Get changed files
+        id: get_changed_files
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Changed files: $CHANGED_FILES"
+          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -44,10 +51,17 @@ jobs:
 
   deploy-website:
     name: Deploy website
-    if: ${{ contains(github.event.head_commit.message, 'Website') || contains(join(github.event.head_commit.modified, ','), 'Website/') }}
+    if: ${{ contains(steps.get_changed_files.outputs.files, 'Website/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Get changed files
+        id: get_changed_files
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Changed files: $CHANGED_FILES"
+          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
