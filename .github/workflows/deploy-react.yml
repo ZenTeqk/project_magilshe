@@ -9,11 +9,10 @@ on:
 permissions:
   id-token: write    # Needed for OIDC authentication
   contents: read     # Needed to checkout the repo
-
+  
 jobs:
   detect_changes:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -21,43 +20,16 @@ jobs:
       - name: Get Changed Directory
         id: detect_changes
         run: |
-          # If there is no previous commit (first commit or after a force push)
-          if [ -z "${{ github.event.before }}" ]; then
-            echo "No previous commit, skipping comparison"
-            exit 0
-          fi
-
-          # Get the changed files between the previous commit and the current commit
+          # Get the changed directories
           CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
 
-          if [ -z "$CHANGED" ]; then
-            echo "No changes detected."
-            exit 0
-          fi
-
           echo "Changed directories: $CHANGED"
-
-          # Set environment variables based on the detected changes
-          if echo "$CHANGED" | grep -iq "admin"; then
-            echo "app_dir=Admin" >> $GITHUB_ENV
-            echo "bucket_name=magilshe-admin-panel" >> $GITHUB_ENV
-            echo "region=ap-south-1" >> $GITHUB_ENV
-            echo "distribution_id=E27SJZON2LM1AS" >> $GITHUB_ENV
-
-          elif echo "$CHANGED" | grep -iq "website"; then
-            echo "app_dir=Website" >> $GITHUB_ENV
-            echo "bucket_name=magilshe-website" >> $GITHUB_ENV
-            echo "region=us-east-1" >> $GITHUB_ENV
-            echo "distribution_id=E37BBO03VZXP2F" >> $GITHUB_ENV
-
-          else
-            echo "No relevant changes detected. Skipping deployment."
-            exit 0
+          echo "changed_dirs=$CHANGED" >> $GITHUB_ENV
 
   admin_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(env.app_dir, 'Admin') }}  # Only run if 'Admin' is in the changed directories
+    if: ${{ contains(env.changed_dirs, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -70,7 +42,7 @@ jobs:
           aws-region: ap-south-1
 
       - name: Install dependencies and build React app (Admin)
-        working-directory: ${{ env.app_dir }}
+        working-directory: Admin
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
@@ -80,15 +52,16 @@ jobs:
 
       - name: Deploy to S3 (Admin)
         run: |
-          aws s3 sync ${{ env.app_dir }}/build s3://magilshe-admin-panel --delete --region ap-south-1
+          aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
+
       - name: Invalidate CloudFront cache (Admin)
         run: |
-          aws cloudfront create-invalidation --distribution-id ${{ env.distribution_id }} --paths "/*"
+          aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
   website_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(env.app_dir, 'Website') }}  # Only run if 'Website' is in the changed directories
+    if: ${{ contains(env.changed_dirs, 'Website') }}  # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -101,7 +74,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Install dependencies and build React app (Website)
-        working-directory: ${{ env.app_dir }}
+        working-directory: Website
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
@@ -111,8 +84,8 @@ jobs:
 
       - name: Deploy to S3 (Website)
         run: |
-          aws s3 sync ${{ env.app_dir }}/build s3://magilshe-website --delete --region us-east-1
+          aws s3 sync Website/build s3://magilshe-website --delete --region us-east-1
 
       - name: Invalidate CloudFront cache (Website)
         run: |
-          aws cloudfront create-invalidation --distribution-id ${{ env.distribution_id }} --paths "/*"
+          aws cloudfront create-invalidation --distribution-id E37BBO03VZXP2F --paths "/*"
