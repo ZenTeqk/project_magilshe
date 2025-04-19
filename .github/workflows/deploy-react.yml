@@ -86,15 +86,14 @@ jobs:
       # - name: Install dependencies
       #   run: npm ci
 
-      - name: Lint and auto-fix unused variables
-        run: npm run lint:fix
+      # - name: Lint and auto-fix unused variables
+      #   run: npm run lint:fix
 
       - name: Install dependencies and build React app (Website)
         working-directory: Website
         env:
           REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
-          CI: false
         run: |
           pwd
           npm run build
