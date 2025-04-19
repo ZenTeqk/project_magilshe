@@ -83,8 +83,8 @@ jobs:
         with:
           node-version: 18  # or whatever version you're using locally
 
-      - name: Install dependencies
-        run: npm ci
+      # - name: Install dependencies
+      #   run: npm ci
 
       - name: Lint and auto-fix unused variables
         run: npm run lint:fix
