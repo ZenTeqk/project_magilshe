@@ -30,8 +30,11 @@ jobs:
           # Debug: Output changed files for review
           echo "Changed files: $CHANGED_FILES"
 
-          # Safely format the output with newline separated files
-          echo "files=$CHANGED_FILES" >> $GITHUB_ENV  # Use environment files to set outputs
+          # Format the changed files correctly for setting as env variable
+          for file in $CHANGED_FILES; do
+            echo "Changed file: $file"  # Debugging output
+            echo "CHANGED_FILE=$file" >> $GITHUB_ENV
+          done
 
   deploy-admin:
     name: Deploy Admin Panel
