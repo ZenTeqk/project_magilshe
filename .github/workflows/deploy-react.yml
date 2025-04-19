@@ -21,8 +21,20 @@ jobs:
       - name: Get Changed Directory
         id: detect_changes
         run: |
+          # Ensure the 'before' commit exists; if not, use the previous commit hash as a fallback
+          if [ -z "${{ github.event.before }}" ]; then
+            echo "No previous commit, skipping comparison"
+            exit 0
+          fi
+
           # Get the changed files between commits
           CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
+          
+          if [ -z "$CHANGED" ]; then
+            echo "No changes detected."
+            exit 0
+          fi
+
           echo "Changed directories: $CHANGED"
 
           # Set environment variables based on detected changes
