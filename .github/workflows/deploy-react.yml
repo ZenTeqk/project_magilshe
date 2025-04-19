@@ -30,11 +30,11 @@ jobs:
           # Debug: Output changed files for review
           echo "Changed files: $CHANGED_FILES"
 
-          # Format the changed files correctly for setting as env variable
-          for file in $CHANGED_FILES; do
-            echo "Changed file: $file"  # Debugging output
-            echo "CHANGED_FILE=$file" >> $GITHUB_ENV
-          done
+          # Format the changed files correctly for setting as job output
+          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
+
+          # Set output for the next job
+          echo "::set-output name=files::$CHANGED_FILES"
 
   deploy-admin:
     name: Deploy Admin Panel
