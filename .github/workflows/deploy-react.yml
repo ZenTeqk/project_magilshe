@@ -58,7 +58,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
-          aws-region: ${{ env.region }}
+          aws-region: ${{ env.region }}  # Use the region from the previous step
 
       - name: Install dependencies and build React app
         working-directory: ${{ env.app_dir }}
