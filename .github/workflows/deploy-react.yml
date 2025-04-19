@@ -26,11 +26,15 @@ jobs:
           dir_names: true
           diff_relative: true  # Optionally, make paths relative
 
+      - name: Echo changed directories
+        run: |
+          echo "Changed directories:"
+          echo ${{ steps.changed-files.outputs.all_changed_directories }}
 
   admin_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(steps.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
+    if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -62,7 +66,7 @@ jobs:
   website_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(steps.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
+    if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
