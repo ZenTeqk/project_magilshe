@@ -11,7 +11,7 @@ permissions:
   contents: read     # Needed to checkout the repo
 
 jobs:
-  deploy:
+  detect_changes:
     runs-on: ubuntu-latest
 
     steps:
@@ -54,13 +54,22 @@ jobs:
             echo "No relevant changes detected. Skipping deployment."
             exit 0
 
+  admin_deploy:
+    needs: detect_changes
+    runs-on: ubuntu-latest
+    if: ${{ contains(env.app_dir, 'Admin') }}  # Only run if 'Admin' is in the changed directories
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::975050116507:role/Github_OIDC
-          aws-region: ${{ env.region }}  # Use the region from the previous step
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
+          aws-region: ap-south-1
 
-      - name: Install dependencies and build React app
+      - name: Install dependencies and build React app (Admin)
         working-directory: ${{ env.app_dir }}
         env:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
@@ -69,10 +78,41 @@ jobs:
           npm ci
           npm run build
 
-      - name: Deploy to S3
+      - name: Deploy to S3 (Admin)
         run: |
-          aws s3 sync ${{ env.app_dir }}/build s3://${{ env.bucket_name }} --delete --region ${{ env.region }}
+          aws s3 sync ${{ env.app_dir }}/build s3://magilshe-admin-panel --delete --region ap-south-1
+      - name: Invalidate CloudFront cache (Admin)
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ env.distribution_id }} --paths "/*"
 
-      - name: Invalidate CloudFront cache
+  website_deploy:
+    needs: detect_changes
+    runs-on: ubuntu-latest
+    if: ${{ contains(env.app_dir, 'Website') }}  # Only run if 'Website' is in the changed directories
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
+          aws-region: us-east-1
+
+      - name: Install dependencies and build React app (Website)
+        working-directory: ${{ env.app_dir }}
+        env:
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to S3 (Website)
+        run: |
+          aws s3 sync ${{ env.app_dir }}/build s3://magilshe-website --delete --region us-east-1
+
+      - name: Invalidate CloudFront cache (Website)
         run: |
           aws cloudfront create-invalidation --distribution-id ${{ env.distribution_id }} --paths "/*"
