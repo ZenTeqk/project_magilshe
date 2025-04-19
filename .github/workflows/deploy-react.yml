@@ -11,10 +11,10 @@ permissions:
   contents: read     # to checkout code
 
 jobs:
-  deploy-admin:
-    name: Deploy Admin Panel
-    if: ${{ contains(steps.get_changed_files.outputs.files, 'Admin/') }}
+  get-changed-files:
     runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.get_changed_files.outputs.files }}
     steps:
       - uses: actions/checkout@v3
 
@@ -23,7 +23,15 @@ jobs:
         run: |
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           echo "Changed files: $CHANGED_FILES"
-          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
+          echo "::set-output name=files::$CHANGED_FILES"
+
+  deploy-admin:
+    name: Deploy Admin Panel
+    needs: get-changed-files
+    if: contains(needs.get-changed-files.outputs.files, 'Admin/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -51,17 +59,11 @@ jobs:
 
   deploy-website:
     name: Deploy website
-    if: ${{ contains(steps.get_changed_files.outputs.files, 'Website/') }}
+    needs: get-changed-files
+    if: contains(needs.get-changed-files.outputs.files, 'Website/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
-      - name: Get changed files
-        id: get_changed_files
-        run: |
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
-          echo "Changed files: $CHANGED_FILES"
-          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
