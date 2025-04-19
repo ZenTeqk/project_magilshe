@@ -32,7 +32,7 @@ jobs:
           echo ${{ steps.changed-files.outputs.all_changed_directories }}
 
   admin_deploy:
-    needs: detect_changes
+    needs: check-changed-directories
     runs-on: ubuntu-latest
     if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
@@ -64,7 +64,7 @@ jobs:
           aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
   website_deploy:
-    needs: detect_changes
+    needs: check-changed-directories
     runs-on: ubuntu-latest
     if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
 
