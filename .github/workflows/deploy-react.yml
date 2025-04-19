@@ -1,4 +1,4 @@
-name: Deploy Magilshe Application
+name: Deploy React Apps to S3 + CloudFront
 
 on:
   push:
@@ -11,43 +11,21 @@ permissions:
   contents: read     # to checkout code
 
 jobs:
-  deploy:
+  deploy-admin:
+    name: Deploy Admin Panel
+    if: contains(github.event.head_commit.message, 'Admin') || github.event.head_commit.modified.* contains 'Admin/'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Get Changed Directory
-        id: detect_changes
-        run: |
-          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
-          echo "Changed directories: $CHANGED"
-
-          if echo "$CHANGED" | grep -q "admin"; then
-            echo "app_dir=admin" >> $GITHUB_OUTPUT
-            echo "bucket_name=magilshe-admin-panel" >> $GITHUB_OUTPUT
-            echo "region=ap-south-1" >> $GITHUB_OUTPUT
-            echo "distribution_id=E27SJZON2LM1AS" >> $GITHUB_OUTPUT
-
-          elif echo "$CHANGED" | grep -q "website"; then
-            echo "app_dir=website" >> $GITHUB_OUTPUT
-            echo "bucket_name=magilshe-website" >> $GITHUB_OUTPUT
-            echo "region=us-east-1" >> $GITHUB_OUTPUT
-            echo "distribution_id=E37BBO03VZXP2F" >> $GITHUB_OUTPUT
-
-          else
-            echo "No relevant changes."
-            exit 0
-          fi
-
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
-          aws-region: ${{ steps.detect_changes.outputs.region }}
+          aws-region: ap-south-1
 
-      - name: Install dependencies & build
-        working-directory: ${{ steps.detect_changes.outputs.app_dir }}
+      - name: Build React App
+        working-directory: ./Admin
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
@@ -56,10 +34,41 @@ jobs:
           npm run build
 
       - name: Deploy to S3
-        run: |
-          aws s3 sync ${{ steps.detect_changes.outputs.app_dir }}/build s3://${{ steps.detect_changes.outputs.bucket_name }} --delete --region ${{ steps.detect_changes.outputs.region }}
+        run: aws s3 sync ./Admin/build s3://magilshe-admin-panel --delete
 
-      - name: Invalidate CloudFront cache
+      - name: Invalidate CloudFront
         run: |
-          aws cloudfront create-invalidation --distribution-id ${{ steps.detect_changes.outputs.distribution_id }} --paths "/*"
+          aws cloudfront create-invalidation \
+            --distribution-id E27SJZON2LM1AS \
+            --paths "/*"
 
+  deploy-website:
+    name: Deploy website
+    if: contains(github.event.head_commit.message, 'Website') || github.event.head_commit.modified.* contains 'Website/'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
+          aws-region: us-east-1
+
+      - name: Build React App
+        working-directory: ./Website
+        env:
+          REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to S3
+        run: aws s3 sync ./Website/build s3://magilshe-website --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E37BBO03VZXP2F \
+            --paths "/*"
