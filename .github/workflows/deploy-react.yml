@@ -32,7 +32,7 @@ jobs:
   deploy-admin:
     name: Deploy Admin Panel
     needs: get-changed-files
-    if: contains(steps.get-changed-files.outputs.files, 'Admin/')
+    if: contains(needs.get-changed-files.outputs.files, 'Admin/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -64,7 +64,7 @@ jobs:
   deploy-website:
     name: Deploy Website
     needs: get-changed-files
-    if: contains(steps.get-changed-files.outputs.files, 'Website/')
+    if: contains(needs.get-changed-files.outputs.files, 'Website/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
