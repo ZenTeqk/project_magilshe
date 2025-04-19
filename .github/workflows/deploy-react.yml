@@ -31,42 +31,42 @@ jobs:
           echo "Changed directories:"
           echo ${{ steps.changed-files.outputs.all_changed_directories }}
 
-  admin_deploy:
-    needs: check-changed-directories
-    runs-on: ubuntu-latest
-    if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
+  # admin_deploy:
+  #   needs: check-changed-directories
+  #   runs-on: ubuntu-latest
+  #   if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v3
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
-          aws-region: ap-south-1
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
+  #         aws-region: ap-south-1
 
-      - name: Install dependencies and build React app (Admin)
-        working-directory: Admin
-        env:
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
-        run: |
-          npm ci
-          npm run build
+  #     - name: Install dependencies and build React app (Admin)
+  #       working-directory: Admin
+  #       env:
+  #         REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+  #         REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+  #       run: |
+  #         npm ci
+  #         npm run build
 
-      - name: Deploy to S3 (Admin)
-        run: |
-          aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
+  #     - name: Deploy to S3 (Admin)
+  #       run: |
+  #         aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
 
-      - name: Invalidate CloudFront cache (Admin)
-        run: |
-          aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
+  #     - name: Invalidate CloudFront cache (Admin)
+  #       run: |
+  #         aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
-  website_deploy:
-    needs: check-changed-directories
-    runs-on: ubuntu-latest
-    if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
+  # website_deploy:
+  #   needs: check-changed-directories
+  #   runs-on: ubuntu-latest
+  #   if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
