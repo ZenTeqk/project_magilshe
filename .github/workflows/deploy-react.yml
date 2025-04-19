@@ -81,10 +81,10 @@ jobs:
       - name: Install dependencies and build React app (Website)
         working-directory: Website
         env:
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
-          npm ci
+          npm run dev
           npm run build
 
       - name: Deploy to S3 (Website)
