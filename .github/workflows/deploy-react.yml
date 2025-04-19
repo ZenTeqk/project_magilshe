@@ -40,7 +40,7 @@ jobs:
   admin_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ env.changed_dirs == 'Admin' }}  # Run if 'Admin' is in the changed directories
+    if: ${{ steps.detect_changes.outputs.changed_dirs == 'Admin' }}  # Run if 'Admin' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -72,7 +72,7 @@ jobs:
   website_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ env.changed_dirs == 'Website' }} # Run if 'Website' is in the changed directories
+    if: ${{ steps.detect_changes.outputs.changed_dirs == 'Website' }} # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
