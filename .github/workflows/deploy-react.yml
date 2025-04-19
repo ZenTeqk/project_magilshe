@@ -85,7 +85,7 @@ jobs:
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           pwd
-          npm ci
+          npm install
           npm run build
 
       - name: Deploy to S3 (Website)
