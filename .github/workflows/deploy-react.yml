@@ -9,10 +9,12 @@ on:
 permissions:
   id-token: write    # Needed for OIDC authentication
   contents: read     # Needed to checkout the repo
-  
+
 jobs:
   detect_changes:
     runs-on: ubuntu-latest
+    outputs:
+      changed_dirs: ${{ steps.detect_changes.outputs.changed_dirs }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -24,12 +26,12 @@ jobs:
           CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
 
           echo "Changed directories: $CHANGED"
-          echo "changed_dirs=$CHANGED" >> $GITHUB_ENV
+          echo "::set-output name=changed_dirs::$CHANGED"
 
   admin_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(env.changed_dirs, 'Admin') }}  # Run if 'Admin' is in the changed directories
+    if: ${{ contains(needs.detect_changes.outputs.changed_dirs, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -61,7 +63,7 @@ jobs:
   website_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ contains(env.changed_dirs, 'Website') }}  # Run if 'Website' is in the changed directories
+    if: ${{ contains(needs.detect_changes.outputs.changed_dirs, 'Website') }}  # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
