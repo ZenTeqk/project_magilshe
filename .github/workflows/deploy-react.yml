@@ -1,4 +1,4 @@
-name: Deploy React Apps to S3 + CloudFront
+name: Deploy Magilshe Application
 
 on:
   push:
@@ -7,97 +7,60 @@ on:
       - 'Website/**'
 
 permissions:
-  id-token: write    # needed for OIDC
-  contents: read     # to checkout code
+  id-token: write    # Needed for OIDC authentication
+  contents: read     # Needed to checkout the repo
 
 jobs:
-  get-changed-files:
+  deploy:
     runs-on: ubuntu-latest
-    outputs:
-      files: ${{ steps.get_changed_files.outputs.files }}
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Fetch previous commit to compare
-        run: git fetch --depth=2
-
-      - name: Get changed files
-        id: get_changed_files
+      - name: Get Changed Directory
+        id: detect_changes
         run: |
-          # Compare the previous commit with the current commit
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          # Get the changed files between commits
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
+          echo "Changed directories: $CHANGED"
 
-          # Debug: Output changed files for review
-          echo "Changed files: $CHANGED_FILES"
+          # Set environment variables based on detected changes
+          if echo "$CHANGED" | grep -iq "admin"; then
+            echo "app_dir=Admin" >> $GITHUB_ENV
+            echo "bucket_name=magilshe-admin-panel" >> $GITHUB_ENV
+            echo "region=ap-south-1" >> $GITHUB_ENV
+            echo "distribution_id=E27SJZON2LM1AS" >> $GITHUB_ENV
 
-          # Safely format the output to match GitHub Actions' environment file format
-          # Strip any newlines and spaces for valid format
-          CHANGED_FILES=$(echo "$CHANGED_FILES" | tr -s '\n' ' ')
+          elif echo "$CHANGED" | grep -iq "website"; then
+            echo "app_dir=Website" >> $GITHUB_ENV
+            echo "bucket_name=magilshe-website" >> $GITHUB_ENV
+            echo "region=us-east-1" >> $GITHUB_ENV
+            echo "distribution_id=E37BBO03VZXP2F" >> $GITHUB_ENV
 
-          # Set output for the next job using environment files (no longer using `set-output`)
-          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
-          echo "Files saved to environment: $CHANGED_FILES"
+          else
+            echo "No relevant changes detected. Skipping deployment."
+            exit 0
 
-  deploy-admin:
-    name: Deploy Admin Panel
-    needs: get-changed-files
-    if: contains(needs.get-changed-files.outputs.files, 'Admin/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
-          aws-region: ap-south-1
+          aws-region: ${{ env.region }}
 
-      - name: Build React App
-        working-directory: ./Admin
+      - name: Install dependencies and build React app
+        working-directory: ${{ env.app_dir }}
         env:
-          REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npm ci
           npm run build
 
       - name: Deploy to S3
-        run: aws s3 sync ./Admin/build s3://magilshe-admin-panel --delete
-
-      - name: Invalidate CloudFront
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id E27SJZON2LM1AS \
-            --paths "/*"
+          aws s3 sync ${{ env.app_dir }}/build s3://${{ env.bucket_name }} --delete --region ${{ env.region }}
 
-  deploy-website:
-    name: Deploy Website
-    needs: get-changed-files
-    if: contains(needs.get-changed-files.outputs.files, 'Website/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
-          aws-region: us-east-1
-
-      - name: Build React App
-        working-directory: ./Website
-        env:
-          REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+      - name: Invalidate CloudFront cache
         run: |
-          npm ci
-          npm run build
-
-      - name: Deploy to S3
-        run: aws s3 sync ./Website/build s3://magilshe-website --delete
-
-      - name: Invalidate CloudFront
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id E37BBO03VZXP2F \
-            --paths "/*"
+          aws cloudfront create-invalidation --distribution-id ${{ env.distribution_id }} --paths "/*"
