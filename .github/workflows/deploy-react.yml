@@ -11,36 +11,26 @@ permissions:
   contents: read     # Needed to checkout the repo
 
 jobs:
-  detect_changes:
+  check-changed-directories:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 2  # Fetch last 2 commits for comparison
 
-      - name: Get Changed Directories (using GitHub event paths)
-        run: |
-          # Check paths from the push event to detect which directories changed
-          CHANGED_DIRS=""
-          
-          # Loop through modified files and check for changes in Admin or Website directories
-          for file in "${{ github.event.head_commit.modified }}"; do
-            if [[ "$file" == Admin/* ]]; then
-              CHANGED_DIRS="Admin"
-            elif [[ "$file" == Website/* ]]; then
-              CHANGED_DIRS="Website"
-            fi
-          done
-
-          # Output the changed directories for use in further steps
-          echo "Changed directories: $CHANGED_DIRS"
-          echo "changed_dirs=$CHANGED_DIRS" >> $GITHUB_ENV
+      - name: Get changed directories
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          dir_names: true
+          diff_relative: true  # Optionally, make paths relative
 
 
   admin_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ steps.detect_changes.outputs.changed_dirs == 'Admin' }}  # Run if 'Admin' is in the changed directories
+    if: ${{ contains(steps.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
 
     steps:
       - name: Checkout Code
@@ -72,7 +62,7 @@ jobs:
   website_deploy:
     needs: detect_changes
     runs-on: ubuntu-latest
-    if: ${{ steps.detect_changes.outputs.changed_dirs == 'Website' }} # Run if 'Website' is in the changed directories
+    if: ${{ contains(steps.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
 
     steps:
       - name: Checkout Code
