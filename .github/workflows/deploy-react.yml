@@ -68,7 +68,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
 
-    steps:
+    # steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
