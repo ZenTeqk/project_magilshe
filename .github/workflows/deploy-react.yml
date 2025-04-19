@@ -44,10 +44,10 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v2
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
-          aws-region: ${{ steps.detect.outputs.region }}
+          aws-region: ${{ steps.detect_changes.outputs.region }}
 
       - name: Install dependencies & build
-        working-directory: ${{ steps.detect.outputs.app_dir }}
+        working-directory: ${{ steps.detect_changes.outputs.app_dir }}
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
