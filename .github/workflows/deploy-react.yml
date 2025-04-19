@@ -30,11 +30,13 @@ jobs:
           # Debug: Output changed files for review
           echo "Changed files: $CHANGED_FILES"
 
-          # Format the changed files correctly for setting as job output
-          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
+          # Safely format the output to match GitHub Actions' environment file format
+          # Strip any newlines and spaces for valid format
+          CHANGED_FILES=$(echo "$CHANGED_FILES" | tr -s '\n' ' ')
 
-          # Set output for the next job
-          echo "::set-output name=files::$CHANGED_FILES"
+          # Set output for the next job using environment files (no longer using `set-output`)
+          echo "files=$CHANGED_FILES" >> $GITHUB_ENV
+          echo "Files saved to environment: $CHANGED_FILES"
 
   deploy-admin:
     name: Deploy Admin Panel
