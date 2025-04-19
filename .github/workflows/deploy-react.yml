@@ -1,0 +1,65 @@
+name: Deploy Magilshe Application
+
+on:
+  push:
+    paths:
+      - 'Admin/**'
+      - 'Website/**'
+
+permissions:
+  id-token: write    # needed for OIDC
+  contents: read     # to checkout code
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Get Changed Directory
+        id: detect_changes
+        run: |
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | cut -d/ -f1 | sort -u)
+          echo "Changed directories: $CHANGED"
+
+          if echo "$CHANGED" | grep -q "admin"; then
+            echo "app_dir=admin" >> $GITHUB_OUTPUT
+            echo "bucket_name=magilshe-admin-panel" >> $GITHUB_OUTPUT
+            echo "region=ap-south-1" >> $GITHUB_OUTPUT
+            echo "distribution_id=E27SJZON2LM1AS" >> $GITHUB_OUTPUT
+
+          elif echo "$CHANGED" | grep -q "website"; then
+            echo "app_dir=website" >> $GITHUB_OUTPUT
+            echo "bucket_name=magilshe-website" >> $GITHUB_OUTPUT
+            echo "region=us-east-1" >> $GITHUB_OUTPUT
+            echo "distribution_id=E37BBO03VZXP2F" >> $GITHUB_OUTPUT
+
+          else
+            echo "No relevant changes."
+            exit 0
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.975050116507 }}:role/${{ secrets.Github_OIDC }}
+          aws-region: ${{ steps.detect.outputs.region }}
+
+      - name: Install dependencies & build
+        working-directory: ${{ steps.detect.outputs.app_dir }}
+        env:
+          REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
+          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync ${{ steps.detect_changes.outputs.app_dir }}/build s3://${{ steps.detect_changes.outputs.bucket_name }} --delete --region ${{ steps.detect_changes.outputs.region }}
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.detect_changes.outputs.distribution_id }} --paths "/*"
+
