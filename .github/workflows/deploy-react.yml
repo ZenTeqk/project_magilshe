@@ -27,7 +27,7 @@ jobs:
           # Compare the previous commit with the current commit
           CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
           echo "Changed files: $CHANGED_FILES"
-          echo "::set-output name=files::$CHANGED_FILES"
+          echo "files=$CHANGED_FILES" >> $GITHUB_ENV  # Use environment files to set outputs
 
   deploy-admin:
     name: Deploy Admin Panel
