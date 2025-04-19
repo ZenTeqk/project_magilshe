@@ -78,6 +78,11 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
           aws-region: us-east-1
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18  # or whatever version you're using locally
+
       - name: Install dependencies and build React app (Website)
         working-directory: Website
         env:
@@ -85,7 +90,7 @@ jobs:
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           pwd
-          npm install
+          npm ci
           npm run build
 
       - name: Deploy to S3 (Website)
