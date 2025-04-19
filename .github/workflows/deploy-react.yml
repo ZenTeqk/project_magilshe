@@ -84,7 +84,8 @@ jobs:
           REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
-          npm ci
+          rm -rf node_modules package-lock.json
+          npm ci --no-audit --loglevel=error
           npm run build
 
       - name: Deploy to S3 (Website)
