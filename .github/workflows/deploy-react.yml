@@ -43,7 +43,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.975050116507 }}:role/${{ secrets.Github_OIDC }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ secrets.Github_OIDC }}
           aws-region: ${{ steps.detect.outputs.region }}
 
       - name: Install dependencies & build
