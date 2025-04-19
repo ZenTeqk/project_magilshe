@@ -13,7 +13,7 @@ permissions:
 jobs:
   deploy-admin:
     name: Deploy Admin Panel
-    if: contains(github.event.head_commit.message, 'Admin') || github.event.head_commit.modified.* contains 'Admin/'
+    if: ${{ contains(github.event.head_commit.message, 'Admin') || contains(join(github.event.head_commit.modified, ','), 'Admin/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -28,7 +28,7 @@ jobs:
         working-directory: ./Admin
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_IS_SKIP_OTP:    ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npm ci
           npm run build
@@ -44,7 +44,7 @@ jobs:
 
   deploy-website:
     name: Deploy website
-    if: contains(github.event.head_commit.message, 'Website') || github.event.head_commit.modified.* contains 'Website/'
+    if: ${{ contains(github.event.head_commit.message, 'Website') || contains(join(github.event.head_commit.modified, ','), 'Website/') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -59,7 +59,7 @@ jobs:
         working-directory: ./Website
         env:
           REACT_APP_API_URL:        ${{ secrets.REACT_APP_API_URL }}
-          REACT_APP_IS_SKIP_OTP:  ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_IS_SKIP_OTP:    ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npm ci
           npm run build
