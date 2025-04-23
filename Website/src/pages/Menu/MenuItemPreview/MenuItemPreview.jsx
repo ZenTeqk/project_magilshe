@@ -44,13 +44,13 @@ function MenuItemPreview() {
   const getItemDetails = async () => {
     try {
       const getCakeAPIResponse = await getMenuApi(id);
-      
+
       let meta = {
-        "meta_title" : getCakeAPIResponse.data.meta_title,
-        "keywords" : getCakeAPIResponse.data.meta_title,
-        "meta_descriptions" : getCakeAPIResponse.data.meta_description,
-        "slug" : getCakeAPIResponse.data.slug,
-        "content" : getCakeAPIResponse.data.content,
+        "meta_title": getCakeAPIResponse.data.meta_title,
+        "keywords": getCakeAPIResponse.data.meta_title,
+        "meta_descriptions": getCakeAPIResponse.data.meta_description,
+        "slug": getCakeAPIResponse.data.slug,
+        "content": getCakeAPIResponse.data.content,
       }
       setMetaData(meta)
       setMenuItemDetails(getCakeAPIResponse?.data);
@@ -207,7 +207,7 @@ function MenuItemPreview() {
           text: 'I found this great bakery with delicious cakes. Check out the link below!',
           url: window.location.href,
         });
-        
+
       } catch (error) {
         console.error('Error sharing:', error);
       }
@@ -458,10 +458,12 @@ function MenuItemPreview() {
           </Grid>
         </Grid>
       </div>
-      <div className="mt-5">
-        <h1 className="heading category-title">Recommended Product</h1>
-        <ProductSlider />
-      </div>
+      <section className="choose-favourite-cake-section">
+        <div className="mt-5">
+          <h1 className="heading category-title">Recommended Product</h1>
+          <ProductSlider />
+        </div>
+      </section>
       <AuthModal show={isLoginShow} setShow={setIsLoginShow} />
     </>
   );

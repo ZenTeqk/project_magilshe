@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useState } from 'react';
 import PropTypes from "prop-types";
-import { getAddressApi, getOrderApi, getOverallCakeMenuList, getSubCategoryListApi, getOfferItemsApi, getConfiguration, getProfileApi, getOfferPageApi, getMainCategoryListApi } from '../utils/cakeryAPI';
+import { getAddressApi, getOrderApi, getOverallCakeMenuList, getSubCategoryListApi, getOfferItemsApi, getConfiguration, getProfileApi, getOfferPageApi, getMainCategoryListApi, getFeedBack } from '../utils/cakeryAPI';
 import Cookies from 'universal-cookie';
 import { useLocation } from 'react-router-dom';
 import { meta_paths } from '../component/Meta/MetaPaths';
@@ -45,8 +45,10 @@ export const DataProvider = ({ children }) => {
     const [userProfileInfo, setUserProfileInfo] = useState(null);
 
     const [configurationData, setConfigurationData] = useState(null);
-    
+
     const [formatedCategory, setFormatedCategory] = useState([]);
+
+    const [feedBackData, setFeedBackData] = useState([]);
 
     const getOverallCakeList = async () => {
         try {
@@ -56,6 +58,23 @@ export const DataProvider = ({ children }) => {
             console.error(error)
         }
     }
+
+    const fetchFeedBackData = async () => {
+        try {
+            const response = await getFeedBack(); // Call the API
+            console.log("res", response);
+
+            setFeedBackData(response?.data?.data); // Set the fetched data to the state
+        } catch (error) {
+            console.error("Error fetching Feedback data:", error);
+        }
+    };
+
+
+    useEffect(() => {
+        fetchFeedBackData();
+    }, []);
+
 
     const getMainCategoryList = async () => {
         try {
@@ -72,24 +91,24 @@ export const DataProvider = ({ children }) => {
             setSubCategoriesObj(getSubCategoryListApiResponse?.data)
         } catch (error) {
             console.error(error)
-        } 
+        }
     }
 
 
     useEffect(() => {
         if (subCategoriesObj && mainCategoriesObj) {
-          const mainCategoryFormatted = mainCategoriesObj?.map((mainCat) => {
-            const subCategories = subCategoriesObj?.filter(
-              (subCat) => subCat?.main_category?.id === mainCat?.id
-            );
+            const mainCategoryFormatted = mainCategoriesObj?.map((mainCat) => {
+                const subCategories = subCategoriesObj?.filter(
+                    (subCat) => subCat?.main_category?.id === mainCat?.id
+                );
 
-            return {
-              ...mainCat,
-              subcategories: subCategories,
-            };
-          });
-          
-          setFormatedCategory(mainCategoryFormatted);
+                return {
+                    ...mainCat,
+                    subcategories: subCategories,
+                };
+            });
+
+            setFormatedCategory(mainCategoryFormatted);
         }
     }, [subCategoriesObj, mainCategoriesObj]);
 
@@ -151,17 +170,17 @@ export const DataProvider = ({ children }) => {
                 let config_meta = (getConfigurationResponse?.data?.meta);
                 let path_meta = config_meta?.[String(pathname)];
                 setMetaData(path_meta)
-            }           
-            
+            }
+
         } catch (error) {
             console.error(error);
         }
     };
 
-    useEffect(() =>{
+    useEffect(() => {
         getConfigurationList()
-    },[])
-    
+    }, [])
+
 
     useEffect(() => {
         if ((new Cookies()).get('web_access_token')) {
@@ -216,7 +235,8 @@ export const DataProvider = ({ children }) => {
             selectedCategory, setSelectedCategory,
             selectedMainCategory, setSelectedMainCategory,
             metaData, setMetaData,
-            formatedCategory, setFormatedCategory
+            formatedCategory, setFormatedCategory,
+            feedBackData, setFeedBackData
         }}>
             {children}
         </DataContext.Provider>

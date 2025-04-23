@@ -27,9 +27,11 @@ import { getBannerImage, getFeedBack } from "../../utils/cakeryAPI";
 import Tooltip from "@mui/material/Tooltip";
 
 const Home = () => {
-  const { cakeObj, subCategoriesObj, setSelectedCategory, selectedMainCategory, setSelectedMainCategory } = useContext(DataContext);
+  const { cakeObj, subCategoriesObj, setSelectedCategory, selectedMainCategory, setSelectedMainCategory, feedBackData, setFeedBackData, fetchFeedBackData, } = useContext(DataContext);
+  console.log("data", feedBackData);
+
   const [bannerData, setBannerData] = useState([]);
-  const [feedBackData, setFeedBackData] = useState([]);
+  // const [feedBackData, setFeedBackData] = useState([]);
 
   const navigate = useNavigate();
 
@@ -111,20 +113,20 @@ const Home = () => {
     fetchBannerData(); // Invoke the API function
   }, []);
 
-  useEffect(() => {
-    // Fetch the banner image data from the API
-    const fetchFeedBackData = async () => {
-      try {
-        const response = await getFeedBack(); // Call the API
+  // useEffect(() => {
+  //   // Fetch the banner image data from the API
+  //   const fetchFeedBackData = async () => {
+  //     try {
+  //       const response = await getFeedBack(); // Call the API
 
-        setFeedBackData(response?.data?.data); // Set the fetched data to the state
-      } catch (error) {
-        console.error("Error fetching Feedback data:", error);
-      }
-    };
+  //       setFeedBackData(response?.data?.data); // Set the fetched data to the state
+  //     } catch (error) {
+  //       console.error("Error fetching Feedback data:", error);
+  //     }
+  //   };
 
-    fetchFeedBackData(); // Invoke the API function
-  }, []);
+  //   fetchFeedBackData(); // Invoke the API function
+  // }, []);
 
   const handleSubCategoryClick = (subCategoryName) => {
     setSelectedCategory(subCategoryName);
@@ -381,37 +383,40 @@ const Home = () => {
             />
           </div>
 
-          <Slider {...settings} className="feedback-slider">
-            {feedBackData.length &&
-              feedBackData?.map((item) => {
-                return (
-                  <div key={item?.id} className="slider-item">
-                    <div className="item">
-                      <span className="quote-symbol">{`"`}</span>
-                      <Tooltip title={item?.message} arrow placement="top">
-                        <p className="content">
-                          {item?.message.length > 100 ? item?.message.substring(0, 100) + "..." : item?.message}
-                        </p>
-                      </Tooltip>
-                      <div className="writer">
-                        <img
-                          src={require("../../assets/images/feedback-user.png")}
-                        />
-                        <p
-                          style={{
-                            fontSize: 10,
-                            textAlign: "center",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          {item?.name}
-                        </p>
-                      </div>
+          {Array.isArray(feedBackData) && feedBackData.length > 0 && (
+            <Slider {...settings} className="feedback-slider">
+              {feedBackData.map((item) => (
+                <div key={item?.id} className="slider-item">
+                  <div className="item">
+                    <span className="quote-symbol">{`"`}</span>
+                    <Tooltip title={item?.message} arrow placement="top">
+                      <p className="content">
+                        {item?.message?.length > 100
+                          ? item?.message.substring(0, 100) + "..."
+                          : item?.message}
+                      </p>
+                    </Tooltip>
+                    <div className="writer">
+                      <img
+                        src={require("../../assets/images/feedback-user.png")}
+                        alt="feedback user"
+                      />
+                      <p
+                        style={{
+                          fontSize: 10,
+                          textAlign: "center",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {item?.name}
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-          </Slider>
+                </div>
+              ))}
+            </Slider>
+          )}
+
           <div className="image-bg"></div>
         </div>
       </section>
