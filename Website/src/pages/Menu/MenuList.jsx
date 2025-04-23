@@ -110,12 +110,13 @@ const MenuList = () => {
 
   useEffect(() => {
 
+    let selectcedCategoryFilter =  selectedCategory || "All"
     const filterList = menuListObj.filter((cake) => {
 
       const matchesCategory =
-        selectedCategory === "All" ||
-        cake?.sub_category?.name === selectedCategory ||
-        cake?.main_category?.name === selectedCategory;
+      selectcedCategoryFilter === "All" ||
+        cake?.sub_category?.name === selectcedCategoryFilter ||
+        cake?.main_category?.name === selectcedCategoryFilter;
 
       const matchesSearch =
         !menuSearch || cake?.name.toLowerCase().includes(menuSearch.toLowerCase());

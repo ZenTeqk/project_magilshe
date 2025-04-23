@@ -160,7 +160,7 @@ export const DataProvider = ({ children }) => {
 
     useEffect(() =>{
         getConfigurationList()
-    },[location.pathname])
+    },[])
     
 
     useEffect(() => {
