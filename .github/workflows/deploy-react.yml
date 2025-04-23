@@ -1,0 +1,107 @@
+name: Deploy Magilshe Application
+
+on:
+  push:
+    paths:
+      - 'Admin/**'
+      - 'Website/**'
+
+permissions:
+  id-token: write    # Needed for OIDC authentication
+  contents: read     # Needed to checkout the repo
+
+jobs:
+  check-changed-directories:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2  # Fetch last 2 commits for comparison
+
+      - name: Get changed directories
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          dir_names: true
+          diff_relative: true  # Optionally, make paths relative
+
+      - name: Echo changed directories
+        run: |
+          echo "Changed directories:"
+          echo ${{ steps.changed-files.outputs.all_changed_directories }}
+
+  # admin_deploy:
+  #   needs: check-changed-directories
+  #   runs-on: ubuntu-latest
+  #   if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Admin') }}  # Run if 'Admin' is in the changed directories
+
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v3
+
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
+  #         aws-region: ap-south-1
+
+  #     - name: Install dependencies and build React app (Admin)
+  #       working-directory: Admin
+  #       env:
+  #         REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
+  #         REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+  #       run: |
+  #         npm ci
+  #         npm run build
+
+  #     - name: Deploy to S3 (Admin)
+  #       run: |
+  #         aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
+
+  #     - name: Invalidate CloudFront cache (Admin)
+  #       run: |
+  #         aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
+
+  # website_deploy:
+  #   needs: check-changed-directories
+  #   runs-on: ubuntu-latest
+  #   if: ${{ contains(needs.changed-files.outputs.all_changed_directories, 'Website') }} # Run if 'Website' is in the changed directories
+
+    # steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/Github_OIDC
+          aws-region: us-east-1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18  # or whatever version you're using locally
+
+      - name: Install dependencies
+        run: npm install react-scripts --save
+
+      # - name: Lint and auto-fix unused variables
+      #   run: npm run lint:fix
+
+      - name: Install dependencies and build React app (Website)
+        working-directory: Website
+        env:
+          REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
+          REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+        run: |
+          pwd
+          npm run build
+
+      - name: Deploy to S3 (Website)
+        run: |
+          aws s3 sync Website/build s3://magilshe-website --delete --region us-east-1
+
+      - name: Invalidate CloudFront cache (Website)
+        run: |
+          aws cloudfront create-invalidation --distribution-id E37BBO03VZXP2F --paths "/*"
