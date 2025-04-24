@@ -64,7 +64,7 @@ import { faChevronLeft } from "@fortawesome/free-solid-svg-icons";
 const ManualOrder = ({ setShow, editableData, setEditableData }) => {
 
   const navigate = useNavigate()
-  
+
   const { ShowNotification, setIsApiLoading, setIsPreLoading } =
     useContext(MainContext);
 
@@ -96,7 +96,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
   const [rowId, setRowId] = useState(0);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [customerName, setCustomerName] = useState("");
-  
+
   const [customerObject, setCustomerObject] = useState(null);
 
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -199,7 +199,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
     setSelectedItem(newValue);
     console.log(newValue)
     if (newValue) {
-      
+
       setSelectedCakeName(newValue.name);
       setSelectedVariant("");
       setQuantity(1);
@@ -254,7 +254,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
     setEventDate("");
     setPersonName("");
     setGreetingText("");
- 
+
 
     handleCloseModal();
   };
@@ -267,7 +267,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
   };
 
   const handleUpdateItem = (obj) => {
-    
+
     setSelectedVariant(obj?.cake_price);
     setQuantity(obj?.qty);
     setSelectedOccasion(obj?.type);
@@ -574,6 +574,9 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                           <MenuItem value="Work Anniversary">
                             Work Anniversary
                           </MenuItem>
+                          <MenuItem value="Others">
+                            Others
+                          </MenuItem>
                         </Select>
                       </FormControl>
 
@@ -707,7 +710,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                 color="primary"
                 size="small"
                 fullWidth
-                sx={{textTransform: "capitalize"}}
+                sx={{ textTransform: "capitalize" }}
                 onClick={() => setModalOpen(true)}
               >
                 Select Customer
