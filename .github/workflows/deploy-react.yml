@@ -34,7 +34,7 @@ jobs:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
-          npm install
+          npm install && npm audit fix
           npm run build
 
       - name: Deploy to S3 (Admin)
