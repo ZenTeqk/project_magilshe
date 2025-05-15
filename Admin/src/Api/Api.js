@@ -20,7 +20,7 @@ const getRefreshToken = async () => {
       }
     );
     const newAccessToken = response.data.access;
-    // Update the token in local storage
+    // Update the token in local storages
     const tokenData = JSON.parse(localStorage.getItem(CAKERY_TOKEN));
     tokenData.access = newAccessToken;
     localStorage.setItem(CAKERY_TOKEN, JSON.stringify(tokenData));
