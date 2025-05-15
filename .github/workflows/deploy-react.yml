@@ -35,7 +35,7 @@ jobs:
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
           npx update-browserslist-db@latest
-          npm ci || npm install --legacy-peer-deps
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Deploy to S3 (Admin)
