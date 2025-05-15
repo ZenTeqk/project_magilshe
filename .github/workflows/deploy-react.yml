@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - dev  
+    paths:
+      - 'Admin/**'
+      - 'Website/**'
 
 permissions:
   id-token: write
@@ -11,6 +14,7 @@ permissions:
 
 jobs:
   deploy_admin:
+    if: contains(github.event.head_commit.message, 'Admin') || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -49,8 +53,9 @@ jobs:
           aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
   deploy_website:
+    if: contains(github.event.head_commit.message, 'Website') || github.event_name == 'push
     runs-on: ubuntu-latest
-    needs: deploy_admin  # Optional: run after admin is deployed
+    #needs: deploy_admin  # Optional: run after admin is deployed
 
     steps:
       - name: Checkout Code
@@ -72,8 +77,9 @@ jobs:
         env:
           REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          CI: false
         run: |
-          npm install --legacy-peer-deps
+          npm install
           npm run build
 
       - name: Deploy to S3 (Website)
