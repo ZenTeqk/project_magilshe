@@ -36,8 +36,7 @@ jobs:
         run: |
           echo $REACT_APP_API_URL
           pwd
-          npx update-browserslist-db@latest
-          npm install --legacy-peer-deps && npm audit fix
+          npm install
           npm run build
 
       - name: Deploy to S3 (Admin)
@@ -73,7 +72,7 @@ jobs:
           REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
-          npm ci || npm install --legacy-peer-deps
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Deploy to S3 (Website)
