@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   deploy_admin:
-    if: contains(github.event.head_commit.message, 'Admin') || github.event_name == 'push'
+    if: contains(github.event.pull_request?.changed_files || '', 'Admin') || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -53,7 +53,7 @@ jobs:
           aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
   deploy_website:
-    if: contains(github.event.head_commit.message, 'Website') || github.event_name == 'push
+    if: contains(github.event.pull_request?.changed_files || '', 'Website') || github.event_name == 'push'
     runs-on: ubuntu-latest
     #needs: deploy_admin  # Optional: run after admin is deployed
 
