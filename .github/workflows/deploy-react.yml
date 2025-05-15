@@ -6,7 +6,6 @@ on:
       - dev  
     paths:
       - 'Admin/**'
-      - 'Website/**'
 
 permissions:
   id-token: write
@@ -14,7 +13,6 @@ permissions:
 
 jobs:
   deploy_admin:
-    if: contains(github.event.pull_request?.changed_files || '', 'Admin') || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -52,8 +50,19 @@ jobs:
         run: |
           aws cloudfront create-invalidation --distribution-id E27SJZON2LM1AS --paths "/*"
 
+on:
+  push:
+    branches:
+      - dev  
+    paths:
+      - 'Website/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
   deploy_website:
-    if: contains(github.event.pull_request?.changed_files || '', 'Website') || github.event_name == 'push'
     runs-on: ubuntu-latest
     #needs: deploy_admin  # Optional: run after admin is deployed
 
