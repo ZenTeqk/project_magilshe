@@ -34,6 +34,7 @@ jobs:
           REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
         run: |
+          npx update-browserslist-db@latest
           npm ci || npm install --legacy-peer-deps
           npm run build
 
