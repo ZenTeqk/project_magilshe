@@ -62,7 +62,6 @@ export const DataProvider = ({ children }) => {
     const fetchFeedBackData = async () => {
         try {
             const response = await getFeedBack(); // Call the API
-            console.log("res", response);
 
             setFeedBackData(response?.data?.data); // Set the fetched data to the state
         } catch (error) {
@@ -160,6 +159,7 @@ export const DataProvider = ({ children }) => {
     };
 
     const [metaData, setMetaData] = useState(null);
+    const [pageMetaData, setPageMetaData] = useState(null);
 
     const getConfigurationList = async () => {
         try {
@@ -167,9 +167,29 @@ export const DataProvider = ({ children }) => {
             if (meta_paths?.includes(pathname)) {
                 const getConfigurationResponse = await getConfiguration();
                 setConfigurationData(getConfigurationResponse?.data);
-                let config_meta = (getConfigurationResponse?.data?.meta);
+
+                let config_meta = getConfigurationResponse?.data?.meta;
+
+                if (typeof config_meta === "string") {
+                  try {
+                    config_meta = JSON.parse(config_meta);
+                  } catch (error) {
+                    console.error("Invalid JSON string in config_meta:", error);
+                    config_meta = {};
+                  }
+                }
+                
                 let path_meta = config_meta?.[String(pathname)];
-                setMetaData(path_meta)
+                let meta = {
+                  meta_title: path_meta?.meta_title,
+                  keywords: path_meta?.content,
+                  meta_descriptions: path_meta?.meta_description,
+                  slug: path_meta?.slug,
+                  content: path_meta?.content,
+                };
+
+                setMetaData(meta);
+                setPageMetaData(config_meta)
             }
 
         } catch (error) {
@@ -234,7 +254,7 @@ export const DataProvider = ({ children }) => {
             getUserProfile,
             selectedCategory, setSelectedCategory,
             selectedMainCategory, setSelectedMainCategory,
-            metaData, setMetaData,
+            metaData, setMetaData, pageMetaData,
             formatedCategory, setFormatedCategory,
             feedBackData, setFeedBackData
         }}>

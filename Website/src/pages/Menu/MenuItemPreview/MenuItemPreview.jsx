@@ -47,7 +47,7 @@ function MenuItemPreview() {
 
       let meta = {
         "meta_title": getCakeAPIResponse.data.meta_title,
-        "keywords": getCakeAPIResponse.data.meta_title,
+        "keywords": getCakeAPIResponse.data.content,
         "meta_descriptions": getCakeAPIResponse.data.meta_description,
         "slug": getCakeAPIResponse.data.slug,
         "content": getCakeAPIResponse.data.content,
@@ -460,7 +460,7 @@ function MenuItemPreview() {
       </div>
       <section className="choose-favourite-cake-section">
         <div className="mt-5">
-          <h1 className="heading category-title">Recommended Product</h1>
+          <h1 className="heading category-title" style={{ width: "100%", textAlign: "center"}}>Recommended Product</h1>
           <ProductSlider />
         </div>
       </section>

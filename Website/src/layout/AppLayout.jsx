@@ -5,9 +5,32 @@ import PropTypes from "prop-types";
 import { Container } from "react-bootstrap";
 import "./AppLayout.scss";
 import BreadCrumbs from "./BreadCrumbs";
+import { useContext, useEffect } from "react";
+import { DataContext } from "../context/DataContext";
 
 const AppLayout = ({ children }) => {
   const location = useLocation();
+
+  const { setMetaData, pageMetaData } = useContext(DataContext);
+
+  useEffect(() => {
+    const handlePageLoad = () => {
+      let pathname = location?.pathname?.slice(1);
+      let path_meta = pageMetaData?.[String(pathname)];
+
+      let meta = {
+        meta_title: path_meta?.meta_title,
+        keywords: path_meta?.content,
+        meta_descriptions: path_meta?.meta_description,
+        slug: path_meta?.slug,
+        content: path_meta?.content,
+      };
+
+      setMetaData(meta);
+    };
+
+    handlePageLoad();
+  }, [location.pathname]);
 
   return (
     <section>
@@ -19,9 +42,7 @@ const AppLayout = ({ children }) => {
         </Container>
       )}
       {location.pathname === "/home" && (
-        <Container className="main-component-builder">
-          {children}
-        </Container>
+        <Container className="main-component-builder">{children}</Container>
       )}
       <Footer />
     </section>
