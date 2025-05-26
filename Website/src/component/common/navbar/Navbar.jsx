@@ -22,6 +22,7 @@ import Cookies from "universal-cookie";
 import { DataContext } from "../../../context/DataContext";
 import AuthModal from "../../../pages/Auth/AuthModal";
 import { Logout, PersonAdd, Settings } from "@mui/icons-material";
+import { useEffect } from "react";
 
 const TopNavbar = () => {
   const cookies = new Cookies();
@@ -75,7 +76,8 @@ const TopNavbar = () => {
   };
 
   const [isLoginShow, setIsLoginShow] = useState(false);
-
+  const [currentAddress, setCurrentAddress] = useState("Fetching location...");
+  const [loading, setLoading] = useState(true);
   const [anchorEl, setAnchorEl] = React.useState(null);
   const open = Boolean(anchorEl);
   const handleClick = (event) => {
@@ -84,6 +86,62 @@ const TopNavbar = () => {
   const handleNavClose = () => {
     setAnchorEl(null);
   };
+
+  const [position, setPosition] = useState({
+    lat: 40.748817,
+    lng: -73.985428,
+  });
+
+  const { REACT_APP_GMAP_API_KEY } = process.env;
+  const Gmap_key = REACT_APP_GMAP_API_KEY
+
+  console.log("dfds", Gmap_key);
+
+
+
+  console.log("sdfsds", currentAddress);
+
+
+
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${Gmap_key}`;
+
+        try {
+          const res = await fetch(geocodeUrl);
+          const data = await res.json();
+
+
+          if (data.status === "OK" && data.results.length > 0) {
+            const result = data.results[0];
+
+            const fullCode = data.plus_code?.compound_code;
+
+            if (fullCode) {
+              // Split at the first comma and take the first part
+              const shortCode = fullCode.split(',')[0].trim();
+              setCurrentAddress(shortCode);
+            } else {
+              setCurrentAddress(result.formatted_address);
+            }
+          }
+
+        } catch (err) {
+          console.error("Geocoding error:", err);
+          setCurrentAddress("Address not found");
+        } finally {
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setCurrentAddress("Permission denied");
+        setLoading(false);
+      }
+    );
+  }, []);
 
   return (
     <Navbar
@@ -114,7 +172,7 @@ const TopNavbar = () => {
                 setIsLoginShow(true);
               }
             }}
-            // onClick={() => setExpanded(false)}
+          // onClick={() => setExpanded(false)}
           >
             <img src={cart} alt="Cart" />
           </Nav.Link>
@@ -256,10 +314,14 @@ const TopNavbar = () => {
             </Nav.Link>
           </Nav>
 
+
+
           <Nav className="right-nav links right-side-nav-desktop">
             <Nav.Link href="#">
               <img src={location} alt="Location" />
-              Deliver
+              <Typography sx={{ display: { xs: "none", sm: "inline" }, textTransform: "none" }}>
+                {loading ? "Deliver" : currentAddress}
+              </Typography>
             </Nav.Link>
             {/* <Nav.Link as={NavLink} to="/cart" onClick={() => setExpanded(false)}>
               <img src={cart} alt="Cart" /> Cart
