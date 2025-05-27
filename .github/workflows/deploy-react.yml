@@ -70,12 +70,10 @@ jobs:
         run: |
           npm install
           npm run build
-          echo "REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}"
 
       - name: Deploy to S3 (Admin)
         run: |
           aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
-          echo "REACT_APP_BASE_URL:" ${{ secrets.REACT_APP_BASE_URL }}
 
       - name: Invalidate CloudFront cache (Admin)
         run: |
