@@ -20,7 +20,7 @@ const AppLayout = ({ children }) => {
 
       let meta = {
         meta_title: path_meta?.meta_title,
-        keywords: path_meta?.content,
+        keywords: path_meta?.keywords || path_meta?.content,
         meta_descriptions: path_meta?.meta_description,
         slug: path_meta?.slug,
         content: path_meta?.content,
