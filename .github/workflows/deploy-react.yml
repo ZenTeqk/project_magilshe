@@ -64,7 +64,7 @@ jobs:
       - name: Install dependencies and build React app (Admin)
         working-directory: Admin
         env:
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_BASE_URL }}
+          REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
           CI: false
         run: |
