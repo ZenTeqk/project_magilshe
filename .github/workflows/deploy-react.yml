@@ -70,6 +70,7 @@ jobs:
         run: |
           npm install
           npm run build
+          echo REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
 
       - name: Deploy to S3 (Admin)
         run: |
