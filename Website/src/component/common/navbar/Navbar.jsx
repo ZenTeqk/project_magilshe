@@ -95,14 +95,6 @@ const TopNavbar = () => {
   const { REACT_APP_GMAP_API_KEY } = process.env;
   const Gmap_key = REACT_APP_GMAP_API_KEY
 
-  console.log("dfds", Gmap_key);
-
-
-
-  console.log("sdfsds", currentAddress);
-
-
-
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
