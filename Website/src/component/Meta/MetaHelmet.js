@@ -11,8 +11,11 @@ const MetaHelmet = () => {
             <title>{metaData?.meta_title}</title>
             <meta name="description" content={metaData?.meta_descriptions} />
             <meta name="keywords" content={metaData?.keywords} />
-            <meta name="content" content={metaData?.content} />
-            <meta name="slug" content={metaData?.slug} />
+            {/* Optional: Open Graph for better social preview */}
+            <meta property="og:title" content={metaData?.meta_title} />
+            <meta property="og:description" content={metaData?.meta_descriptions} />
+            <meta property="og:url" content={metaData?.url || "https://www.magilshe.com"} />
+            <meta property="og:type" content="website" />
         </Helmet>
     );
 };

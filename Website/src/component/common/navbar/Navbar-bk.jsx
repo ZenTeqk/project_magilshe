@@ -78,6 +78,7 @@ const TopNavbar = () => {
 
 
 
+
   const [isLoginShow, setIsLoginShow] = useState(false)
 
   return (
@@ -158,17 +159,17 @@ const TopNavbar = () => {
                   </MenuItem>) : (
 
                   <MenuItem className="profile-menu-item">
-                    <Link                       
-                      className="d-flex align-items-center" 
+                    <Link
+                      className="d-flex align-items-center"
                       style={{ textDecoration: 'none', color: 'inherit' }}
                       // to={"/login_old"} 
-                      onClick={()=>{
+                      onClick={() => {
                         setIsLoginShow(true);
                       }}
                     >
-                      <img 
-                        src={require(`../../../assets/icons/logout-icon.png`)} 
-                        className="w-[20px] h-[20px] me-2" 
+                      <img
+                        src={require(`../../../assets/icons/logout-icon.png`)}
+                        className="w-[20px] h-[20px] me-2"
                       />
                       <Typography>{"Log In"}</Typography>
                     </Link>

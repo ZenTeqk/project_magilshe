@@ -651,11 +651,12 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
                           onChange={(e) => {
                             handleOnchange(e.target.value, "slug");
                           }}
+                          sx={{display: "none"}}
                         />
                         <TextField
                           id="content"
                           className="my-2"
-                          label="Content"
+                          label="Meta Keywords"
                           multiline
                           rows={3}
                           fullWidth

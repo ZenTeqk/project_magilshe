@@ -28,7 +28,6 @@ import Tooltip from "@mui/material/Tooltip";
 
 const Home = () => {
   const { cakeObj, subCategoriesObj, setSelectedCategory, selectedMainCategory, setSelectedMainCategory, feedBackData, setFeedBackData, fetchFeedBackData, } = useContext(DataContext);
-  console.log("data", feedBackData);
 
   const [bannerData, setBannerData] = useState([]);
   // const [feedBackData, setFeedBackData] = useState([]);
