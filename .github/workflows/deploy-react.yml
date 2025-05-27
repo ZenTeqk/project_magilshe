@@ -68,6 +68,7 @@ jobs:
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
           CI: false
         run: |
+          echo "BASE URL is $REACT_APP_BASE_URL"
           npm install
           npm run build
 
