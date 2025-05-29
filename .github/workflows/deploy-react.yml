@@ -105,6 +105,7 @@ jobs:
         env:
           REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
           REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
+          REACT_APP_GMAP_API_KEY: ${{ secrets.REACT_APP_GMAP_API_KEY }}
           CI: false
         run: |
           npm install
