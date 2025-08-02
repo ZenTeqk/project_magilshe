@@ -10,14 +10,12 @@ import axios from "axios";
 import { useLocation } from "react-router";
 import { useDispatch } from "react-redux";
 import { setMeta } from "./redux/reducers/ChildReducer/MetaReducer";
-import { getConfiguration } from "./utils/cakeryAPI";
+
 function App() {
   const location = useLocation();
   const dispatch = useDispatch();
 
   const { isPreloaderShow } = useContext(DataContext);
-
-
 
   return (
     <main className="app_container">

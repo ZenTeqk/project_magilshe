@@ -198,7 +198,7 @@ export const DataProvider = ({ children }) => {
     };
 
     useEffect(() => {
-        getConfigurationList()
+        getConfigurationList();
     }, [])
 
 

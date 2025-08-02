@@ -69,9 +69,9 @@ const Footer = () => {
             <div className="address_section">
               <div className="contact">
                 <label>Contact</label>
-                <p>{configurationData?.mobile}</p>
-                <p>{configurationData?.email}</p>
-                <p>{configurationData?.company_address}</p>
+                <p>{configurationData?.mobile || "8939950010"}</p>
+                <p>{configurationData?.email || "magilshe@gmail.com"}</p>
+                <p>{configurationData?.company_address || "No 1/2, Janakiraman st, 83rd St, Muthurangam Block, West Jafferkhanpet, Chennai,Tamil Nadu 600083."}</p>
               </div>
             </div>
           </Grid>
