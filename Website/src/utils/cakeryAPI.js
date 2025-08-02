@@ -230,7 +230,7 @@ export const contactApi = (requestData) =>
 export const getOfferItemsApi = (requestData) =>
   new Promise((resolve, reject) => {
     cakeryAPI
-      .get(`/cake/get-latest-cake-data`, { params: requestData })
+      .get(`/cake/get-latest-cake-data/`, { params: requestData })
       .then((response) => {
         resolve({ status: "success", data: response.data?.data });
       })
@@ -253,7 +253,7 @@ export const getOfferPageApi = (requestData) =>
 export const getConfiguration = (requestData) =>
   new Promise((resolve, reject) => {
     cakeryAPI
-      .get(`/configuration/settings`, { params: requestData })
+      .get(`/configuration/settings/`, { params: requestData })
       .then((response) => {
         resolve({ status: "success", data: response.data?.data });
       })
