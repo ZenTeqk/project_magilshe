@@ -15,6 +15,7 @@ import AddOnGift from "../pages/GiftPage/AddOnGift";
 import PrivacyAndPolicy from "../pages/Policies/PrivacyAndPolicy";
 import TermsAndConditions from "../pages/Policies/TermsAndConditions";
 import OTPVerify from "../pages/Auth/OTPVerify";
+import Events from "../pages/Events/Events";
 
 const publicRoutes = [
     { path: "/home", component: <Home /> },
@@ -25,6 +26,8 @@ const publicRoutes = [
     { path: "/menu/:id", component: <MenuItemPreview /> },
     { path: "/privacy-policy", component: <PrivacyAndPolicy /> },
     { path: "/terms-conditions", component: <TermsAndConditions /> },
+    { path: "/events", component: <Events /> },
+
     {
         path: "/",
         exact: true,
@@ -32,17 +35,17 @@ const publicRoutes = [
     },
 ]
 
-const privateRoutes = [  
+const privateRoutes = [
     { path: "/cart", component: <Cart /> },
     { path: "/orders", component: <MyOrders /> },
     { path: "/add-on", component: <AddOnGift /> },
     { path: "/profile", component: <MyProfile /> },
 ]
 
-const loginRoutes = [    
+const loginRoutes = [
     { path: '/login', component: <Login /> },
-    { path: '/sign-up', component: <SignUp /> },  
-    { path: '/otp-verification', component: <OTPVerify/> },  
+    { path: '/sign-up', component: <SignUp /> },
+    { path: '/otp-verification', component: <OTPVerify /> },
 ]
 
 export { publicRoutes, privateRoutes, loginRoutes };
