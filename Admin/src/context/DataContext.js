@@ -50,6 +50,8 @@ import Banner from "../components/Dynamic_Banner/Banner";
 // import ManualOrderHome from "../components/Manual_Order/ManualOrderHome";
 import ManualOrder from "../components/Manual_Order/ManualOrder";
 import UserWiseReport from "../components/Reports/UserWiseReport/UserWiseReport";
+import Events from "../components/Events/Events";
+import EventsOrders from "../components/EventsOrders/EventsOrders";
 
 
 const DataContext = createContext({});
@@ -218,6 +220,22 @@ export const DataProvider = ({ children }) => {
       link: "/banner",
       icon: faImage,
       element: Banner,
+      accessRoles: "all",
+    },
+    {
+      label: "Events",
+      key: "events",
+      link: "/events",
+      icon: faImage,
+      element: Events,
+      accessRoles: "all",
+    },
+    {
+      label: "Event Order",
+      key: "event_orders",
+      link: "/event-orders",
+      icon: faImage,
+      element: EventsOrders,
       accessRoles: "all",
     },
     {

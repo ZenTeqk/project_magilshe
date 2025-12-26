@@ -333,5 +333,28 @@ export const getFeedBack = (requestData) =>
         reject(error.response?.data);
       });
   });
+export const getEvents = (requestData) =>
+  new Promise((resolve, reject) => {
+    cakeryAPI
+      .get(`event/get-all-data`, { params: requestData })
+      .then((response) => {
+        resolve({ status: "success", data: response?.data })
+      })
+      .catch((error) => {
+        reject(error.response?.data);
+      });
+  });
+
+export const SaveEvent = (requestData) =>
+  new Promise((resolve, reject) => {
+    cakeryAPI
+      .post(`event/save-event-order`, requestData)
+      .then((response) => {
+        resolve({ status: "success", data: response.data });
+      })
+      .catch((error) => {
+        reject(error.response?.data);
+      });
+  });
 
 export { cakeryAPI };

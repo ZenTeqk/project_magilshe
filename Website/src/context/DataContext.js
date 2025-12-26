@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useState } from 'react';
 import PropTypes from "prop-types";
-import { getAddressApi, getOrderApi, getOverallCakeMenuList, getSubCategoryListApi, getOfferItemsApi, getConfiguration, getProfileApi, getOfferPageApi, getMainCategoryListApi, getFeedBack } from '../utils/cakeryAPI';
+import { getAddressApi, getOrderApi, getOverallCakeMenuList, getSubCategoryListApi, getOfferItemsApi, getConfiguration, getProfileApi, getOfferPageApi, getMainCategoryListApi, getFeedBack, getEvents } from '../utils/cakeryAPI';
 import Cookies from 'universal-cookie';
 import { useLocation } from 'react-router-dom';
 import { meta_paths } from '../component/Meta/MetaPaths';
@@ -68,10 +68,20 @@ export const DataProvider = ({ children }) => {
             console.error("Error fetching Feedback data:", error);
         }
     };
+    const fetchEventsData = async () => {
+        try {
+            const response = await getEvents(); // Call the API
+
+            setFeedBackData(response?.data?.data); // Set the fetched data to the state
+        } catch (error) {
+            console.error("Error fetching Feedback data:", error);
+        }
+    };
 
 
     useEffect(() => {
         fetchFeedBackData();
+        fetchEventsData();
     }, []);
 
 
@@ -171,21 +181,21 @@ export const DataProvider = ({ children }) => {
                 let config_meta = getConfigurationResponse?.data?.meta;
 
                 if (typeof config_meta === "string") {
-                  try {
-                    config_meta = JSON.parse(config_meta);
-                  } catch (error) {
-                    console.error("Invalid JSON string in config_meta:", error);
-                    config_meta = {};
-                  }
+                    try {
+                        config_meta = JSON.parse(config_meta);
+                    } catch (error) {
+                        console.error("Invalid JSON string in config_meta:", error);
+                        config_meta = {};
+                    }
                 }
-                
+
                 let path_meta = config_meta?.[String(pathname)];
                 let meta = {
-                  meta_title: path_meta?.meta_title,
-                  keywords: path_meta?.content,
-                  meta_descriptions: path_meta?.meta_description,
-                  slug: path_meta?.slug,
-                  content: path_meta?.content,
+                    meta_title: path_meta?.meta_title,
+                    keywords: path_meta?.content,
+                    meta_descriptions: path_meta?.meta_description,
+                    slug: path_meta?.slug,
+                    content: path_meta?.content,
                 };
 
                 setMetaData(meta);
