@@ -42,4 +42,5 @@ urlpatterns = [
     path('sales/', include("sales.urls")),          #Sales
     path('tax/', include("tax.urls")),              #tax
     path('banner/', include("banner.urls")),        #banner
+    path('event/', include("event.urls")),        
 ]
