@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -26,6 +26,12 @@ import {
   GetEventsIndividualOrder,
   GetCakeUrl,
 } from "../../Constant/urls/urls";
+import theChennaiCakeryLogo from "../../assets/img/tcc-logo.png";
+import { Card } from "react-bootstrap";
+import ReactToPrint from "react-to-print";
+import { faPrint } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+
 
 /* ================= MAIN COMPONENT ================= */
 
@@ -34,7 +40,9 @@ const EventsOrders = () => {
   const [cakes, setCakes] = useState([]);
   const [open, setOpen] = useState(false);
   const [orderDetails, setOrderDetails] = useState(null);
-
+  const [showInvoice, setShowInvoice] = useState(false);
+  const invoiceRef = useRef(null);
+  console.log('orderDetails', orderDetails);
   /* ================= FETCH ALL ORDERS ================= */
 
   const getAllOrders = async () => {
@@ -129,23 +137,72 @@ const EventsOrders = () => {
 
       {/* ================= ORDER DETAILS MODAL ================= */}
 
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
-        
+      <Dialog open={open} onClose={() => { setOpen(false); setShowInvoice(false) }} maxWidth="md" fullWidth>
+
         {/* ===== MODAL TITLE WITH CLOSE ICON ===== */}
         <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          Order Details
-          <IconButton onClick={() => setOpen(false)}>
+          {showInvoice ? "Invoice" : "Order Details"}
+
+          <IconButton
+            onClick={() => {
+              setOpen(false);
+              setShowInvoice(false);
+            }}
+          >
             <CloseIcon />
           </IconButton>
         </DialogTitle>
 
         <DialogContent dividers>
-          {orderDetails && (
+          {!showInvoice && orderDetails ?
+            <Box display="flex" justifyContent="flex-end">
+              <Button
+                variant="contained"
+                color="primary"
+                style={{
+                  textTransform: "none",
+                  borderRadius: "5px",
+                }}
+                startIcon={<PrintIcon />}
+                onClick={() => setShowInvoice(true)}
+              >
+                View Bill
+              </Button>
+            </Box>
+            :
+            <Box display="flex" justifyContent="flex-end" gap={2} mb={1}>
+              <Button variant="contained" color="primary"
+                style={{
+                  textTransform: "none",
+                  borderRadius: "5px",
+                }}
+                onClick={() => setShowInvoice(false)}>
+                Back
+              </Button>
+              <ReactToPrint
+                trigger={() => (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    style={{
+                      textTransform: "none",
+                      borderRadius: "5px",
+                    }}
+                  >
+                    <FontAwesomeIcon icon={faPrint} className="mx-1" />
+                    Print Bill
+                  </Button>
+                )}
+                content={() => invoiceRef.current}
+              />
+            </Box>
+          }
+          {!showInvoice && orderDetails && (
             <>
               {/* ================= CUSTOMER INFO + PRINT ================= */}
 
               <Box
-                mb={3}
+                mb={2}
                 display="flex"
                 justifyContent="space-between"
                 alignItems="flex-start"
@@ -158,17 +215,6 @@ const EventsOrders = () => {
                   <Typography><b>Email:</b> {orderDetails.email}</Typography>
                   <Typography><b>Address:</b> {orderDetails.address}</Typography>
                   <Typography><b>Notes:</b> {orderDetails.notes}</Typography>
-                </Box>
-
-                {/* RIGHT : PRINT BUTTON */}
-                <Box>
-                  <Button
-                    variant="contained"
-                    startIcon={<PrintIcon />}
-                    onClick={() => window.print()}
-                  >
-                    Print
-                  </Button>
                 </Box>
               </Box>
 
@@ -229,13 +275,91 @@ const EventsOrders = () => {
 
               {/* ================= GRAND TOTAL ================= */}
 
-              <Box textAlign="right" mt={3}>
+              <Box textAlign="right" mt={2}>
                 <Typography variant="h6">
                   Grand Total: ₹ {orderDetails.total_amount}
                 </Typography>
               </Box>
             </>
           )}
+
+          {/* ================= INVOICE VIEW ================= */}
+          {showInvoice && (
+            <Card className="p-4 invoice-section" ref={invoiceRef}>
+
+              {/* HEADER */}
+              <div className="bill-header text-center">
+                <img src={theChennaiCakeryLogo} alt="logo" height={60} />
+                <h4 className="company-name">{orderDetails?.name}</h4>
+                <p className="address">
+                  Address: {orderDetails?.address}
+                </p>
+                <p className="phone">Ph: {orderDetails?.phone}</p>
+                <p className="email">Email: {orderDetails?.email}</p>
+              </div>
+
+              {/* INVOICE DETAILS */}
+              <Grid container spacing={2} mt={2}>
+                <Grid item md={4}>
+                  <p>Invoice No: #{orderDetails.id}</p>
+                  <p>Order No: #{orderDetails.id}</p>
+                  <p>Bill Mode: Cash</p>
+                </Grid>
+                <Grid item md={8} textAlign="right">
+                  <p>Order Date: {orderDetails.order_time}</p>
+                  <p>Bill Date: {orderDetails.delivery_time}</p>
+                </Grid>
+              </Grid>
+
+              {/* CUSTOMER */}
+              <div className="mt-3">
+                <h4>Customer Details</h4>
+                <h5>{orderDetails.name}</h5>
+                <p>{orderDetails.address}</p>
+                <Grid container>
+                  <Grid item md={6}>Ph: {orderDetails.phone}</Grid>
+                  <Grid item md={6} textAlign="right">
+                    Email: {orderDetails.email}
+                  </Grid>
+                </Grid>
+              </div>
+
+              {/* TABLE */}
+              <TableContainer component={Paper} sx={{ mt: 3 }}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>S.No</TableCell>
+                      <TableCell>Item</TableCell>
+                      <TableCell align="center">Qty</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="right">Total</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {orderDetails.cake_price_details.map((item, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{i + 1}</TableCell>
+                        <TableCell>{item.cake_name}</TableCell>
+                        <TableCell align="center">{item.qty}</TableCell>
+                        <TableCell align="right">{item.price}</TableCell>
+                        <TableCell align="right">
+                          {orderDetails.total_amount}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell colSpan={4} align="right"><b>Grand Total</b></TableCell>
+                      <TableCell align="right">
+                        <b>{orderDetails.total_amount}</b>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Card>
+          )}
+
         </DialogContent>
       </Dialog>
     </>
