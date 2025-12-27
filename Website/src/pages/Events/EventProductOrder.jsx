@@ -17,6 +17,7 @@ import {
     Close,
     DeleteOutline,
 } from "@mui/icons-material";
+import { SaveEvent } from "../../utils/cakeryAPI";
 
 const THEME_COLOR = "#B4584A";
 
@@ -75,33 +76,66 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
     );
 
     /* ================= PLACE ORDER ================= */
-    const placeOrder = () => {
+    const placeOrder = async () => {
+        // ================= VALIDATION =================
+        if (!form.name || !form.phone || !form.email || !form.address) {
+            alert("All fields are required");
+            return;
+        }
+
+        if (!/^\d{10}$/.test(form.phone)) {
+            alert("Phone number must be 10 digits");
+            return;
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+            alert("Please enter a valid email");
+            return;
+        }
+
+        if (!cartItems.length) {
+            alert("Cart is empty");
+            return;
+        }
+
+        // ================= PAYLOAD =================
         const payload = {
-            ...form,
+            name: form.name,
+            phone: form.phone,
+            email: form.email,
+            address: form.address,
+            notes: form.notes,
             total_amount: totalAmount,
             cake_price_details: cartItems.map((item) => ({
-                id: item.id,
+                product_id: item.id,
                 qty: item.qty,
                 variant: item.selectedVariant,
                 price: item.price,
             })),
         };
 
-        console.log("API PAYLOAD", payload);
+        console.log("FINAL API PAYLOAD 👉", payload);
 
-        // simulate API success
-        setTimeout(() => {
-            setSuccessOpen(true);
-            setCartItems([]);
-            setForm({
-                name: "",
-                phone: "",
-                email: "",
-                address: "",
-                notes: "",
-            });
-        }, 800);
+        try {
+            const response = await SaveEvent(payload);
+
+            if (response.status === "success") {
+                setSuccessOpen(true);
+                setCartItems([]);
+                setForm({
+                    name: "",
+                    phone: "",
+                    email: "",
+                    address: "",
+                    notes: "",
+                });
+            }
+        } catch (error) {
+            console.error("API ERROR", error);
+            alert("Order failed. Please try again.");
+        }
     };
+
 
     return (
         <>
@@ -291,10 +325,12 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
                         <TextField
                             label="Phone"
                             fullWidth
+                            inputProps={{ maxLength: 10 }}
                             value={form.phone}
-                            onChange={(e) =>
-                                setForm({ ...form, phone: e.target.value })
-                            }
+                            onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, "");
+                                setForm({ ...form, phone: value });
+                            }}
                         />
                         <TextField
                             label="Email"
