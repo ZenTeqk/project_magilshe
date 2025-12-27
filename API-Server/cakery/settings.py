@@ -72,7 +72,8 @@ INSTALLED_APPS = [
     'sales',
     'common',
     'tax',
-    'banner'
+    'banner',
+    'event'
 ]
 
 REST_FRAMEWORK = {
@@ -205,7 +206,7 @@ DATABASES = {
     #     'PORT' : 5432,
     #     'NAME' : 'cakery_local',
     #     'USER' : 'postgres',
-    #     'PASSWORD' : 'lintcloud',
+    #     'PASSWORD' : 'fayas@321',
     # }
 }
 

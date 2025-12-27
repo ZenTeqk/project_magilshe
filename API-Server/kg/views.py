@@ -51,6 +51,8 @@ from unit import models as unit_model
 from .models import Kg
 from .serializers import KgSerializer, GetKgSerializer
 
+logger = logging.getLogger('cakery')
+
 class SubUnitView(APIView):
 
     def get(self, request):
@@ -120,46 +122,48 @@ class KgListOperations(APIView):
     
     def post(self, request):
         try:
-            data = validate_request(request, request.data)
+            with transaction.atomic():
+                data = validate_request(request, request.data)
 
-            kg_value = data['kg']
-            description_value = data['description']
-            unit_value = data.get('unit', None)
+                kg_value = data['kg']
+                description_value = data['description']
+                unit_value = data.get('unit', None)
 
-            db_param = {
-                "kg": kg_value,
-                "description": description_value
-            }
+                db_param = {
+                    "kg": kg_value,
+                    "description": description_value
+                }
 
-            if unit_value:
-                db_param["unit"] = unit_model.unit.objects.get(id=int(unit_value))
+                if unit_value:
+                    db_param["unit"] = unit_model.unit.objects.get(id=int(unit_value))
 
-            m_id_get = data.get('id', None)
-            m_id = str(m_id_get) if m_id_get is not None else ''
+                m_id_get = data.get('id', None)
+                m_id = str(m_id_get) if m_id_get is not None else ''
 
-            # Check for duplicates excluding the current ID
-            if m_id and m_id.isdigit() and m_id != '0':
-                existing_entries = kg_model.Kg.objects.exclude(id=int(m_id))
-            else:
-                existing_entries = kg_model.Kg.objects.all()
+                # Check for duplicates excluding the current ID
+                if m_id and m_id.isdigit() and m_id != '0':
+                    existing_entries = kg_model.Kg.objects.exclude(id=int(m_id))
+                else:
+                    existing_entries = kg_model.Kg.objects.all()
 
-            if existing_entries.filter(kg=kg_value, unit=db_param.get("unit", None)).exists():
-                return Response({'message': 'Kg with this value, description, and unit already exists'}, status=400)
+                if existing_entries.filter(kg=kg_value, unit=db_param.get("unit", None)).exists():
+                    return Response({'message': 'Kg with this value, description, and unit already exists'}, status=400)
 
-            if m_id and m_id.isdigit() and m_id != '0':
-                db_param['updated_by'] = request.user
-                db_param['updated_on'] = timezone.now()
-                kg_model.Kg.objects.filter(id=int(m_id)).update(**db_param)
-                kg = kg_model.Kg.objects.get(id=int(m_id))
-                response = kg_serializer(kg)
-                return Response({'message': 'Kg Updated Successfully', 'data': response.data})
-            else:
-                db_param['created_by'] = request.user
-                db_param['created_on'] = timezone.now()
-                kg = kg_model.Kg.objects.create(**db_param)
-                response = kg_serializer(kg)
-                return Response({'message': 'Kg Created Successfully', 'data': response.data})
+                if m_id and m_id.isdigit() and m_id != '0':
+                    db_param['updated_by'] = request.user
+                    db_param['updated_on'] = timezone.now()
+                    kg_model.Kg.objects.filter(id=int(m_id)).update(**db_param)
+                    kg = kg_model.Kg.objects.get(id=int(m_id))
+                    response = kg_serializer(kg)
+                    return Response({'message': 'Kg Updated Successfully', 'data': response})
+                else:
+                    db_param['created_by'] = request.user
+                    db_param['created_on'] = timezone.now()
+                    kg = kg_model.Kg.objects.create(**db_param)
+                    response = kg_serializer(kg)
+                    return Response({'message': 'Kg Created Successfully', 'data': response})
 
         except Exception as e:
+            logger.exception(f"Create KG Error - ",e)
             print("Create Main Category Error - {}".format(e))
             raise APIException({'message': 'An error occurred during the operation.'})
