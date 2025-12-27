@@ -1,6 +1,6 @@
 import { ExitToApp } from "@mui/icons-material";
 
-export const BaseUrl = "http://localhost:8000/";
+export const BaseUrl = "https://api.magilshe.com/";
 
 
 // export const BaseUrl = "http://192.168.20.12:8000/"
