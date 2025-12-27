@@ -333,5 +333,35 @@ export const getFeedBack = (requestData) =>
         reject(error.response?.data);
       });
   });
+export const getEvents = (id, requestData = {}) =>
+  new Promise((resolve, reject) => {
+    console.log("ID inside getevents", id);
+    cakeryAPI
+      .get(`event/get-individual-data/${id}`, {
+        params: requestData,
+      })
+      .then((response) => {
+        resolve({
+          status: "success",
+          data: response?.data,
+        });
+      })
+      .catch((error) => {
+        reject(error?.response?.data || error);
+      });
+  });
+
+
+export const SaveEvent = (requestData) =>
+  new Promise((resolve, reject) => {
+    cakeryAPI
+      .post(`event/save-event-order`, requestData)
+      .then((response) => {
+        resolve({ status: "success", data: response.data });
+      })
+      .catch((error) => {
+        reject(error.response?.data);
+      });
+  });
 
 export { cakeryAPI };
