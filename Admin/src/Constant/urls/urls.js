@@ -1,6 +1,8 @@
 import { ExitToApp } from "@mui/icons-material";
 
-export const BaseUrl = process.env.REACT_APP_BASE_URL;
+export const BaseUrl = "http://localhost:8000/";
+
+
 // export const BaseUrl = "http://192.168.20.12:8000/"
 export const LoginUrl = "auth/login/";
 
@@ -80,5 +82,11 @@ export const ManualOrderCartUrl = "cart/add-manual-cart/"
 export const ManualOrderSave = "order/save/"
 
 export const checkCustomer = "customer/check-customer/"
+
+export const GetAllEventsUrl ="event/get-all-data"
+export const CreateEventsUrl = "event/"
+
+export const GetEventsAllOrder ="event/get-all-event-order"
+export const GetEventsIndividualOrder ="event/get-individual-event-order"
 
 
