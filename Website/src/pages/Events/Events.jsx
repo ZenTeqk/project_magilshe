@@ -8,7 +8,10 @@ import {
   CardContent,
   Button,
   Stack,
+  Fab,
+  Badge,
 } from "@mui/material";
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import { useParams } from "react-router";
 
 import EventProductOrder from "../../pages/Events/EventProductOrder";
@@ -23,71 +26,73 @@ const Events = () => {
   const [openCart, setOpenCart] = useState(false);
   const [cartItems, setCartItems] = useState([]);
 
-  /* ===== FETCH EVENT ===== */
+  /* ================= FETCH EVENT ================= */
   useEffect(() => {
     const fetchEventsData = async () => {
       try {
         const res = await getEvents(id);
-        console.log("EVENT DATA =>", res?.data?.data);
         setEventData(res?.data?.data || null);
       } catch (error) {
-        console.error("Error fetching events:", error);
+        console.error(error);
       }
     };
-
     if (id) fetchEventsData();
   }, [id]);
 
-  /* ===== ADD TO CART ===== */
+  /* ================= HELPERS ================= */
+  const getCartItem = (id) => cartItems.find((i) => i.id === id);
+
+  const updateQty = (id, type) => {
+    setCartItems((prev) =>
+      prev
+        .map((item) =>
+          item.id === id
+            ? {
+              ...item,
+              qty: type === "inc" ? item.qty + 1 : item.qty - 1,
+            }
+            : item
+        )
+        .filter((item) => item.qty > 0)
+    );
+  };
+
+  /* ================= ADD TO CART ================= */
   const handleAddToCart = (cake) => {
     const variants =
       cake?.price_list?.price_list?.map((v) => ({
         id: v.id,
         kg: v.kg,
-        label: `${v.kg} Kg`,
+        label: `${v.kg} ${cake?.unit?.name}`,
         price: v.cake_price_after_offer,
       })) || [];
 
     if (!variants.length) return;
 
-    // ✅ DEFAULT LOWEST PRICE
     const defaultVariant = variants.reduce((min, v) =>
       v.price < min.price ? v : min
     );
 
-    setCartItems((prev) => {
-      const exists = prev.find((i) => i.id === cake.id);
-
-      if (exists) {
-        return prev.map((i) =>
-          i.id === cake.id ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-
-      return [
-        ...prev,
-        {
-          id: cake.id,
-          name: cake.name,
-          image: cake?.images_list?.[0]?.url || "",
-          qty: 1,
-          variants,
-          selectedVariantId: defaultVariant.id,
-          selectedVariantKg: defaultVariant.kg,
-          price: defaultVariant.price,
-        },
-      ];
-    });
-
-    setOpenCart(true);
+    setCartItems((prev) => [
+      ...prev,
+      {
+        id: cake.id,
+        name: cake.name,
+        image: cake?.images_list?.[0]?.url || "",
+        qty: 1,
+        variants,
+        selectedVariantId: defaultVariant.id,
+        selectedVariantKg: defaultVariant.kg,
+        price: defaultVariant.price,
+        unit: cake?.unit?.name,
+      },
+    ]);
   };
 
-  /* ===== LOADING SAFETY ===== */
   if (!eventData) return null;
 
   return (
     <Box p={{ xs: 1, sm: 2, md: 3 }}>
-      {/* ================= EVENT BANNER ================= */}
       <Card
         sx={{
           mb: 4,
@@ -164,14 +169,7 @@ const Events = () => {
           </Grid>
         </Grid>
       </Card>
-
-      {/* ================= PRODUCTS ================= */}
-      <Typography
-        variant="h6"
-        fontWeight={700}
-        mb={2}
-        textAlign="center"
-      >
+      <Typography variant="h6" fontWeight={800} mb={2} textAlign="center">
         Products for this Event
       </Typography>
 
@@ -186,82 +184,142 @@ const Events = () => {
               Infinity
             ) || 0;
 
+          const cartItem = getCartItem(cake.id);
+
           return (
             <Grid item xs={6} sm={6} md={4} lg={3} key={cake.id}>
-  <Card
-    sx={{
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      borderRadius: 3,
-    }}
-  >
-    {/* IMAGE */}
-    <CardMedia
-      component="img"
-      image={cake?.images_list?.[0]?.url || ""}
-      alt={cake.name}
-      sx={{
-        height: 180,
-        objectFit: "cover",
-      }}
-    />
+              <Card
+                sx={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  borderRadius: 3,
+                }}
+              >
+                {/* ================= IMAGE (FIXED HEIGHT) ================= */}
+                <Box
+                  sx={{
+                    height: { xs: 140, sm: 160, md: 180 },
+                    width: "100%",
+                    overflow: "hidden",
+                  }}
+                >
+                  <CardMedia
+                    component="img"
+                    image={cake?.images_list?.[0]?.url || ""}
+                    alt={cake.name}
+                    sx={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                </Box>
 
-    {/* CONTENT */}
-    <CardContent
-      sx={{
-        flexGrow: 1,
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* TITLE – FIXED HEIGHT */}
-      <Typography
-        fontWeight={600}
-        sx={{
-          minHeight: 44,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-        }}
-      >
-        {cake.name}
-      </Typography>
+                {/* ================= CONTENT ================= */}
+                <CardContent
+                  sx={{
+                    flexGrow: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <Typography
+                    fontWeight={700}
+                    sx={{
+                      minHeight: 44,
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {cake.name}
+                  </Typography>
 
-      {/* PRICE */}
-      <Typography
-        fontWeight={700}
-        color={THEME_COLOR}
-        mt={0.5}
-      >
-        ₹{lowestPrice}
-      </Typography>
+                  <Typography fontWeight={800} color={THEME_COLOR}>
+                    ₹{lowestPrice}
+                  </Typography>
 
-      {/* BUTTON – ALWAYS BOTTOM */}
-      <Button
-        fullWidth
-        sx={{
-          mt: "auto",
-          backgroundColor: THEME_COLOR,
-          color: "#fff",
-          fontWeight: 600,
-          "&:hover": {
-            backgroundColor: "#9f3f35",
-          },
-        }}
-        onClick={() => handleAddToCart(cake)}
-      >
-        Add to Cart
-      </Button>
-    </CardContent>
-  </Card>
-</Grid>
+                  {/* ================= ADD / QTY ================= */}
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "end"
+                  }}>
+                    {!cartItem ? (
+                      <Button
+                        // fullWidth
+                        sx={{
+                          mt: "0.5rem",
+                          backgroundColor: THEME_COLOR,
+                          color: "#fff",
+                          fontWeight: 700,
+                          "&:hover": {
+                            backgroundColor: "#9f3f35",
+                          },
+                        }}
+                        onClick={() => handleAddToCart(cake)}
+                      >
+                        Add to Cart
+                      </Button>
+                    ) : (
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="center"
+                        spacing={1}
+                        sx={{
+                          mt: "0.5rem",
+                          border: "1px solid #ddd",
+                          borderRadius: 2,
+                          py: 0.5,
+                          maxWidth: "100%"
+                        }}
+                      >
+                        <Button
+                          size="small"
+                          onClick={() => updateQty(cake.id, "dec")}
+                        >
+                          −
+                        </Button>
 
+                        <Typography fontWeight={700}>
+                          {cartItem.qty}
+                        </Typography>
+
+                        <Button
+                          size="small"
+                          onClick={() => updateQty(cake.id, "inc")}
+                        >
+                          +
+                        </Button>
+                      </Stack>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Grid>
           );
         })}
       </Grid>
+
+      {/* ================= FLOATING CART ================= */}
+      {cartItems.length > 0 && (
+        <Fab
+          sx={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            backgroundColor: THEME_COLOR,
+            color: "#fff",
+          }}
+          onClick={() => setOpenCart(true)}
+        >
+          <Badge badgeContent={cartItems.length} color="error">
+            <ShoppingCartIcon />
+          </Badge>
+        </Fab>
+      )}
 
       {/* ================= CART MODAL ================= */}
       <EventProductOrder

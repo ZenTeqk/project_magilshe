@@ -22,6 +22,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import Collapse from "@mui/material/Collapse";
 
 import { SaveEvent } from "../../utils/cakeryAPI";
+import { showToast } from "../../component/common/ToastAlert";
 
 const THEME_COLOR = "#B4584A";
 
@@ -33,8 +34,6 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
     const [form, setForm] = useState({
         name: "",
         phone: "",
-        email: "",
-        address: "",
         notes: "",
     });
 
@@ -44,12 +43,12 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
             prev.map((item) =>
                 item.id === id
                     ? {
-                          ...item,
-                          qty:
-                              type === "inc"
-                                  ? item.qty + 1
-                                  : Math.max(1, item.qty - 1),
-                      }
+                        ...item,
+                        qty:
+                            type === "inc"
+                                ? item.qty + 1
+                                : Math.max(1, item.qty - 1),
+                    }
                     : item
             )
         );
@@ -61,11 +60,11 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
             prev.map((item) =>
                 item.id === id
                     ? {
-                          ...item,
-                          selectedVariantId: variant.id,
-                          selectedVariantKg: variant.kg,
-                          price: variant.price,
-                      }
+                        ...item,
+                        selectedVariantId: variant.id,
+                        selectedVariantKg: variant.kg,
+                        price: variant.price,
+                    }
                     : item
             )
         );
@@ -84,31 +83,29 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
 
     /* ================= PLACE ORDER ================= */
     const placeOrder = async () => {
-        if (!form.name || !form.phone || !form.email || !form.address) {
-            alert("All fields are required");
+        if (!form.name || !form.phone) {
+            showToast("All fields are required", "error");
             return;
         }
 
         if (!/^\d{10}$/.test(form.phone)) {
-            alert("Phone number must be 10 digits");
+            showToast("Phone number must be 10 digits");
             return;
         }
 
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-            alert("Enter valid email");
-            return;
-        }
+        // if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        //     alert("Enter valid email");
+        //     return;
+        // }
 
         if (!cartItems.length) {
-            alert("Cart is empty");
+            showToast("Cart is empty");
             return;
         }
 
         const payload = {
             name: form.name,
             phone: form.phone,
-            email: form.email,
-            address: form.address,
             notes: form.notes,
             total_amount: totalAmount,
             cake_price_details: cartItems.map((item) => ({
@@ -119,7 +116,7 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
                 price: item.price,
             })),
         };
-console.log("pay",payload);
+        console.log("pay", payload);
 
         try {
             const res = await SaveEvent(payload);
@@ -130,13 +127,11 @@ console.log("pay",payload);
                 setForm({
                     name: "",
                     phone: "",
-                    email: "",
-                    address: "",
                     notes: "",
                 });
             }
         } catch (err) {
-            alert("Order failed");
+            showToast("Order failed");
         }
     };
 
@@ -153,198 +148,198 @@ console.log("pay",payload);
 
                 <DialogContent>
                     <Box
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
-    mb={2}
->
-    <Typography fontWeight={800} fontSize={18}>
-        Cart Items ({cartItems.length})
-    </Typography>
+                        display="flex"
+                        justifyContent="space-between"
+                        alignItems="center"
+                        mb={2}
+                    >
+                        <Typography fontWeight={800} fontSize={18}>
+                            Cart Items ({cartItems.length})
+                        </Typography>
 
-    <IconButton onClick={() => setShowCart((prev) => !prev)}>
-        {showCart ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-    </IconButton>
-</Box>
-<Collapse in={showCart}>
-                    <Stack spacing={3}>
-                        {cartItems.map((item) => (
-                            <Box
-                                key={item.id}
-                                sx={{
-                                    p: 2,
-                                    border: "1px solid #eee",
-                                    borderRadius: 3,
-                                }}
-                            >
-                                {/* HEADER */}
-                                <Stack direction="row" spacing={2}>
-                                    <Box
-                                        component="img"
-                                        src={item.image}
-                                        sx={{
-                                            width: 70,
-                                            height: 70,
-                                            borderRadius: 2,
-                                            objectFit: "cover",
-                                        }}
-                                    />
-
-                                    <Box flex={1}>
-                                        <Typography fontWeight={700}>
-                                            {item.name}
-                                        </Typography>
-                                        <Typography
-                                            fontWeight={700}
-                                            color={THEME_COLOR}
-                                        >
-                                            ₹{item.price}
-                                        </Typography>
-                                        <Typography
-                                            variant="caption"
-                                            color="text.secondary"
-                                        >
-                                            Selected: {item.selectedVariantKg} Kg
-                                        </Typography>
-                                    </Box>
-
-                                    <IconButton
-                                        color="error"
-                                        onClick={() =>
-                                            removeItem(item.id)
-                                        }
-                                    >
-                                        <DeleteOutline />
-                                    </IconButton>
-                                </Stack>
-
-                                {/* VARIANTS & QTY */}
-                                <Stack
-                                    direction="row"
-                                    justifyContent="space-between"
-                                    mt={2}
+                        <IconButton onClick={() => setShowCart((prev) => !prev)}>
+                            {showCart ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                    </Box>
+                    <Collapse in={showCart}>
+                        <Stack spacing={3}>
+                            {cartItems.map((item) => (
+                                <Box
+                                    key={item.id}
+                                    sx={{
+                                        p: 2,
+                                        border: "1px solid #eee",
+                                        borderRadius: 3,
+                                    }}
                                 >
-                                    {/* VARIANTS */}
-                                    <Box>
-                                        <Typography
-                                            variant="caption"
-                                            fontWeight={600}
-                                        >
-                                            Select Variant
-                                        </Typography>
-
-                                        <Stack direction="row" spacing={1} mt={1}>
-                                            {item.variants.map((v) => (
-                                                <Button
-                                                    key={v.id}
-                                                    size="small"
-                                                    variant={
-                                                        item.selectedVariantId ===
-                                                        v.id
-                                                            ? "contained"
-                                                            : "outlined"
-                                                    }
-                                                    sx={{
-                                                        borderRadius: 2,
-                                                        fontWeight: 600,
-                                                        backgroundColor:
-                                                            item.selectedVariantId ===
-                                                            v.id
-                                                                ? THEME_COLOR
-                                                                : "transparent",
-                                                        color:
-                                                            item.selectedVariantId ===
-                                                            v.id
-                                                                ? "#fff"
-                                                                : "text.primary",
-                                                        borderColor:
-                                                            THEME_COLOR,
-                                                    }}
-                                                    onClick={() =>
-                                                        handleVariantChange(
-                                                            item.id,
-                                                            v
-                                                        )
-                                                    }
-                                                >
-                                                    {v.label}
-                                                </Button>
-                                            ))}
-                                        </Stack>
-                                    </Box>
-
-                                    {/* QTY */}
-                                    <Box textAlign="center">
-                                        <Typography
-                                            variant="caption"
-                                            fontWeight={600}
-                                        >
-                                            Qty
-                                        </Typography>
-
-                                        <Stack
-                                            direction="row"
-                                            alignItems="center"
-                                            spacing={1}
-                                            mt={1}
+                                    {/* HEADER */}
+                                    <Stack direction="row" spacing={2}>
+                                        <Box
+                                            component="img"
+                                            src={item.image}
                                             sx={{
-                                                border: "1px solid #ddd",
+                                                width: 70,
+                                                height: 70,
                                                 borderRadius: 2,
-                                                px: 1,
+                                                objectFit: "cover",
                                             }}
-                                        >
-                                            <IconButton
-                                                size="small"
-                                                onClick={() =>
-                                                    updateQty(item.id, "dec")
-                                                }
-                                            >
-                                                <Remove />
-                                            </IconButton>
+                                        />
 
+                                        <Box flex={1}>
                                             <Typography fontWeight={700}>
-                                                {item.qty}
+                                                {item.name}
+                                            </Typography>
+                                            <Typography
+                                                fontWeight={700}
+                                                color={THEME_COLOR}
+                                            >
+                                                ₹{item.price}
+                                            </Typography>
+                                            <Typography
+                                                variant="caption"
+                                                color="text.secondary"
+                                            >
+                                                Selected: {item?.selectedVariantKg} {item?.unit}
+                                            </Typography>
+                                        </Box>
+
+                                        <IconButton
+                                            color="error"
+                                            onClick={() =>
+                                                removeItem(item.id)
+                                            }
+                                        >
+                                            <DeleteOutline />
+                                        </IconButton>
+                                    </Stack>
+
+                                    {/* VARIANTS & QTY */}
+                                    <Stack
+                                        direction="row"
+                                        justifyContent="space-between"
+                                        mt={2}
+                                    >
+                                        {/* VARIANTS */}
+                                        <Box>
+                                            <Typography
+                                                variant="caption"
+                                                fontWeight={600}
+                                            >
+                                                Select Variant
                                             </Typography>
 
-                                            <IconButton
-                                                size="small"
-                                                onClick={() =>
-                                                    updateQty(item.id, "inc")
-                                                }
-                                            >
-                                                <Add />
-                                            </IconButton>
-                                        </Stack>
-                                    </Box>
-                                </Stack>
-                            </Box>
-                        ))}
-                    </Stack>
-</Collapse>
-                    <Box
-    mt={3}
-    display="flex"
-    justifyContent="space-between"
-    alignItems="center"
->
-    {/* TOTAL - LEFT */}
-    <Typography fontWeight={800} color={THEME_COLOR}>
-        Total: ₹{totalAmount}
-    </Typography>
+                                            <Stack direction="row" spacing={1} mt={1}>
+                                                {item.variants.map((v) => (
+                                                    <Button
+                                                        key={v.id}
+                                                        size="small"
+                                                        variant={
+                                                            item.selectedVariantId ===
+                                                                v.id
+                                                                ? "contained"
+                                                                : "outlined"
+                                                        }
+                                                        sx={{
+                                                            borderRadius: 2,
+                                                            fontWeight: 600,
+                                                            backgroundColor:
+                                                                item.selectedVariantId ===
+                                                                    v.id
+                                                                    ? THEME_COLOR
+                                                                    : "transparent",
+                                                            color:
+                                                                item.selectedVariantId ===
+                                                                    v.id
+                                                                    ? "#fff"
+                                                                    : "text.primary",
+                                                            borderColor:
+                                                                THEME_COLOR,
+                                                        }}
+                                                        onClick={() =>
+                                                            handleVariantChange(
+                                                                item.id,
+                                                                v
+                                                            )
+                                                        }
+                                                    >
+                                                        {v.label}
+                                                    </Button>
+                                                ))}
+                                            </Stack>
+                                        </Box>
 
-    {/* VIEW MORE PRODUCTS - RIGHT */}
-    <Button
-        variant="outlined"
-        sx={{
-            borderColor: THEME_COLOR,
-            color: THEME_COLOR,
-            fontWeight: 700,
-        }}
-        onClick={onClose}
-    >
-        View More Products
-    </Button>
-</Box>
+                                        {/* QTY */}
+                                        <Box textAlign="center">
+                                            <Typography
+                                                variant="caption"
+                                                fontWeight={600}
+                                            >
+                                                Qty
+                                            </Typography>
+
+                                            <Stack
+                                                direction="row"
+                                                alignItems="center"
+                                                spacing={1}
+                                                mt={1}
+                                                sx={{
+                                                    border: "1px solid #ddd",
+                                                    borderRadius: 2,
+                                                    px: 1,
+                                                }}
+                                            >
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() =>
+                                                        updateQty(item.id, "dec")
+                                                    }
+                                                >
+                                                    <Remove />
+                                                </IconButton>
+
+                                                <Typography fontWeight={700}>
+                                                    {item.qty}
+                                                </Typography>
+
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() =>
+                                                        updateQty(item.id, "inc")
+                                                    }
+                                                >
+                                                    <Add />
+                                                </IconButton>
+                                            </Stack>
+                                        </Box>
+                                    </Stack>
+                                </Box>
+                            ))}
+                        </Stack>
+                    </Collapse>
+                    <Box
+                        mt={3}
+                        display="flex"
+                        justifyContent="space-between"
+                        alignItems="center"
+                    >
+                        {/* TOTAL - LEFT */}
+                        <Typography fontWeight={800} color={THEME_COLOR}>
+                            Total: ₹{totalAmount}
+                        </Typography>
+
+                        {/* VIEW MORE PRODUCTS - RIGHT */}
+                        <Button
+                            variant="outlined"
+                            sx={{
+                                borderColor: THEME_COLOR,
+                                color: THEME_COLOR,
+                                fontWeight: 700,
+                            }}
+                            onClick={onClose}
+                        >
+                            View More Products
+                        </Button>
+                    </Box>
 
 
                     {/* FORM */}
@@ -371,23 +366,23 @@ console.log("pay",payload);
                             }
                         />
 
-                        <TextField
+                        {/* <TextField
                             label="Email"
                             fullWidth
                             value={form.email}
                             onChange={(e) =>
                                 setForm({ ...form, email: e.target.value })
                             }
-                        />
+                        /> */}
 
-                        <TextField
+                        {/* <TextField
                             label="Address"
                             fullWidth
                             value={form.address}
                             onChange={(e) =>
                                 setForm({ ...form, address: e.target.value })
                             }
-                        />
+                        /> */}
 
                         <TextField
                             label="Notes"
@@ -408,6 +403,7 @@ console.log("pay",payload);
                             color: "#fff",
                             fontWeight: 700,
                         }}
+                        disabled={!form?.name || !form?.phone || !cartItems.length}
                         onClick={placeOrder}
                     >
                         Place Order
