@@ -106,6 +106,8 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
         const payload = {
             name: form.name,
             phone: form.phone,
+            address: "Chennai",
+            email: "cakerygmail.com",
             notes: form.notes,
             total_amount: totalAmount,
             cake_price_details: cartItems.map((item) => ({
