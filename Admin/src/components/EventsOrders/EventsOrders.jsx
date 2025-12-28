@@ -88,6 +88,7 @@ const EventsOrders = () => {
     );
   };
 
+
   return (
     <>
       {/* ================= ORDERS TABLE ================= */}
@@ -221,7 +222,7 @@ const EventsOrders = () => {
               {/* ================= CAKE DETAILS ================= */}
 
               <Grid container spacing={2}>
-                {orderDetails.cake_price_details?.map((item, index) => {
+                {orderDetails?.cake_price_details?.map((item, index) => {
                   const cake = getCakeById(item.cake_id);
                   const variant = getVariantById(cake, item.id);
 
@@ -290,12 +291,11 @@ const EventsOrders = () => {
               {/* HEADER */}
               <div className="bill-header text-center">
                 <img src={theChennaiCakeryLogo} alt="logo" height={60} />
-                <h4 className="company-name">{orderDetails?.name}</h4>
+                <h4 className="company-name">{" magilshe"}</h4>
                 <p className="address">
-                  Address: {orderDetails?.address}
-                </p>
-                <p className="phone">Ph: {orderDetails?.phone}</p>
-                <p className="email">Email: {orderDetails?.email}</p>
+                  Address: {"No 1/2, Janakiraman st, 83rd St, Muthurangam Block, West Jafferkhanpet, Chennai,Tamil Nadu 600083."}</p>
+                <p className="phone">Ph: {orderDetails?.phone || "8939950010"}</p>
+                <p className="email">Email: {orderDetails?.email || "magilshe@gmail.com"}</p>
               </div>
 
               {/* INVOICE DETAILS */}
@@ -303,23 +303,23 @@ const EventsOrders = () => {
                 <Grid item md={4}>
                   <p>Invoice No: #{orderDetails.id}</p>
                   <p>Order No: #{orderDetails.id}</p>
-                  <p>Bill Mode: Cash</p>
+                  {/* <p>Bill Mode: Cash</p> */}
                 </Grid>
-                <Grid item md={8} textAlign="right">
+                {/* <Grid item md={8} textAlign="right">
                   <p>Order Date: {orderDetails.order_time}</p>
                   <p>Bill Date: {orderDetails.delivery_time}</p>
-                </Grid>
+                </Grid> */}
               </Grid>
 
               {/* CUSTOMER */}
               <div className="mt-3">
                 <h4>Customer Details</h4>
                 <h5>{orderDetails.name}</h5>
-                <p>{orderDetails.address}</p>
+                {/* <p>{orderDetails.address}</p> */}
                 <Grid container>
                   <Grid item md={6}>Ph: {orderDetails.phone}</Grid>
                   <Grid item md={6} textAlign="right">
-                    Email: {orderDetails.email}
+                    {/* Email: {orderDetails.email} */}
                   </Grid>
                 </Grid>
               </div>
@@ -330,33 +330,56 @@ const EventsOrders = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>S.No</TableCell>
-                      <TableCell>Item</TableCell>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Unit</TableCell>
                       <TableCell align="center">Qty</TableCell>
                       <TableCell align="right">Price</TableCell>
                       <TableCell align="right">Total</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {orderDetails.cake_price_details.map((item, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{i + 1}</TableCell>
-                        <TableCell>{item.cake_name}</TableCell>
-                        <TableCell align="center">{item.qty}</TableCell>
-                        <TableCell align="right">{item.price}</TableCell>
-                        <TableCell align="right">
-                          {orderDetails.total_amount}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {orderDetails?.cake_price_details?.map((item, i) => {
+                      const cake = getCakeById(item.cake_id);
+                      const variantDetails = getVariantById(cake, item.id);
+
+                      const variant = cake?.price_list?.find(
+                        (p) => p.id === item.id
+                      );
+
+                      const kg = variant?.kg || 0;
+                      const price = variantDetails?.price || 0;
+                      console.log('variant', variant);
+                      const qty = item?.qty || 0;
+                      const total = price * qty;
+                      const cakeName = cake?.name || "Unknown Cake";
+
+                      return (
+                        <TableRow key={i}>
+                          <TableCell>{i + 1}</TableCell>
+                          <TableCell align="left">{cakeName}</TableCell>
+                          <TableCell align="left">{kg} Kg</TableCell>
+                          <TableCell align="center">{qty}</TableCell>
+                          <TableCell align="right">₹ {price}</TableCell>
+                          <TableCell align="right">₹ {total}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+
+                    {/* ===== GRAND TOTAL ROW ===== */}
                     <TableRow>
-                      <TableCell colSpan={4} align="right"><b>Grand Total</b></TableCell>
+                      <TableCell colSpan={5} align="right">
+                        <b>Grand Total</b>
+                      </TableCell>
                       <TableCell align="right">
-                        <b>{orderDetails.total_amount}</b>
+                        <b>₹ {orderDetails?.total_amount}</b>
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
+              <p className="footer-text mt-4 text-center">
+                <b>Thank you for your Business!...</b>
+              </p>
             </Card>
           )}
 
