@@ -43,7 +43,6 @@ const EventsOrders = () => {
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
 
-
   /* ================= FETCH ALL ORDERS ================= */
 
   const getAllOrders = async () => {
