@@ -42,7 +42,7 @@ const EventsOrders = () => {
   const [orderDetails, setOrderDetails] = useState(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const invoiceRef = useRef(null);
-  console.log('orderDetails', orderDetails);
+
   /* ================= FETCH ALL ORDERS ================= */
 
   const getAllOrders = async () => {
@@ -345,19 +345,18 @@ const EventsOrders = () => {
                       const variant = cake?.price_list?.find(
                         (p) => p.id === item.id
                       );
-
                       const kg = variant?.kg || 0;
                       const price = variantDetails?.price || 0;
-                      console.log('variant', variant);
                       const qty = item?.qty || 0;
                       const total = price * qty;
-                      const cakeName = cake?.name || "Unknown Cake";
+                      const cakeVariant = cake?.unit?.name;
+                      const cakeName = cake?.name;
 
                       return (
                         <TableRow key={i}>
                           <TableCell>{i + 1}</TableCell>
                           <TableCell align="left">{cakeName}</TableCell>
-                          <TableCell align="left">{kg} Kg</TableCell>
+                          <TableCell align="left">{kg}{cakeVariant}</TableCell>
                           <TableCell align="center">{qty}</TableCell>
                           <TableCell align="right">₹ {price}</TableCell>
                           <TableCell align="right">₹ {total}</TableCell>
