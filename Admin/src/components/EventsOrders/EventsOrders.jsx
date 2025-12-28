@@ -213,8 +213,6 @@ const EventsOrders = () => {
                 <Box>
                   <Typography><b>Name:</b> {orderDetails.name}</Typography>
                   <Typography><b>Phone:</b> {orderDetails.phone}</Typography>
-                  <Typography><b>Email:</b> {orderDetails.email}</Typography>
-                  <Typography><b>Address:</b> {orderDetails.address}</Typography>
                   <Typography><b>Notes:</b> {orderDetails.notes}</Typography>
                 </Box>
               </Box>
@@ -230,7 +228,7 @@ const EventsOrders = () => {
                   const price = variant?.price || 0;
                   const qty = item.qty || 0;
                   const total = price * qty;
-
+                  const cakeVariant = cake?.unit?.name;
                   const cakeImage = cake?.images?.[0]?.url;
 
                   return (
@@ -254,7 +252,7 @@ const EventsOrders = () => {
                         </Typography>
 
                         <Typography variant="body2">
-                          Variant: <b>{kg} KG</b>
+                          Variant: <b>{kg} {cakeVariant}</b>
                         </Typography>
 
                         <Typography variant="body2">
@@ -294,8 +292,8 @@ const EventsOrders = () => {
                 <h4 className="company-name">{" magilshe"}</h4>
                 <p className="address">
                   Address: {"No 1/2, Janakiraman st, 83rd St, Muthurangam Block, West Jafferkhanpet, Chennai,Tamil Nadu 600083."}</p>
-                <p className="phone">Ph: {orderDetails?.phone || "8939950010"}</p>
-                <p className="email">Email: {orderDetails?.email || "magilshe@gmail.com"}</p>
+                <p className="phone">Ph: {"8939950010"}</p>
+                {/* <p className="email">Email!: {orderDetails?.email || "magilshe@gmail.com"}</p> */}
               </div>
 
               {/* INVOICE DETAILS */}
@@ -341,6 +339,8 @@ const EventsOrders = () => {
                     {orderDetails?.cake_price_details?.map((item, i) => {
                       const cake = getCakeById(item.cake_id);
                       const variantDetails = getVariantById(cake, item.id);
+                      console.log('variantDetails',variantDetails);
+                      console.log('cake',cake);
 
                       const variant = cake?.price_list?.find(
                         (p) => p.id === item.id
