@@ -1,9 +1,9 @@
 import { ExitToApp } from "@mui/icons-material";
 
-export const BaseUrl = "https://api.magilshe.com/";
+// export const BaseUrl = "https://api.magilshe.com/";
 
 
-// export const BaseUrl = "http://192.168.20.12:8000/"
+export const BaseUrl = "http://localhost:8000"
 export const LoginUrl = "auth/login/";
 
 export const CreateMainCategoryUrl = "category/main-category";
@@ -65,13 +65,13 @@ export const GetOrderReportUrl = "reports/order-report?";
 export const GetUserWiseReportUrl = "order/get-customer-order?";
 
 
-export const AddPurchase ="purchase/receivings/";
+export const AddPurchase = "purchase/receivings/";
 export const GetPurchase = "purchase/receivings/";
 export const PurchaseUrl = "purchase/receivings";
 export const PurchaseBillUrl = "purchase/receivings/bill";
 
-export const PrivacyPolicyUrl ="configuration/privacy-policy/"
-export const TermsConditionsUrl ="configuration/terms-and-conditions/"
+export const PrivacyPolicyUrl = "configuration/privacy-policy/"
+export const TermsConditionsUrl = "configuration/terms-and-conditions/"
 
 export const GetDashboardDataUrl = "dashboard/home/"
 
@@ -83,10 +83,12 @@ export const ManualOrderSave = "order/save/"
 
 export const checkCustomer = "customer/check-customer/"
 
-export const GetAllEventsUrl ="event/get-all-data"
+export const GetAllEventsUrl = "event/get-all-data"
 export const CreateEventsUrl = "event/"
 
-export const GetEventsAllOrder ="event/get-all-event-order"
-export const GetEventsIndividualOrder ="event/get-individual-event-order"
+export const GetEventsAllOrder = "event/get-all-event-order"
+export const GetEventsIndividualOrder = "event/get-individual-event-order"
+
+export const UpdateEventOrder = "event/update-status"
 
 
