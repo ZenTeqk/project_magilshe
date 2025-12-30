@@ -1,9 +1,7 @@
 import { ExitToApp } from "@mui/icons-material";
 
-// export const BaseUrl = "https://api.magilshe.com/";
-
-
-export const BaseUrl = "http://localhost:8000"
+export const BaseUrl = "https://api.magilshe.com/";
+// export const BaseUrl = "http://localhost:8000"
 export const LoginUrl = "auth/login/";
 
 export const CreateMainCategoryUrl = "category/main-category";
