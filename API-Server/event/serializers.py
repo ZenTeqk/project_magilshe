@@ -39,7 +39,9 @@ def event_order_serializer(obj):
         "email" : obj.email,
         "notes" : obj.notes,
         "address" : obj.address,
-        "total_amount" : obj.total_amount
+        "total_amount" : obj.total_amount,
+        "ordered_time" : obj.ordered_time,
+        "order_status" : obj.order_status
     }
 
     cake_price_details = []
