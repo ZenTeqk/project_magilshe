@@ -44,6 +44,7 @@ class EventOrder(models.Model):
     total_amount = models.PositiveIntegerField(default=0)
     status=models.BooleanField(default=True)    
     ordered_time = models.DateTimeField(auto_now_add=True, null=True)
+    order_status = models.PositiveIntegerField(default=1)
 
 
     class Meta:

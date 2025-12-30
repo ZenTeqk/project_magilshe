@@ -8,4 +8,5 @@ urlpatterns = [
     path("save-event-order", views.SaveEventOrder.as_view(), name="save-event-order"),
     path("get-all-event-order", views.GetAllEventOrder.as_view(), name="get-all-event-order"),
     path("get-individual-event-order/<int:id>", views.GetIndividualEventOrderData.as_view(), name="get-individual-event-order"),
+    path("update-status", views.UpdateEventOrder.as_view(), name="update-event-order-status")
 ]

@@ -234,3 +234,31 @@ class GetIndividualEventOrderData(APIView):
             data = None
 
         return Response({'data' : data})
+    
+
+
+
+class UpdateEventOrder(APIView):
+    def post(self, request):
+        try:
+            data = validate_request(request, request.data)
+            order_status = data.get('order_status', None)
+            order_id = data.get('id', None)
+
+            if not order_status:
+                raise APIException('Order Status Missing')
+
+            if not order_id:
+                raise APIException('Order Id Missing')
+            
+            event_order = EventOrder.objects.filter(id=int(order_id))
+
+            if event_order.exists():            
+                event_order.update(order_status=int(order_status))
+            else:
+                raise APIException('Invalid Order ID')            
+
+            return Response({'message' : 'Status Updated Successfully!', 'data' : event_order_serializer(event_order.first())})
+        except Exception as e:
+            logger.exception(f"Update Event Order Error - {e}")
+            raise APIException({'message' : custom_error_message})
