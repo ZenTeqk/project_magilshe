@@ -16,6 +16,7 @@ import PrivacyAndPolicy from "../pages/Policies/PrivacyAndPolicy";
 import TermsAndConditions from "../pages/Policies/TermsAndConditions";
 import OTPVerify from "../pages/Auth/OTPVerify";
 import Events from "../pages/Events/Events";
+import FAQ from "../pages/Faq/FAQ";
 
 const publicRoutes = [
     { path: "/home", component: <Home /> },
@@ -27,6 +28,7 @@ const publicRoutes = [
     { path: "/privacy-policy", component: <PrivacyAndPolicy /> },
     { path: "/terms-conditions", component: <TermsAndConditions /> },
     { path: "/events/:id", component: <Events /> },
+    { path: "/faq", component: <FAQ /> },
 
     {
         path: "/",

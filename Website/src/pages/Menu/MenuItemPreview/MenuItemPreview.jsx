@@ -3,7 +3,7 @@ import Slider from "react-slick";
 import "./MenuItemPreview.scss";
 import { Box, Typography, Button, Grid, TextField, Breadcrumbs, Link, IconButton, MenuItem, Select, FormControl, Skeleton } from "@mui/material";
 import PropTypes from "prop-types";
-import { FaChevronUp, FaChevronDown } from "react-icons/fa";
+import { FaChevronUp, FaChevronDown, FaWhatsapp, FaLeaf } from "react-icons/fa";
 import { FaArrowRight } from "react-icons/fa6";
 import { MdIosShare } from "react-icons/md";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -41,17 +41,45 @@ function MenuItemPreview() {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [customizationFormError, setCustomizationFormError] = useState({});
 
+  const safeValue = (value, fallback) => {
+    if (
+      value === null ||
+      value === undefined ||
+      String(value).trim() === "" ||
+      String(value).trim().toLowerCase() === "null"
+    ) {
+      return fallback;
+    }
+    return value;
+  };
+
   const getItemDetails = async () => {
     try {
       const getCakeAPIResponse = await getMenuApi(id);
+      const cakeName = menuItemDetails?.name || "Cake";
 
       let meta = {
-        "meta_title": getCakeAPIResponse.data.meta_title,
-        "keywords": getCakeAPIResponse.data.content,
-        "meta_descriptions": getCakeAPIResponse.data.meta_description,
-        "slug": getCakeAPIResponse.data.slug,
-        "content": getCakeAPIResponse.data.content,
-      }
+        meta_title: safeValue(
+          getCakeAPIResponse?.data?.meta_title,
+          `${cakeName} | Freshly Baked Cake Online`
+        ),
+        keywords: safeValue(
+          getCakeAPIResponse?.data?.content,
+          `${cakeName}, buy ${cakeName} online, fresh cake, birthday cake`
+        ),
+        meta_description: safeValue(
+          getCakeAPIResponse?.data?.meta_description,
+          `Order ${cakeName} online. Freshly baked cakes with fast delivery.`
+        ),
+        slug: safeValue(
+          getCakeAPIResponse?.data?.slug,
+          cakeName.toLowerCase().trim().replace(/\s+/g, "-")
+        ),
+        content: safeValue(
+          getCakeAPIResponse?.data?.content,
+          `${cakeName}, online cake order, cake delivery`
+        ),
+      };
       setMetaData(meta)
       setMenuItemDetails(getCakeAPIResponse?.data);
       setSliderImageLength(getCakeAPIResponse?.data?.images?.length)
@@ -220,6 +248,27 @@ function MenuItemPreview() {
     window.scrollTo(0, 0);
   }, []);
 
+  const { REACT_APP_WHATSAPP_NUMBER } = process.env;
+  const phoneNumber = REACT_APP_WHATSAPP_NUMBER ?? "919940427774";
+
+  const handleWhatsappEnquiry = () => {
+    const message = `Hello, I would like to enquire about this cake.
+
+      Cake Name: ${menuItemDetails?.name}
+
+      Available Prices:
+      ${menuItemDetails.price_list
+        .map((item) => `- ${item.kg} Kg : ₹${item.cake_price_after_offer}`)
+        .join("\n")}
+
+      Please share more details.`;
+
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(
+      message
+    )}`;
+    window.open(whatsappUrl, "_blank");
+  }
+
 
   return (
     <>
@@ -294,6 +343,25 @@ function MenuItemPreview() {
             <Typography className="mb-1 cake-content">
               {menuItemDetails ? menuItemDetails?.description : <Skeleton animation="wave" height={"100px"} />}
             </Typography>
+
+            <div className="flex gap-2 mb-3">
+              <div
+                className="max-w-fit text-sm font-medium text-[#059669] bg-[#ecfdf5] rounded-xl border-1 border-[#a7f3d0] flex items-center gap-1 px-2 py-1"
+                onClick={() => {
+                  handleWhatsappEnquiry()
+                }}
+              >
+                <FaLeaf /> Pure Veg
+              </div>
+              <div
+                className="max-w-fit cursor-pointer text-sm font-medium text-[#059669] bg-[#ecfdf5] rounded-xl border-1 border-[#a7f3d0] flex items-center gap-1 px-2 py-1"
+                onClick={() => {
+                  handleWhatsappEnquiry()
+                }}
+              >
+                <FaWhatsapp /> Get more details on WhatsApp
+              </div>
+            </div>
             <Grid container spacing={2}>
               <Grid item md={9} xs={12}>
                 {/* {menuItemDetails?.unit?.is_variant && ( */}
@@ -460,7 +528,7 @@ function MenuItemPreview() {
       </div>
       <section className="choose-favourite-cake-section">
         <div className="mt-5">
-          <h1 className="heading category-title" style={{ width: "100%", textAlign: "center"}}>Recommended Product</h1>
+          <h1 className="heading category-title" style={{ width: "100%", textAlign: "center" }}>Recommended Product</h1>
           <ProductSlider />
         </div>
       </section>

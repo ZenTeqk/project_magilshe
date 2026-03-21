@@ -68,7 +68,7 @@ const MenuList = () => {
   }
 
   useEffect(() => {
-    if(selectedCategory){
+    if (selectedCategory) {
       let filterValue = findSubcategoryDetails(selectedCategory)
 
       setSelectedMainCategory(filterValue?.mainCategoryName);
@@ -110,11 +110,11 @@ const MenuList = () => {
 
   useEffect(() => {
 
-    let selectcedCategoryFilter =  selectedCategory || "All"
+    let selectcedCategoryFilter = selectedCategory || "All"
     const filterList = menuListObj.filter((cake) => {
 
       const matchesCategory =
-      selectcedCategoryFilter === "All" ||
+        selectcedCategoryFilter === "All" ||
         cake?.sub_category?.name === selectcedCategoryFilter ||
         cake?.main_category?.name === selectcedCategoryFilter;
 
@@ -226,6 +226,7 @@ const MenuList = () => {
                       data?.price_list?.[0]?.cake_price_after_offer
                     }
                     id={data?.id}
+                    cakeData={data}
                   />
                 ))
               ) : (
