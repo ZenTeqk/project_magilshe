@@ -339,8 +339,6 @@ const EventsOrders = () => {
                     {orderDetails?.cake_price_details?.map((item, i) => {
                       const cake = getCakeById(item.cake_id);
                       const variantDetails = getVariantById(cake, item.id);
-                      console.log('variantDetails',variantDetails);
-                      console.log('cake',cake);
 
                       const variant = cake?.price_list?.find(
                         (p) => p.id === item.id

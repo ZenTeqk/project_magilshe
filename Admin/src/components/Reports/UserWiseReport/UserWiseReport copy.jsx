@@ -33,7 +33,6 @@ const UserWiseReport = () => {
   const { customers_reducer_data } = useSelector(
     (state) => state.CustomersReducer
   );
-  console.log("custome", customers_reducer_data);
 
   const dispatch = useDispatch();
 
@@ -73,7 +72,7 @@ const UserWiseReport = () => {
   const getCustomer = async () => {
     try {
       const result = await GetApi(GetCustomersUrl);
-      
+
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
       } else if (result.status !== 200) {
@@ -106,7 +105,6 @@ const UserWiseReport = () => {
           dateRange?.from_date
         )}&to_date=${ConvertDateStrFunction(dateRange?.to_date)}`
       );
-      console.log("result", result);
 
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
@@ -174,15 +172,15 @@ const UserWiseReport = () => {
   return (
     <div className="reports-section">
       <Grid container spacing={2} className="mb-2">
-        <Grid container spacing={2} className="my-3">          
+        <Grid container spacing={2} className="my-3">
           <Grid item md={4} xs={4} className="text-start">
-          <FormControl fullWidth size="small">
-            <Select
-              labelId="customer-select-label"
-              id="customer-select"
-              label="customer"
-            >              
-              {customers_reducer_data &&
+            <FormControl fullWidth size="small">
+              <Select
+                labelId="customer-select-label"
+                id="customer-select"
+                label="customer"
+              >
+                {customers_reducer_data &&
                   customers_reducer_data.length > 0 ? (
                   customers_reducer_data.map((val) => (
                     <MenuItem key={val.id} value={val.id}>
@@ -192,14 +190,14 @@ const UserWiseReport = () => {
                 ) : (
                   <MenuItem>No Partner Data available</MenuItem>
                 )}
-            </Select>
-          </FormControl>
+              </Select>
+            </FormControl>
           </Grid>
-          
+
         </Grid>
       </Grid>
 
-      
+
     </div>
   );
 };

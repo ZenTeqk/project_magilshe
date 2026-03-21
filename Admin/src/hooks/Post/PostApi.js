@@ -3,7 +3,6 @@ import { Api } from "../../Api/Api";
 export const PostApi = (url, data, is_multipart) =>
   new Promise((resolve, reject) => {
     try {
-      console.log("POST API URL - ",url, " is multipart - ", is_multipart);
       const headers = is_multipart
         ? { "Content-Type": "multipart/form-data" }
         : {};

@@ -31,12 +31,12 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
 
   const [customerID, setCustomerId] = useState(0);
 
-  const handleClose = () =>{
+  const handleClose = () => {
     setModalOpen(false);
     setIsDoneSearch(false)
   }
 
-  const [isDoneSearch, setIsDoneSearch] = useState(false); 
+  const [isDoneSearch, setIsDoneSearch] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -44,7 +44,6 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
   };
 
   const handleSubmit = async () => {
-    console.log(formData)
     const emptyFields = Object.entries(formData).filter(
       ([key, value]) => !value?.trim()
     );
@@ -68,7 +67,7 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
         pincode: formData.pincode,
       };
 
-      
+
 
       const result = await PostApi(ManualOrderCustomerUrl, payload);
 
@@ -107,7 +106,7 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
     }
   };
 
-  const handleCheckUser = async () => {    
+  const handleCheckUser = async () => {
     try {
       setIsPreLoading(true)
       const payload = {
@@ -116,9 +115,8 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
       const result = await PostApi(checkCustomer, payload);
 
       let response = (result?.data?.data);
-      console.log(response)
 
-      if(response?.address_details){
+      if (response?.address_details) {
         setFormData((prev) => ({
           ...prev,
           name: response?.name,
@@ -140,7 +138,7 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
         }
 
         dispatch(addCustomersReducerData(customerData));
-      }else{
+      } else {
         const customerData = response;
         // const customerId = customerData?.id || null;
         setFormData((prev) => ({
@@ -149,19 +147,19 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
           email: response?.email,
         }));
 
-        if(customerData?.id){
+        if (customerData?.id) {
           payload.customer_id = formData?.customer_id
         }
 
       }
-      
+
       setIsDoneSearch(true)
 
     } catch (error) {
       console.error("handleSubmit Error:", error);
       ShowNotification("error", "An unexpected error occurred");
     }
-    finally{
+    finally {
       setIsPreLoading(false)
     }
   };
@@ -275,7 +273,7 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
         <Button
           onClick={handleSubmit}
           color="success"
-          // disabled={Object.values(formData)?.some((value) => !value?.trim())}
+        // disabled={Object.values(formData)?.some((value) => !value?.trim())}
         >
           Submit
         </Button>

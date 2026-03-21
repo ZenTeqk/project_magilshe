@@ -103,7 +103,6 @@ const UserWiseReport = () => {
           dateRange?.from_date
         )}&to_date=${ConvertDateStrFunction(dateRange?.to_date)}`
       );
-      console.log("result", result);
 
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
@@ -127,12 +126,12 @@ const UserWiseReport = () => {
     {
       name: "ID",
       selector: (row) => row?.id,
-    
+
     },
     {
       name: "Customer Name",
       selector: (row) => row?.customer?.name,
-      
+
     },
     {
       name: "Address",
@@ -141,7 +140,7 @@ const UserWiseReport = () => {
           <p>{row.delivery_address?.address}</p>
         </div>
       ),
-    
+
     },
     {
       name: "Delivery Person",
@@ -151,17 +150,17 @@ const UserWiseReport = () => {
           <p>{row.delivery_person?.phone}</p>
         </div>
       ),
-      
+
     },
     {
       name: "Order Time",
       selector: (row) => convertDateFormat(row?.order_time),
-     
+
     },
     {
       name: "Delivered Time",
       selector: (row) => convertDateFormat(row?.delivery_time),
-      
+
     },
   ];
 
@@ -174,74 +173,74 @@ const UserWiseReport = () => {
             Report
           </section>
         </Grid>
-        
+
       </Grid>
       <Grid container spacing={2} className="my-3 d-flex align-items-center">
-          <Grid item md={3}>
-            <TextField
-              id="from_date"
-              className="my-2"
-              label="Start Date"
-              fullWidth
-              size="small"
-              required
-              value={filterDates?.from_date || ""}
-              onChange={(e) => handleDateChange(e.target.value, "from_date")}
-              type="datetime-local"
-            />
-          </Grid>
-          <Grid item md={3}>
-            <TextField
-              id="to_date"
-              className="my-2"
-              label="End Date"
-              fullWidth
-              size="small"
-              required
-              value={filterDates?.to_date || ""}
-              onChange={(e) => handleDateChange(e.target.value, "to_date")}
-              type="datetime-local"
-            />
-          </Grid>
-          <Grid item md={4}>
-            <FormControl fullWidth size="small" className="my-2">
-              <InputLabel id="customer-select-label">Customer</InputLabel>
-              <Select
-                labelId="customer-select-label"
-                 label="Customer"
-                id="customer-select"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                sx={{ textAlign: "center", "& .MuiSelect-select": { textAlign: "left" } }} 
-              >
-                {customers_reducer_data && customers_reducer_data.length > 0 ? (
-                  customers_reducer_data.map((val) => (
-                    <MenuItem key={val.id} value={val.id}>
-                      {val.name}
-                    </MenuItem>
-                  ))
-                ) : (
-                  <MenuItem disabled>No Customer Data available</MenuItem>
-                )}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item md={2} className="d-flex align-items-center">
-            <Button
-              variant="contained"
-              color="success"
-              style={{
-                textTransform: "none",
-                borderRadius: "5px",
-                display: "block",
-              }}
-              onClick={() => getUserWiseReport()}
-            >
-              <FontAwesomeIcon icon={faDownload} className="mx-1" />{" "}
-              <span>Get Data</span>
-            </Button>
-          </Grid>
+        <Grid item md={3}>
+          <TextField
+            id="from_date"
+            className="my-2"
+            label="Start Date"
+            fullWidth
+            size="small"
+            required
+            value={filterDates?.from_date || ""}
+            onChange={(e) => handleDateChange(e.target.value, "from_date")}
+            type="datetime-local"
+          />
         </Grid>
+        <Grid item md={3}>
+          <TextField
+            id="to_date"
+            className="my-2"
+            label="End Date"
+            fullWidth
+            size="small"
+            required
+            value={filterDates?.to_date || ""}
+            onChange={(e) => handleDateChange(e.target.value, "to_date")}
+            type="datetime-local"
+          />
+        </Grid>
+        <Grid item md={4}>
+          <FormControl fullWidth size="small" className="my-2">
+            <InputLabel id="customer-select-label">Customer</InputLabel>
+            <Select
+              labelId="customer-select-label"
+              label="Customer"
+              id="customer-select"
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              sx={{ textAlign: "center", "& .MuiSelect-select": { textAlign: "left" } }}
+            >
+              {customers_reducer_data && customers_reducer_data.length > 0 ? (
+                customers_reducer_data.map((val) => (
+                  <MenuItem key={val.id} value={val.id}>
+                    {val.name}
+                  </MenuItem>
+                ))
+              ) : (
+                <MenuItem disabled>No Customer Data available</MenuItem>
+              )}
+            </Select>
+          </FormControl>
+        </Grid>
+        <Grid item md={2} className="d-flex align-items-center">
+          <Button
+            variant="contained"
+            color="success"
+            style={{
+              textTransform: "none",
+              borderRadius: "5px",
+              display: "block",
+            }}
+            onClick={() => getUserWiseReport()}
+          >
+            <FontAwesomeIcon icon={faDownload} className="mx-1" />{" "}
+            <span>Get Data</span>
+          </Button>
+        </Grid>
+      </Grid>
 
       <div className="dt-table">
         <DataTable

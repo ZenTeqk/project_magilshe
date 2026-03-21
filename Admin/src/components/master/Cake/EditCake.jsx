@@ -49,7 +49,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
   const { sub_category_reducer_data } = useSelector(
     (state) => state.SubCategoryReducer
   );
-  
+
   const { unit_reducer_data } = useSelector(
     (state) => state.UnitReducer
   );
@@ -72,7 +72,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     'kg_name': null,
     'kg_price': null
   });
-  
+
   const [cakeDetails, setCakeDetails] = useState({
     id: 0,
     name: "",
@@ -151,7 +151,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
   const getUnit = async () => {
     try {
       const result = await GetApi(GetUnitUrl);
-      
+
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
       } else if (result.status !== 200) {
@@ -168,7 +168,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
   const getSubCategories = async () => {
     try {
       const result = await GetApi(GetSubCategoryUrl);
-      
+
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
       } else if (result.status !== 200) {
@@ -256,7 +256,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
         ...oldData,
         [name]: value,
       }));
-      
+
     } else if (name === "price") {
       const cake_price = parseFloat(value);
       setCakeDetails((oldData) => ({
@@ -269,7 +269,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
         [name]: value,
       }));
     }
-   
+
   };
 
   const handleAddCake = async (e) => {
@@ -346,7 +346,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     /*  */
 
     const result = await PostApi(CreateCakeUrl, formData, true);
-    
+
     if (result.status !== 200) {
       ShowNotification("error", result.data.message);
       return;
@@ -362,29 +362,29 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     handleClose();
   };
 
-  
+
   const [imagesFiles, setImagesFiles] = useState([]);
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
-   
+
     const newImageFiles = files.map((file) => ({
       id: 0,
       image: file,
       is_deleted: false,
       url: URL.createObjectURL(file),
     }));
-    
+
     setImagesFiles((prevFiles) => [...prevFiles, ...newImageFiles]);
     setCakeDetails((oldData) => ({
       ...oldData,
       image_list: [...oldData.image_list, ...newImageFiles],
     }));
-    
+
   };
 
   const removeImage = (index) => {
-  
+
     setImagesFiles((prevImages) =>
       prevImages
         .map((obj, idx) =>
@@ -408,7 +408,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
 
   const handleOnChangeKg = (e) => {
     const { name, value } = e.target;
-  
+
     setTempKg((items) => {
       if (name === "kg") {
         const kgData = kg_reducer_data?.find((val) => val.id === value);
@@ -427,7 +427,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
   };
 
   const handleAddKg = (e) => {
-    
+
     if (tempKg?.kg_id && tempKg?.kg_price) {
 
       const list = {
@@ -467,7 +467,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
 
       }
 
-      
+
     } else {
       ShowNotification("warning", "please enter KG details");
     }
@@ -490,7 +490,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
       kg_list: filterDeleteKg,
     }));
   };
-  
+
 
   const handleTag = (e) => {
     setCakeDetails((oldData) => ({
@@ -592,14 +592,14 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
                 </FormControl>
               </Grid>
             </Grid>
-            
+
             <TextField
               id="seo_text"
               className="my-2"
               label="SEO TEXT"
               fullWidth
               size="small"
-              required
+              // required
               value={cakeDetails.seo_text || ""}
               onChange={(e) => handleOnchange(e.target.value, "seo_text")}
             />
@@ -614,59 +614,59 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
               value={cakeDetails.seo_url || ""}
               onChange={(e) => handleOnchange(e.target.value, "seo_url")}
             />
-             <TextField
-                          id="meta_title"
-                          className="my-2"
-                          label="Meta Title"
-                          fullWidth
-                          size="small"
-                          required
-                          value={cakeDetails.meta_title || ""}
-                          onChange={(e) => {
-                            handleOnchange(e.target.value, "meta_title");
-                          }}
-                        />
-                        <TextField
-                          id="meta_description"
-                          className="my-2"
-                          label="Meta Description"
-                          multiline
-                          rows={3}
-                          fullWidth
-                          size="small"
-                          required
-                          value={cakeDetails.meta_description || ""}
-                          onChange={(e) => {
-                            handleOnchange(e.target.value, "meta_description");
-                          }}
-                        />
-                        <TextField
-                          id="slug"
-                          className="my-2"
-                          label="Slug"
-                          fullWidth
-                          size="small"
-                          required
-                          value={cakeDetails.slug || ""}
-                          onChange={(e) => {
-                            handleOnchange(e.target.value, "slug");
-                          }}
-                          sx={{display: "none"}}
-                        />
-                        <TextField
-                          id="content"
-                          className="my-2"
-                          label="Meta Keywords"
-                          multiline
-                          rows={3}
-                          fullWidth
-                          size="small"
-                          required
-                          value={cakeDetails.content || ""}
-                          onChange={(e) => {
-                            handleOnchange(e.target.value, "content");
-                          }}
-                        />
+            <TextField
+              id="meta_title"
+              className="my-2"
+              label="Meta Title"
+              fullWidth
+              size="small"
+              // required
+              value={cakeDetails.meta_title || ""}
+              onChange={(e) => {
+                handleOnchange(e.target.value, "meta_title");
+              }}
+            />
+            <TextField
+              id="meta_description"
+              className="my-2"
+              label="Meta Description"
+              multiline
+              rows={3}
+              fullWidth
+              size="small"
+              // required
+              value={cakeDetails.meta_description || ""}
+              onChange={(e) => {
+                handleOnchange(e.target.value, "meta_description");
+              }}
+            />
+            <TextField
+              id="slug"
+              className="my-2"
+              label="Slug"
+              fullWidth
+              size="small"
+              // required
+              value={cakeDetails.slug || ""}
+              onChange={(e) => {
+                handleOnchange(e.target.value, "slug");
+              }}
+              sx={{ display: "none" }}
+            />
+            <TextField
+              id="content"
+              className="my-2"
+              label="Meta Keywords"
+              multiline
+              rows={3}
+              fullWidth
+              size="small"
+              // required
+              value={cakeDetails.content || ""}
+              onChange={(e) => {
+                handleOnchange(e.target.value, "content");
+              }}
+            />
 
             {/* Select Tags */}
             <FormControl fullWidth size="small" className="my-2">
@@ -770,24 +770,24 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
                       </Grid>
                       <Grid item md={5}>
                         <div className="text-end p-2">
-                          
-                          <Fab size="medium" color="secondary" aria-label="add" 
-                          onClick={() => {
-                            handleEditKg(val);
-                          }} 
-                          className="me-2"
-                          style={{
-                            borderRadius: '5px',                           
-                            width: '40px',
-                            height: '40px'
-                          }}>
+
+                          <Fab size="medium" color="secondary" aria-label="add"
+                            onClick={() => {
+                              handleEditKg(val);
+                            }}
+                            className="me-2"
+                            style={{
+                              borderRadius: '5px',
+                              width: '40px',
+                              height: '40px'
+                            }}>
                             <FontAwesomeIcon icon={faEdit} className="" />
                           </Fab>
 
-                          <Fab 
-                            size="medium" 
-                            color={val?.is_deleted ? "success" : "error"} 
-                            aria-label="add" 
+                          <Fab
+                            size="medium"
+                            color={val?.is_deleted ? "success" : "error"}
+                            aria-label="add"
                             onClick={() => {
                               handleDeleteKg(val);
                             }} style={{

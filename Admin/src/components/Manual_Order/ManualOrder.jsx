@@ -197,7 +197,6 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
 
   const handleItemSelect = (event, newValue) => {
     setSelectedItem(newValue);
-    console.log(newValue)
     if (newValue) {
 
       setSelectedCakeName(newValue.name);
