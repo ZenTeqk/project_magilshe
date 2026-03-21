@@ -118,7 +118,6 @@ const EventProductOrder = ({ open, onClose, cartItems = [], setCartItems }) => {
                 price: item.price,
             })),
         };
-        console.log("pay", payload);
 
         try {
             const res = await SaveEvent(payload);

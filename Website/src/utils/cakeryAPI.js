@@ -335,7 +335,6 @@ export const getFeedBack = (requestData) =>
   });
 export const getEvents = (id, requestData = {}) =>
   new Promise((resolve, reject) => {
-    console.log("ID inside getevents", id);
     cakeryAPI
       .get(`event/get-individual-data/${id}`, {
         params: requestData,
