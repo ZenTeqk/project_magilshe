@@ -4,12 +4,12 @@ import classNames from "classnames";
 
 const CategoryButton = ({ key, name, handleSelect, selectedCategory, isSub }) => {
   return (
-    <div key={key} className={`mt-2 ${isSub && "ml-3 sub-category-button"}`} style={{cursor: "pointer"}} onClick={() => {
+    <div key={key} className={`mt-2 ${isSub && "ml-3 sub-category-button"}`} style={{ cursor: "pointer" }} onClick={() => {
       handleSelect(name)
     }}>
       <div
         className={classNames(
-          "flex py-[16px] px-[12px] gap-[14px] self-stretch rounded-lg",
+          "flex py-2 px-2 gap-3 self-stretch rounded-lg",
           {
             "gradient-base-theme-button":
               selectedCategory === name,
@@ -26,7 +26,7 @@ const CategoryButton = ({ key, name, handleSelect, selectedCategory, isSub }) =>
           )}
           name={name}
         >
-          {isSub && "" }{name}
+          {isSub && ""}{name}
         </button>
       </div>
     </div>

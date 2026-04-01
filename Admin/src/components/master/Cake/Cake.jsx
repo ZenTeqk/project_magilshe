@@ -20,7 +20,7 @@ import { setIsCakeLoadingReducerData } from "../../../redux/reducer/ChildReducer
 import { DeleteApi } from "../../../hooks/Delete/DeleteApi";
 
 const CakeComponent = () => {
-  const { ShowNotification,ShowConfirmation } = useContext(MainContext);
+  const { ShowNotification, ShowConfirmation } = useContext(MainContext);
   const dispatch = useDispatch();
 
   const { cake_list_reducer_data } = useSelector(
@@ -45,27 +45,27 @@ const CakeComponent = () => {
       name: "Product Name",
       selector: (row) => row?.name,
       sortable: true,
-      minWidth: "10%",
+      minWidth: "15%",
     },
     {
       name: "Category",
       selector: (row) => row?.sub_category?.name,
       sortable: true,
-      minWidth: "10%",
+      minWidth: "15%",
     },
     {
       name: "Unit",
       selector: (row) => row?.unit?.name,
-      minWidth: "10%",
+      minWidth: "5%",
       sortable: true
     },
     {
       name: "Tag",
       // selector: (row) => row?.tag_details?.map(item => item.tag).join(', '),
-      minWidth: "15%",
+      minWidth: "25%",
       cell: (row) => (
-        <div className="d-flex">
-          {row?.tag_details.map((tagObj) => (
+        <div className="d-flex flex-wrap gap-1 my-1">
+          {row?.tag_details?.slice(0, 2).map((tagObj) => (
             <span
               key={tagObj.id}
               style={{
@@ -99,7 +99,7 @@ const CakeComponent = () => {
           /> */}
         </div>
       ),
-      minWidth: "25%",
+      minWidth: "20%",
     },
     {
       name: "View",
@@ -135,7 +135,7 @@ const CakeComponent = () => {
   const getCakeList = async () => {
     try {
       const result = await GetApi(GetCakeUrl);
-      
+
       if (!result || typeof result.status === "undefined") {
         ShowNotification("error", "Network Error");
       } else if (result.status !== 200) {
@@ -157,11 +157,11 @@ const CakeComponent = () => {
       "yes",
       "no"
     );
-    
+
     if (testSwal === "yes") {
       const url = `${DeleteCakeUrl}${row.id}/`;
       const result = await DeleteApi(url);
-      
+
       if (result.status !== 200) {
         ShowNotification("error", result.data.message);
       } else {
@@ -177,7 +177,7 @@ const CakeComponent = () => {
     return <PreLoaderComponent />;
   }
 
-  
+
 
   return (
     <div className="cgm-purchase-section">
@@ -222,14 +222,14 @@ const CakeComponent = () => {
           </div>
         </Grid>
         <Grid item md={12} xs={12} className="text-end search-section">
-          <TextField 
+          <TextField
             className="mt-3 mb-2"
-            id="outlined-basic" 
-            label="Search" 
-            variant="outlined" 
+            id="outlined-basic"
+            label="Search"
+            variant="outlined"
             size={"small"}
             value={searchText}
-            onChange={(e)=>{
+            onChange={(e) => {
               setSearchText(e.target.value)
             }}
           />
@@ -240,7 +240,7 @@ const CakeComponent = () => {
         <DataTable
           columns={categoryDTColumns}
           striped
-          data={cake_list_reducer_data?.filter(cake=> cake.name.toLowerCase().includes(searchText.toLowerCase()))}
+          data={cake_list_reducer_data?.filter(cake => cake.name.toLowerCase().includes(searchText.toLowerCase()))}
           className="dt-table-container"
           pagination
           //   paginationPerPage={categoryParam?.limit}

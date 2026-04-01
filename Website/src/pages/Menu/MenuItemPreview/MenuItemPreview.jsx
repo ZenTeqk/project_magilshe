@@ -348,19 +348,19 @@ function MenuItemPreview() {
               <div
                 className="max-w-fit text-sm font-medium text-[#059669] bg-[#ecfdf5] rounded-xl border-1 border-[#a7f3d0] flex items-center gap-1 px-2 py-1"
                 onClick={() => {
-                  handleWhatsappEnquiry()
+                  // handleWhatsappEnquiry()
                 }}
               >
                 <FaLeaf /> Pure Veg
               </div>
-              <div
+              {/* <div
                 className="max-w-fit cursor-pointer text-sm font-medium text-[#059669] bg-[#ecfdf5] rounded-xl border-1 border-[#a7f3d0] flex items-center gap-1 px-2 py-1"
                 onClick={() => {
                   handleWhatsappEnquiry()
                 }}
               >
                 <FaWhatsapp /> Get more details on WhatsApp
-              </div>
+              </div> */}
             </div>
             <Grid container spacing={2}>
               <Grid item md={9} xs={12}>
@@ -495,10 +495,10 @@ function MenuItemPreview() {
               <Grid container spacing={2} className="mt-1">
                 <Grid item md={6} xs={6}>
                   <Button variant="outlined" className="order share-button" onClick={() => {
-                    handleShare()
+                    handleWhatsappEnquiry()
                   }}>
-                    Share
-                    <MdIosShare className="share" />
+                    Whatsapp
+                    <FaWhatsapp />
                   </Button>
                 </Grid>
                 <Grid item md={6} xs={6}>
@@ -516,7 +516,9 @@ function MenuItemPreview() {
                         setIsLoginShow(true)
                       }}
                     >
-                      Sign In to Add Cart
+
+                      <span className="max-md:hidden">Sign In to Add Cart</span>
+                      <span className="md:hidden">Sign In</span>
                       <FaArrowRight className="rightarrow" />
                     </Button>)}
                 </Grid>

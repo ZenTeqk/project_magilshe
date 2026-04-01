@@ -499,6 +499,228 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     }));
   };
 
+  /*  */
+  const [autoSeoEnabled, setAutoSeoEnabled] = useState(true);
+
+  const [lastAutoSeoValues, setLastAutoSeoValues] = useState({
+    seo_text: "",
+    seo_url: "",
+    meta_title: "",
+    meta_description: "",
+    slug: "",
+    content: "",
+  });
+
+  const [seoInitialized, setSeoInitialized] = useState(false);
+
+  const generateSlug = (text = "") => {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+  };
+
+  useEffect(() => {
+    if (show) {
+      setAutoSeoEnabled(true);
+      setSeoInitialized(false);
+      setLastAutoSeoValues({
+        seo_text: "",
+        seo_url: "",
+        meta_title: "",
+        meta_description: "",
+        slug: "",
+        content: "",
+      });
+    }
+  }, [show, editableData]);
+
+  useEffect(() => {
+    const cakeName = cakeDetails.name?.trim() || "";
+    const description = cakeDetails.description?.trim() || "";
+
+    const selectedSubCategory = sub_category_reducer_data?.find(
+      (item) => item.id === cakeDetails.sub_category
+    );
+
+    const selectedTags =
+      tag_list_reducer_data
+        ?.filter((item) => cakeDetails.tag?.includes(String(item.id)))
+        ?.map((item) => item.tag) || [];
+
+    // Nothing useful to generate from
+    if (!cakeName && !description && !selectedSubCategory && selectedTags.length === 0) {
+      return;
+    }
+
+    const generatedSlug = generateSlug(cakeName);
+
+    const generatedSeoText = selectedSubCategory?.name
+      ? `${cakeName} - ${selectedSubCategory.name}`
+      : cakeName;
+
+    const generatedMetaTitle = selectedSubCategory?.name
+      ? `${cakeName} | ${selectedSubCategory.name}`
+      : cakeName;
+
+    const generatedMetaDescription = description
+      ? description.length > 155
+        ? description.slice(0, 152) + "..."
+        : `${description}${cakeName ? ` | Order ${cakeName} online for fresh, delicious, beautifully crafted cakes with fast delivery.` : ""}`
+      : `${cakeName}${selectedSubCategory?.name ? ` - ${selectedSubCategory.name}` : ""} available online. Freshly baked, delicious, beautifully designed, and perfect for birthdays, anniversaries, celebrations, and special occasions. Order now for fast delivery.`;
+
+    const keywordSet = new Set(
+      [
+        cakeName,
+        `${cakeName} cake`,
+        `${cakeName} online`,
+        `${cakeName} order online`,
+        `${cakeName} delivery`,
+        `${cakeName} fresh cake`,
+        selectedSubCategory?.name,
+        selectedSubCategory?.name ? `${selectedSubCategory.name} cakes` : "",
+        ...selectedTags,
+        "eggless cake",
+        "fresh cream cake",
+        "birthday cake",
+        "anniversary cake",
+        "wedding cake",
+        "custom cake",
+        "designer cake",
+        "premium cakes",
+        "celebration cakes",
+        "party cakes",
+        "online cake delivery",
+        "same day cake delivery",
+        "cake shop",
+        "best cake shop",
+        "fresh cake",
+        "order cake online",
+        "cake delivery near me",
+      ].filter(Boolean)
+    );
+
+    const generatedKeywords = Array.from(keywordSet).join(", ");
+
+    const nextAutoValues = {
+      seo_text: generatedSeoText,
+      seo_url: generatedSlug,
+      meta_title: generatedMetaTitle,
+      meta_description: generatedMetaDescription,
+      slug: generatedSlug,
+      content: generatedKeywords,
+    };
+
+    // ---- ADD MODE / EDIT MODE INITIALIZATION ----
+    // If edit mode has existing SEO values, treat them as manual values and stop auto overwrite
+    if (!seoInitialized) {
+      const hasExistingSeoValues =
+        !!cakeDetails.seo_text ||
+        !!cakeDetails.seo_url ||
+        !!cakeDetails.meta_title ||
+        !!cakeDetails.meta_description ||
+        !!cakeDetails.slug ||
+        !!cakeDetails.content;
+
+      if (hasExistingSeoValues) {
+        setAutoSeoEnabled(false);
+        setLastAutoSeoValues({
+          seo_text: cakeDetails.seo_text || "",
+          seo_url: cakeDetails.seo_url || "",
+          meta_title: cakeDetails.meta_title || "",
+          meta_description: cakeDetails.meta_description || "",
+          slug: cakeDetails.slug || "",
+          content: cakeDetails.content || "",
+        });
+        setSeoInitialized(true);
+        return;
+      }
+
+      // Add mode empty SEO fields -> allow auto generate
+      setLastAutoSeoValues(nextAutoValues);
+      setCakeDetails((prev) => ({
+        ...prev,
+        seo_text: nextAutoValues.seo_text,
+        seo_url: nextAutoValues.seo_url,
+        meta_title: nextAutoValues.meta_title,
+        meta_description: nextAutoValues.meta_description,
+        slug: nextAutoValues.slug,
+        content: nextAutoValues.content,
+      }));
+      setSeoInitialized(true);
+      return;
+    }
+
+    // ---- Detect manual SEO edits after initialization ----
+    if (autoSeoEnabled) {
+      const manualChangeDetected =
+        (cakeDetails.seo_text || "") !== (lastAutoSeoValues.seo_text || "") ||
+        (cakeDetails.seo_url || "") !== (lastAutoSeoValues.seo_url || "") ||
+        (cakeDetails.meta_title || "") !== (lastAutoSeoValues.meta_title || "") ||
+        (cakeDetails.meta_description || "") !== (lastAutoSeoValues.meta_description || "") ||
+        (cakeDetails.slug || "") !== (lastAutoSeoValues.slug || "") ||
+        (cakeDetails.content || "") !== (lastAutoSeoValues.content || "");
+
+      // If current values are different from what we auto-set, user edited manually
+      if (manualChangeDetected) {
+        // But if the difference is only because source fields changed and we haven't re-applied yet,
+        // compare against next generated values to avoid false detection
+        const isActuallyNextAutoValues =
+          (cakeDetails.seo_text || "") === (nextAutoValues.seo_text || "") &&
+          (cakeDetails.seo_url || "") === (nextAutoValues.seo_url || "") &&
+          (cakeDetails.meta_title || "") === (nextAutoValues.meta_title || "") &&
+          (cakeDetails.meta_description || "") === (nextAutoValues.meta_description || "") &&
+          (cakeDetails.slug || "") === (nextAutoValues.slug || "") &&
+          (cakeDetails.content || "") === (nextAutoValues.content || "");
+
+        if (!isActuallyNextAutoValues) {
+          setAutoSeoEnabled(false);
+          return;
+        }
+      }
+
+      // Apply live auto-update only if generated values changed
+      const needsUpdate =
+        (lastAutoSeoValues.seo_text || "") !== (nextAutoValues.seo_text || "") ||
+        (lastAutoSeoValues.seo_url || "") !== (nextAutoValues.seo_url || "") ||
+        (lastAutoSeoValues.meta_title || "") !== (nextAutoValues.meta_title || "") ||
+        (lastAutoSeoValues.meta_description || "") !== (nextAutoValues.meta_description || "") ||
+        (lastAutoSeoValues.slug || "") !== (nextAutoValues.slug || "") ||
+        (lastAutoSeoValues.content || "") !== (nextAutoValues.content || "");
+
+      if (needsUpdate) {
+        setLastAutoSeoValues(nextAutoValues);
+        setCakeDetails((prev) => ({
+          ...prev,
+          seo_text: nextAutoValues.seo_text,
+          seo_url: nextAutoValues.seo_url,
+          meta_title: nextAutoValues.meta_title,
+          meta_description: nextAutoValues.meta_description,
+          slug: nextAutoValues.slug,
+          content: nextAutoValues.content,
+        }));
+      }
+    }
+  }, [
+    cakeDetails.name,
+    cakeDetails.description,
+    cakeDetails.sub_category,
+    cakeDetails.tag,
+    cakeDetails.seo_text,
+    cakeDetails.seo_url,
+    cakeDetails.meta_title,
+    cakeDetails.meta_description,
+    cakeDetails.slug,
+    cakeDetails.content,
+    sub_category_reducer_data,
+    tag_list_reducer_data,
+    autoSeoEnabled,
+    lastAutoSeoValues,
+    seoInitialized,
+  ]);
+
   return (
     <>
       <div>

@@ -193,16 +193,18 @@ const MenuList = () => {
                         handleMainCategoryClick(category.name)
                       }
                     />
-                    {selectedMainCategory === category.name &&
-                      category?.subcategories?.map((sub, subIndex) => (
-                        <CategoryButton
-                          name={sub.name}
-                          isSub={true}
-                          key={"1" + subIndex}
-                          selectedCategory={selectedCategory}
-                          handleSelect={() => handleSubCategoryClick(sub.name)}
-                        />
-                      ))}
+                    <div className="flex flex-wrap">
+                      {selectedMainCategory === category.name &&
+                        category?.subcategories?.map((sub, subIndex) => (
+                          <CategoryButton
+                            name={sub.name}
+                            isSub={true}
+                            key={"1" + subIndex}
+                            selectedCategory={selectedCategory}
+                            handleSelect={() => handleSubCategoryClick(sub.name)}
+                          />
+                        ))}
+                    </div>
                   </div>
                 ))}
               </div>

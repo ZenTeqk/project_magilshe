@@ -93,7 +93,7 @@ const CakeOfferCard = ({
                   handleWhatsappEnquiry()
                 }}
               >
-                <FaWhatsapp /> Whatsapp
+                <FaWhatsapp /> <span className="max-md:hidden">Whatsapp</span>
               </div>
             </div>
           </div>
