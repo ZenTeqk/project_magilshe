@@ -1,7 +1,7 @@
 import { ExitToApp } from "@mui/icons-material";
 
-// export const BaseUrl = "https://api.magilshe.com/";
-export const BaseUrl = "http://127.0.0.1:8000/";
+export const BaseUrl = "https://api.magilshe.com/";
+// export const BaseUrl = "http://127.0.0.1:8000/";
 
 export const TEST_123 = "HELLO";
 
