@@ -1,5 +1,4 @@
 import {
-  Button,
   Grid,
   Paper,
   Table,
@@ -10,7 +9,6 @@ import {
   TableRow,
 } from "@mui/material";
 import React, { useContext, useEffect } from "react";
-import { Card } from "react-bootstrap";
 import theChennaiCakeryLogo from "../../assets/img/tcc-logo.png";
 import MainContext from "../../context/MainContext";
 import { useParams } from "react-router";
@@ -22,8 +20,8 @@ import { GetConfigurationUrl, PurchaseBillUrl } from "../../Constant/urls/urls";
 import { formatDate, formatIndianCurrency } from "../../utils/commonFunctions";
 import { setIsConfigLoadingReducerData } from "../../redux/reducer/ChildReducer/CommonLoaderReducer";
 import { useNavigate } from "react-router";
-import { faBackward, faDownload } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { DetailPageTemplate } from "../../admin/templates";
+import { PrimaryButton, SecondaryButton, SectionCard } from "../../admin/design-system";
 
 const PurchaseReceipt = () => {
   const navigate = useNavigate();
@@ -89,39 +87,10 @@ const PurchaseReceipt = () => {
   };
 
   return (
-    <div>
-      <Grid container spacing={2} className="mb-3">
-        <Grid item md={12} className="text-end">
-          <Button
-            variant="contained"
-            color="primary"
-            style={{
-              textTransform: "capitalize",
-            }}
-            className="ms-2"
-            size="small"
-            onClick={handleClick}
-          >
-            <FontAwesomeIcon icon={faBackward} className="me-2" /> Back
-          </Button>
-          <Button
-            variant="contained"
-            color="success"
-            style={{
-              textTransform: "capitalize",
-            }}
-            className="ms-2"
-            size="small"
-          >
-            <FontAwesomeIcon icon={faDownload} className="me-2" />
-            Download
-          </Button>
-        </Grid>
-      </Grid>
-
-      <Card className="p-4 purchase-bill-section">
+    <DetailPageTemplate title={`Purchase receipt #${purchase_bill_reducer_data?.invoice_number||id}`} subtitle="Supplier invoice and purchased item summary." breadcrumbs={[{label:"Operations"},{label:"Purchases"},{label:"Receipt"}]} primaryAction={<PrimaryButton onClick={()=>window.print()}>Print receipt</PrimaryButton>} secondaryActions={<SecondaryButton onClick={handleClick}>Back</SecondaryButton>}>
+      <SectionCard className="purchase-bill-section">
         <div className="bill-header">
-          <img src={theChennaiCakeryLogo} alt="" className="dashboard-icon" />
+          <img src={theChennaiCakeryLogo} alt="MagilShe" className="dashboard-icon" />
           <h4 className="company-name">{config_reducer_data?.name}</h4>
           <p className="address mb-1">{config_reducer_data?.company_address}</p>
           <p className="phone mb-1">Ph:  {config_reducer_data?.mobile}</p>
@@ -305,8 +274,8 @@ const PurchaseReceipt = () => {
             </div>
           </div>
         )}
-      </Card>
-    </div>
+      </SectionCard>
+    </DetailPageTemplate>
   );
 };
 

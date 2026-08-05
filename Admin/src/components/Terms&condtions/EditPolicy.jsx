@@ -1,13 +1,10 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import { PutApi } from "../../hooks/Post/PutApi";
 import { PrivacyPolicyUrl } from "../../Constant/urls/urls";
 import MainContext from "../../context/MainContext";
 import { useDispatch } from "react-redux";
 import { setPolicyReducerData } from "../../redux/reducer/ChildReducer/PolicyReducer";
+import { Drawer, Field, PrimaryButton, RichTextEditor, SecondaryButton } from "../../admin/design-system";
 
 const EditPolicy = ({ show, setShow, editableData }) => {
   const { ShowNotification } = useContext(MainContext);
@@ -31,7 +28,7 @@ const EditPolicy = ({ show, setShow, editableData }) => {
         ShowNotification("error", result.data?.message || "An error occurred");
       } else {
         dispatch(setPolicyReducerData(result.data?.content));
-        ShowNotification("success", "Terms & Conditions updated successfully");
+        ShowNotification("success", "Privacy Policy updated successfully");
         setShow(false);
       }
     } catch (error) {
@@ -45,57 +42,9 @@ const EditPolicy = ({ show, setShow, editableData }) => {
     setShow(false);
   };
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>Update Terms & Conditions</Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              autoFocus
-              margin="dense"
-              id="content"
-              multiline
-              rows={20}
-              value={policyValue}
-              onChange={(e) => {
-                setPolicyValue(e.target.value)
-              }}
-              type="text"
-              fullWidth
-              variant="outlined"
-            />
-
-            {/* add cake button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleSavePolicy(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                Update
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} onClose={handleClose} title="Update Privacy Policy" footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleSavePolicy}>Save policy</PrimaryButton></>}>
+    <Field label="Privacy Policy" required helperText="Use Heading, • List, 1. List and Indent to structure sections; switch to Preview to check formatting before saving. This content is shown to customers."><RichTextEditor rows={18} value={policyValue||""} onChange={setPolicyValue} ariaLabel="Privacy Policy content"/></Field>
+  </Drawer>;
 };
 
 export default EditPolicy;

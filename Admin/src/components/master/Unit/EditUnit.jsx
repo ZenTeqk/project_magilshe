@@ -1,16 +1,13 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import { useDispatch } from "react-redux";
 import { PostApi } from "../../../hooks/Post/PostApi";
-import { CreateUnitUrl, UpdateUnitUrl } from "../../../Constant/urls/urls";
+import { UpdateUnitUrl } from "../../../Constant/urls/urls";
 import {
   addUnitReducerData,
   editUnitReducerData,
 } from "../../../redux/reducer/ChildReducer/UnitReducer";
 import MainContext from "../../../context/MainContext";
+import {Drawer,Field,NotesInput,PrimaryButton,SecondaryButton,TextInput} from "../../../admin/design-system";
 
 const EditUnit = ({ show, setShow, editableData, setEditableData }) => {
   const { ShowNotification, setIsApiLoading } = useContext(MainContext);
@@ -82,70 +79,7 @@ const EditUnit = ({ show, setShow, editableData, setEditableData }) => {
     handleClose();
   };
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit Unit" : "Add Unit"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              id="name"
-              className="my-2"
-              label="Unit Name"
-              fullWidth
-              type="text"
-              size="small"
-              required
-              value={unitDetails.name || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "name");
-              }}
-            />
-            <TextField
-              id=" description"
-              className="my-2"
-              label="Description"
-              fullWidth
-              size="small"
-              required
-              value={unitDetails.description || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "description");
-              }}
-            />
-
-            {/* add Unit button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleAddUnit(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail ? "Update Unit" : "Add Unit"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit unit":"Add unit"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleAddUnit}>{isEditableDataAvail?"Update unit":"Add unit"}</PrimaryButton></>}><div className="mads-form-grid"><Field label="Unit name" required><TextInput value={unitDetails.name||""} onChange={event=>handleOnchange(event.target.value,"name")}/></Field><Field label="Description"><NotesInput rows={4} value={unitDetails.description||""} onChange={event=>handleOnchange(event.target.value,"description")}/></Field></div></Drawer>;
 };
 
 export default EditUnit;

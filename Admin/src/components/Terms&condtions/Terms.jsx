@@ -1,5 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
-import { Button, Grid } from "@mui/material";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { PrivacyPolicyUrl, TermsConditionsUrl } from "../../Constant/urls/urls";
 import { useDispatch, useSelector } from "react-redux";
 import MainContext from "../../context/MainContext";
@@ -10,6 +9,8 @@ import {
   setTermsReducerData,
 } from "../../redux/reducer/ChildReducer/PolicyReducer";
 import EditPolicy from "./EditPolicy";
+import { LiteMarkdown, PrimaryButton, SecondaryButton, SectionCard } from "../../admin/design-system";
+import { DetailPageTemplate } from "../../admin/templates";
 
 const Terms = () => {
   const dispatch = useDispatch();
@@ -22,12 +23,7 @@ const Terms = () => {
   const [isTermsShow, setIsTermsShow] = useState(false);
   const [isPrivacyShow, setIsPrivacyShow] = useState(false);
 
-  useEffect(() => {
-    getTermsAndConditions();
-    getPrivacyPolicy();
-  }, []);
-
-  const getTermsAndConditions = async () => {
+  const getTermsAndConditions = useCallback(async () => {
     try {
       const result = await GetApi(TermsConditionsUrl);
 
@@ -41,10 +37,9 @@ const Terms = () => {
     } catch (error) {
       console.error("get Items Error:", error);
       ShowNotification("error", "An unexpected error occurred");
-    } finally {
     }
-  };
-  const getPrivacyPolicy = async () => {
+  }, [ShowNotification, dispatch]);
+  const getPrivacyPolicy = useCallback(async () => {
     try {
       const result = await GetApi(PrivacyPolicyUrl);
 
@@ -58,44 +53,20 @@ const Terms = () => {
     } catch (error) {
       console.error("get Items Error:", error);
       ShowNotification("error", "An unexpected error occurred");
-    } finally {
     }
-  };
+  }, [ShowNotification, dispatch]);
+
+  useEffect(() => {
+    getTermsAndConditions();
+    getPrivacyPolicy();
+  }, [getPrivacyPolicy, getTermsAndConditions]);
 
   return (
-    <div style={{ textAlign: "right", margin: "20px" }}>
-      <Button
-        variant="contained"
-        color="primary"
-        className="me-2"
-        onClick={() => {
-          setIsTermsShow(true);
-        }}
-      >
-        Add Terms & Conditions
-      </Button>
-      <Button
-        variant="contained"
-        color="secondary"
-        onClick={() => {
-          setIsPrivacyShow(true);
-        }}
-      >
-        Add Privacy & Policy
-      </Button>
-
-      <Grid container spacing={2} className="mt-3 text-start">
-        <Grid item md={6}>
-          <h5>Terms & Conditions</h5>
-          <hr/>
-          <pre className="text-start">{terms_reducer_data}</pre>
-        </Grid>
-        <Grid item md={6}>
-          <h5>Privacy Policy</h5>
-          <hr/>
-          <pre className="text-start">{policy_reducer_data}</pre>
-        </Grid>
-      </Grid>
+    <DetailPageTemplate title="Terms and policies" subtitle="Maintain the customer-facing legal content used by MagilShe." breadcrumbs={[{label:"Configuration"},{label:"Terms and policies"}]} primaryAction={<PrimaryButton onClick={()=>setIsTermsShow(true)}>Edit terms</PrimaryButton>} secondaryActions={<SecondaryButton onClick={()=>setIsPrivacyShow(true)}>Edit privacy policy</SecondaryButton>}>
+      <div className="mads-management-grid">
+        <SectionCard title="Terms & Conditions"><LiteMarkdown text={terms_reducer_data} emptyMessage="No terms have been configured."/></SectionCard>
+        <SectionCard title="Privacy Policy"><LiteMarkdown text={policy_reducer_data} emptyMessage="No privacy policy has been configured."/></SectionCard>
+      </div>
 
       <EditTermsConditions
         show={isTermsShow}
@@ -107,7 +78,7 @@ const Terms = () => {
         setShow={setIsPrivacyShow}
         editableData={policy_reducer_data}
       />
-    </div>
+    </DetailPageTemplate>
   );
 };
 

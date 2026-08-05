@@ -1,40 +1,4 @@
-import { useContext, useEffect } from "react";
-import { Offcanvas } from "react-bootstrap";
-import MainContext from "../../context/MainContext";
-import { InputLabel } from "@mui/material";
+import React from "react";
+import {Drawer,GridItem,ResponsiveGrid,SecondaryButton,StatusBadge} from "../../admin/design-system";
 
-const ViewCustomers = ({ show, setShow, customerData }) => {
-  const { ShowNotification } = useContext(MainContext);
-
-
-  const handleClose = () => {
-    setShow(false);
-  };
-
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>View Customer</Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <InputLabel>Name</InputLabel>
-            <InputLabel>{customerData.name}</InputLabel>
-            <InputLabel>Email</InputLabel>
-            <InputLabel>{customerData.email}</InputLabel>
-            <InputLabel>Phone</InputLabel>
-            <InputLabel>{customerData.phone}</InputLabel>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
-};
-
-export default ViewCustomers;
+export default function ViewCustomers({show,setShow,customerData}){const close=()=>setShow(false);return <Drawer open={show} title="Customer record" onClose={close} footer={<SecondaryButton onClick={close}>Close</SecondaryButton>}><ResponsiveGrid><GridItem span={12}><strong>Name</strong><div>{customerData.name||"—"}</div></GridItem><GridItem span={12}><strong>Email</strong><div>{customerData.email||"—"}</div></GridItem><GridItem span={12}><strong>Phone</strong><div>{customerData.phone||"—"}</div></GridItem><GridItem span={12}><strong>Status</strong><div><StatusBadge tone={customerData.is_active?"success":"neutral"}>{customerData.is_active?"Active":"Inactive"}</StatusBadge></div></GridItem></ResponsiveGrid></Drawer>;}

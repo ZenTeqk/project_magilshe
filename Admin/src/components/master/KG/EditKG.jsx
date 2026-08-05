@@ -1,11 +1,7 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, FormControl, InputLabel, MenuItem, Select, TextField } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { PostApi } from "../../../hooks/Post/PostApi";
-import { CreateKgUrl, GetUnitUrl, subUnitUrl } from "../../../Constant/urls/urls";
+import { GetUnitUrl, subUnitUrl } from "../../../Constant/urls/urls";
 import { setUnitReducerData } from "../../../redux/reducer/ChildReducer/UnitReducer";
 import {
   addKgReducerData,
@@ -15,13 +11,10 @@ import MainContext from "../../../context/MainContext";
 import { GetApi } from "../../../hooks/Get/GetApi";
 import { setIsUnitLoadingReducerData } from "../../../redux/reducer/ChildReducer/CommonLoaderReducer";
 import { PutApi } from "../../../hooks/Post/PutApi";
+import {Drawer,Field,NotesInput,NumberInput,PrimaryButton,SecondaryButton,SelectInput} from "../../../admin/design-system";
 
 const EditKG = ({ show, setShow, editableData, setEditableData, unitData }) => {
   const { ShowNotification } = useContext(MainContext);
-
-  const { unit_reducer_data } = useSelector(
-    (state) => state.UnitReducer
-  );
 
   const dispatch = useDispatch();
 
@@ -162,91 +155,7 @@ const EditKG = ({ show, setShow, editableData, setEditableData, unitData }) => {
 
   }
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit KG" : "Add KG"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              id="kG (Weight)"
-              className="my-2"
-              label="KG Name"
-              fullWidth
-              type="number"
-              size="small"
-              required
-              value={KgDetails.kg || "" }
-              onChange={(e) => {
-                handleOnchange(e.target.value, "kg");
-              }}
-            />
-
-            <FormControl fullWidth size="small" className="my-2">
-              <InputLabel id="category-select-label">Unit</InputLabel>
-              <Select
-                labelId="unit-select-label"
-                id="unit"
-                label="Unit name"
-                value={KgDetails?.unit || "" }
-                onChange={(e) => hanldeUnitchange(e.target.value)}
-              >
-                {unitData &&
-                  unitData.length > 0 ? (
-                    unitData.map((val) => (
-                    <MenuItem key={val.id} value={val.id}>
-                      {val.name}
-                    </MenuItem>
-                  ))
-                ) : (
-                  <MenuItem disabled>No categories available</MenuItem>
-                )}
-              </Select>
-            </FormControl>
-            <TextField
-              id=" description"
-              className="my-2"
-              label="Description"
-              fullWidth
-              size="small"
-              required
-              value={KgDetails.description || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "description");
-              }}
-            />
-
-            {/* add KG button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => isEditableDataAvail ? handleUpdateSubUnit(e) : handleCreateSubUnit(e)}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail ? "Update KG" : "Add KG"}
-              </Button>
-
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit sub-unit":"Add sub-unit"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={event=>isEditableDataAvail?handleUpdateSubUnit(event):handleCreateSubUnit(event)}>{isEditableDataAvail?"Update sub-unit":"Add sub-unit"}</PrimaryButton></>}><div className="mads-form-grid"><Field label="Weight" required><NumberInput value={KgDetails.kg||""} onChange={event=>handleOnchange(event.target.value,"kg")}/></Field><Field label="Unit" required><SelectInput value={KgDetails.unit||""} onChange={event=>hanldeUnitchange(event.target.value)}><option value="">Select unit</option>{(unitData||[]).map(unit=><option key={unit.id} value={unit.id}>{unit.name}</option>)}</SelectInput></Field><Field label="Description"><NotesInput rows={4} value={KgDetails.description||""} onChange={event=>handleOnchange(event.target.value,"description")}/></Field></div></Drawer>;
 };
 
 export default EditKG;

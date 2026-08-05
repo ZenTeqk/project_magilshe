@@ -1,7 +1,9 @@
 import { ExitToApp } from "@mui/icons-material";
 
-export const BaseUrl = "https://api.magilshe.com/";
+// export const BaseUrl = "https://api.magilshe.com/";
+export const BaseUrl = "http://127.0.0.1:8000/";
 
+export const TEST_123 = "HELLO";
 
 // export const BaseUrl = "http://192.168.20.12:8000/"
 export const LoginUrl = "auth/login/";
@@ -25,6 +27,9 @@ export const CreateKgUrl = "kg/kg-list";
 
 export const subUnitUrl = "kg/sub-unit";
 export const updateSubUnitUrl = "kg/sub-unit";
+
+export const GetLeadUrl = "/crm/get-lead-data";
+export const CreateLeadUrl = "/crm/lead";
 
 export const GetTagUrl = "tag/tags";
 export const CreateTgUrl = "tag/tags";

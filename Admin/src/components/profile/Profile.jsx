@@ -1,14 +1,8 @@
-import {
-  Avatar,
-  Grid,
-  IconButton
-} from "@mui/material";
 import React, { useContext } from "react";
-import { Card } from "react-bootstrap";
 import MainContext from "../../context/MainContext";
-import "./Profile.scss";
-import { faAddressBook, faEnvelopeOpenText, faPhoneSquareAlt, faShieldHalved } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { DetailPageTemplate } from "../../admin/templates";
+import { SectionCard } from "../../admin/design-system";
+import { CustomerSummaryPanel } from "../../admin/workflow";
 
 const Profile = () => {
   const { userProfileData } = useContext(MainContext);
@@ -23,80 +17,10 @@ const Profile = () => {
 //     "food-intake",
 //   ];
 
-  return (
-    <section className="profile-page">
-      <Card className="profile-info">
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={12}>
-            <div className="info">
-              <IconButton sx={{ p: 0 }} className="icon-button">
-                <Avatar
-                  alt="Login User"
-                  src={require("../../assets/img/avatar-1.png")}
-                  className="user-avatar mx-2"
-                />
-              </IconButton>
-              <div className="content-section">
-                <p className="title">DH-1001</p>
-                <p className="value">{userProfileData?.name}</p>
-              </div>
-            </div>
-          </Grid>
-
-          
-          <Grid item xs={6} md={6}>
-            <div className="info">
-              <IconButton sx={{ p: 0 }} className="icon-button">
-                <FontAwesomeIcon icon={faEnvelopeOpenText} />
-              </IconButton>
-              <div className="content-section">
-                <p className="title">Email</p>
-                <p className="value">{userProfileData?.email}</p>
-              </div>
-            </div>
-          </Grid>
-          <Grid item xs={6} md={6}>
-            <div className="info">
-              <IconButton sx={{ p: 0 }} className="icon-button">
-                <FontAwesomeIcon icon={faPhoneSquareAlt} />
-              </IconButton>
-              <div className="content-section">
-                <p className="title">Phone</p>
-                <p className="value">{userProfileData?.mobile}</p>
-              </div>
-            </div>
-          </Grid>
-          <Grid item xs={6} md={6}>
-            <div className="info">
-              <IconButton sx={{ p: 0 }} className="icon-button">
-                <FontAwesomeIcon icon={faShieldHalved} />
-              </IconButton>
-              <div className="content-section">
-                <p className="title">Role</p>
-                <p className="value">{"Admin"}</p>
-              </div>
-            </div>
-          </Grid>
-          <Grid item xs={6} md={6}>
-            <div className="info">
-              <IconButton sx={{ p: 0 }} className="icon-button">
-                <FontAwesomeIcon icon={faAddressBook} />
-              </IconButton>
-              <div className="content-section">
-                <p className="title">Address</p>
-                <p className="value">
-                  Veeranamnagalam, KM Colony, nagercoil, Tamilnadu, PIN: 629901.
-                </p>
-              </div>
-            </div>
-          </Grid>
-         
-        </Grid>
-      </Card>
-
-   
-    </section>
-  );
+  return <DetailPageTemplate title="My profile" subtitle="Your signed-in Admin account details." breadcrumbs={[{label:"Profile"}]}>
+    <CustomerSummaryPanel title="Admin account" customer={{name:userProfileData?.name,email:userProfileData?.email,phone:userProfileData?.mobile,role:"Admin"}} fields={[{key:"email",label:"Email"},{key:"phone",label:"Phone"},{key:"role",label:"Role"}]}/>
+    <SectionCard title="Account access"><p className="mads-muted">Profile details are managed by the existing authentication system. No editable profile fields are currently exposed by the Admin API.</p></SectionCard>
+  </DetailPageTemplate>;
 };
 
 export default Profile;

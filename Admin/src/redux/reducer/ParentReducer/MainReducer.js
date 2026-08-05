@@ -23,6 +23,7 @@ import TaxCategoryReducer from "../ChildReducer/TaxCategoryReducer";
 import PolicyReducer from "../ChildReducer/PolicyReducer";
 import ManualOrderReducer from "../ChildReducer/ManualOrderReducer"
 import UserWiseReportReducer from "../ChildReducer/UserWiseReportReducer"
+import LeadReducer from "../ChildReducer/LeadReducer";
 
 export const MainReducer = combineReducers({
   MainCategoryReducer: MainCategoryReducer,
@@ -48,5 +49,6 @@ export const MainReducer = combineReducers({
   PurchaseReducer:PurchaseReducer,
   PolicyReducer:PolicyReducer,
   ManualOrderReducer:ManualOrderReducer,
-  UserWiseReportReducer:UserWiseReportReducer
+  UserWiseReportReducer:UserWiseReportReducer,
+  LeadReducer:LeadReducer,
 });

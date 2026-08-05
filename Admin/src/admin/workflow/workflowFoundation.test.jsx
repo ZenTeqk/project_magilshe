@@ -1,0 +1,11 @@
+import React from "react";
+import { render,screen } from "@testing-library/react";
+import { AdminThemeProvider } from "../design-system";
+import { crmWorkflowV1,getAvailableActions,resolveStageIndex,validateWorkflowAction,WorkflowProgress } from ".";
+
+test("preserves approved quotation action availability",()=>{const definition=crmWorkflowV1.entities.quotation;expect(getAvailableActions(definition,{status:"Draft"}).map(item=>item.key)).toEqual(["send"]);expect(getAvailableActions(definition,{status:"Draft"},{includeHidden:true}).map(item=>item.key)).toEqual(["send","cancel"]);expect(getAvailableActions(definition,{status:"Advance Received",advance_received:true,advance_amount:"100"}).map(item=>item.key)).toEqual(["confirm_order"]);});
+test("maps legacy order production status to processing stage",()=>{expect(resolveStageIndex(crmWorkflowV1.entities.order,{status:"Production"})).toBe(1);});
+test("keeps Lead closure system-owned",()=>{const lead=crmWorkflowV1.entities.lead;expect(lead.transitions.some(item=>item.to==="Completed")).toBe(false);expect(lead.systemTransitions).toContainEqual(expect.objectContaining({to:"Completed",cause:"delivery.completed"}));});
+test("requires a valid quotation advance before confirmation is exposed",()=>{const quotation=crmWorkflowV1.entities.quotation;expect(getAvailableActions(quotation,{status:"Advance Received",advance_received:false,advance_amount:0})).toEqual([]);expect(getAvailableActions(quotation,{status:"Advance Received",advance_received:true,advance_amount:200}).map(item=>item.key)).toEqual(["confirm_order"]);});
+test("validates payment against remaining balance without calling an API",()=>{const action=crmWorkflowV1.entities.invoice.transitions.find(item=>item.key==="record_payment");expect(validateWorkflowAction(action,{balance_amount:100},{amount:101})).toHaveProperty("amount");expect(validateWorkflowAction(action,{balance_amount:100},{amount:100})).toEqual({});});
+test("renders generic workflow progress within the scoped theme",()=>{render(<AdminThemeProvider><WorkflowProgress definition={crmWorkflowV1.entities.delivery} record={{status:"In Progress"}}/></AdminThemeProvider>);expect(screen.getAllByText("In Progress")).toHaveLength(2);expect(screen.getByText("Completed")).toBeInTheDocument();});

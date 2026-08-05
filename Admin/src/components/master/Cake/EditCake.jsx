@@ -1,17 +1,13 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  Button,
-  Fab,
   FormControl,
   Grid,
-  IconButton,
   InputLabel,
   MenuItem,
   Select,
   TextField,
 } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import { GetApi } from "../../../hooks/Get/GetApi";
 import {
   CreateCakeUrl,
@@ -24,12 +20,11 @@ import MainContext from "../../../context/MainContext";
 import { useDispatch, useSelector } from "react-redux";
 import { setSubCategoryReducerData } from "../../../redux/reducer/ChildReducer/SubCategoryReducer";
 import { setKgReducerData } from "../../../redux/reducer/ChildReducer/KgReducer";
+import {Drawer,IconButton,PrimaryButton,SecondaryButton} from "../../../admin/design-system";
 import {
   faEdit,
   faPlus,
-  faDeleteLeft,
   faClose,
-  faListCheck,
   faTrashAlt,
   faCaretRight,
 } from "@fortawesome/free-solid-svg-icons";
@@ -138,7 +133,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
       );
     }
     setDisableKgDropdown(false);
-    setSelectedUnit(editableData?.unit?.name);
+    setSelectedUnit(editableData?.unit||null);
   }, [show, editableData]);
 
   useEffect(() => {
@@ -299,7 +294,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     }
     if (
       cakeDetails.image_list.length === 0 &&
-      editableData.images.length === 0
+      (editableData.images||[]).length === 0
     ) {
       ShowNotification("warning", "Please select image");
       return;
@@ -721,21 +716,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
     seoInitialized,
   ]);
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="edit-cake-section"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit Cake" : "Add Cake"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
+  return <Drawer open={show} title={isEditableDataAvail?"Edit product":"Add product"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleAddCake}>{isEditableDataAvail?"Update product":"Add product"}</PrimaryButton></>}><div className="mads-form-grid">
             <TextField
               id="cakename"
               className="my-2"
@@ -955,19 +936,10 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
                 />
               </Grid>
               <Grid item md={3} className="d-flex align-items-center">
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  style={{
-                    textTransform: "none",
-                    borderRadius: "5px",
-                  }}
-                  onClick={(e) => handleAddKg(e)}
-                >
+                <SecondaryButton onClick={(e) => handleAddKg(e)}>
                   <FontAwesomeIcon icon={faPlus} className="mx-1" />
                   {"Add"}
-                </Button>
+                </SecondaryButton>
               </Grid>
             </Grid>
 
@@ -993,35 +965,23 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
                       <Grid item md={5}>
                         <div className="text-end p-2">
 
-                          <Fab size="medium" color="secondary" aria-label="add"
+                          <IconButton label={`Edit ${val.kg_name} price`}
                             onClick={() => {
                               handleEditKg(val);
-                            }}
-                            className="me-2"
-                            style={{
-                              borderRadius: '5px',
-                              width: '40px',
-                              height: '40px'
                             }}>
                             <FontAwesomeIcon icon={faEdit} className="" />
-                          </Fab>
+                          </IconButton>
 
-                          <Fab
-                            size="medium"
-                            color={val?.is_deleted ? "success" : "error"}
-                            aria-label="add"
+                          <IconButton
+                            label={`${val?.is_deleted ? "Restore" : "Remove"} ${val.kg_name} price`}
                             onClick={() => {
                               handleDeleteKg(val);
-                            }} style={{
-                              borderRadius: '5px',
-                              width: '40px',
-                              height: '40px'
                             }}
                           >
                             <FontAwesomeIcon
                               icon={val?.is_deleted ? faPlus : faTrashAlt}
                             />
-                          </Fab>
+                          </IconButton>
 
                         </div>
                       </Grid>
@@ -1066,29 +1026,7 @@ const EditCake = ({ show, setShow, editableData, setEditableData }) => {
               </div>
             </div>
 
-            {/* add cake button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleAddCake(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail ? "Update Cake" : "Add Cake"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  </div></Drawer>;
 };
 
 export default EditCake;

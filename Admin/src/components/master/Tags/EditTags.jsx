@@ -1,8 +1,4 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import MainContext from "../../../context/MainContext";
 import { useDispatch } from "react-redux";
 import { CreateTgUrl } from "../../../Constant/urls/urls";
@@ -11,6 +7,7 @@ import {
   editTaglistReducerData,
 } from "../../../redux/reducer/ChildReducer/TagListReducer";
 import { PostApi } from "../../../hooks/Post/PostApi";
+import {Drawer,Field,PrimaryButton,SecondaryButton,TextInput} from "../../../admin/design-system";
 
 const EditTags = ({ show, setShow, editableData, setEditableData }) => {
   const { ShowNotification } = useContext(MainContext);
@@ -82,57 +79,7 @@ const EditTags = ({ show, setShow, editableData, setEditableData }) => {
     handleClose();
   };
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit Tag" : "Add Tag"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              id="tag name"
-              className="my-2"
-              label="Tag Name"
-              fullWidth
-              size="small"
-              required
-              value={tagDetails.tag || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "tag");
-              }}
-            />
-
-            {/* add cake button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleAddTag(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail ? "Update Tag" : "Add Tag"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit tag":"Add tag"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleAddTag}>{isEditableDataAvail?"Update tag":"Add tag"}</PrimaryButton></>}><Field label="Tag name" required><TextInput value={tagDetails.tag||""} onChange={event=>handleOnchange(event.target.value,"tag")}/></Field></Drawer>;
 };
 
 export default EditTags;

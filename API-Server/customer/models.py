@@ -15,6 +15,11 @@ class Customer(AbstractUser):
         verbose_name_plural = "Customer"
         ordering = ['id']
         default_permissions = ()
+        indexes = [
+            models.Index(fields=['phone'], name='customer_phone_idx'),
+            models.Index(fields=['email'], name='customer_email_idx'),
+            models.Index(fields=['first_name', 'last_name'], name='customer_name_idx'),
+        ]
 
 
 class CustomerAddress(models.Model):

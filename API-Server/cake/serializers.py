@@ -145,23 +145,30 @@ def cake_serializer(obj):
 
     if not obj.tag == None:
         for t in obj.tag:
-            tag_details.append({
-                "id" : int(t),
-                "tag" : Tag.objects.get(id=int(t)).tag
-            })
+            tag_id = int(t)
+            tag_name_map = getattr(obj, '_tag_name_map', None)
+            tag_name = tag_name_map.get(tag_id) if tag_name_map is not None else Tag.objects.filter(id=tag_id).values_list('tag', flat=True).first()
+            if tag_name is not None:
+                tag_details.append({"id": tag_id, "tag": tag_name})
 
     res['tag_details'] = tag_details
 
     cake_price_list = []
 
-    cake_price_obj = CakePrice.objects.filter(cake=int(obj.id)).all()
+    cake_price_obj = getattr(obj, '_prefetched_prices', None)
+    if cake_price_obj is None:
+        cake_price_obj = CakePrice.objects.filter(cake=int(obj.id)).select_related('cake', 'kg')
 
     for cpl in cake_price_obj:       
 
         now = timezone.now()
 
         # offer_obj = Offer.objects.filter(id_list__contains=cpl.id, offer_from__gt=now, offer_to__lt=now).first()
-        offer_obj = Offer.objects.filter(id_list__contains=cpl.id, offer_from__lte=now, offer_to__gte=now).first()
+        active_offers = getattr(obj, '_active_offers', None)
+        if active_offers is None:
+            offer_obj = Offer.objects.filter(id_list__contains=cpl.id, offer_from__lte=now, offer_to__gte=now).first()
+        else:
+            offer_obj = next((offer for offer in active_offers if cpl.id in (offer.id_list or [])), None)
 
         
         if offer_obj is None:
@@ -185,7 +192,9 @@ def cake_serializer(obj):
 
     cake_image_list = []
 
-    cake_images_obj = CakeImages.objects.filter(cake=int(obj.id)).all()
+    cake_images_obj = getattr(obj, '_prefetched_images', None)
+    if cake_images_obj is None:
+        cake_images_obj = CakeImages.objects.filter(cake=int(obj.id)).select_related('cake')
 
     for cil in cake_images_obj:
         cake_image_list.append({

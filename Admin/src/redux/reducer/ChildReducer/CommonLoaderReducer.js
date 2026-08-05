@@ -18,7 +18,8 @@ const initialState = {
   is_delivery_person_report_loading: true,
   is_order_report_loading: true,
   is_Unit_loading: true,
-  is_item_loading: true
+  is_item_loading: true,
+  is_lead_loading: true
 };
 
 const CommonLoaderReducer = createSlice({
@@ -127,6 +128,12 @@ const CommonLoaderReducer = createSlice({
         is_order_report_loading: payload,
       };
     },
+    setIsLeadLoadingReducerData: (state, { payload }) => {
+      return {
+        ...state,
+        is_lead_loading: payload,
+      };
+    },
     setIsItemLoadingReducerData: (state, { type, payload }) => {
       return {
         ...state,
@@ -154,7 +161,8 @@ export const {
   setIsOccasionReportLoadingReducerData,
   setIsDeliveryPersonReportLoadingReducerData,
   setIsUnitLoadingReducerData,
-  setIsItemLoadingReducerData
+  setIsItemLoadingReducerData,
+  setIsLeadLoadingReducerData,
 } = CommonLoaderReducer?.actions;
 
 export default CommonLoaderReducer?.reducer;

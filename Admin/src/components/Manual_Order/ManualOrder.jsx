@@ -4,7 +4,6 @@ import {
   Autocomplete,
   Grid,
   TextField,
-  Button,
   IconButton,
   Table,
   TableHead,
@@ -13,8 +12,6 @@ import {
   TableBody,
   Paper,
   Typography,
-  Modal,
-  Box,
   ToggleButton,
   ToggleButtonGroup,
   FormControl,
@@ -58,8 +55,10 @@ import {
 import { ManualOrderCartUrl } from "../../Constant/urls/urls";
 import { ManualOrderSave } from "../../Constant/urls/urls";
 import { useNavigate } from "react-router";
+import { WizardPageTemplate } from "../../admin/templates";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChevronLeft } from "@fortawesome/free-solid-svg-icons";
+import {Modal as DesignModal,PrimaryButton,SecondaryButton} from "../../admin/design-system";
 
 const ManualOrder = ({ setShow, editableData, setEditableData }) => {
 
@@ -410,22 +409,14 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
   const totalQty = manualOrderData.reduce((sum, item) => sum + item.qty, 0);
 
   return (
-    <div>
+    <WizardPageTemplate title="New manual order" subtitle="Create an online-order record for a walk-in or phone customer." breadcrumbs={[{label:"Operations"},{label:"Online orders"},{label:"New manual order"}]} steps={[{label:"Customer"},{label:"Items"},{label:"Delivery"},{label:"Review"}]} currentStep={manualOrderData.length?2:0}>
       <Grid container spacing={2}>
         <Grid item md={12}>
           <div className="text-start">
-            <Button
-              variant="contained"
-              color="error"
-              size="small"
-              // fullWidth
-              onClick={() => {
-                navigate("/orders");
-              }}
-            >
+            <SecondaryButton onClick={() => navigate("/orders")}>
               <FontAwesomeIcon icon={faChevronLeft} className="me-2" />
               Back to Orders
-            </Button>
+            </SecondaryButton>
           </div>
         </Grid>
         <Grid item md={9}>
@@ -447,26 +438,10 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                 />
               )}
             />
-            <Modal open={itemModalOpen} onClose={handleCloseModal}>
-              <Box
-                sx={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: 500,
-                  bgcolor: "background.paper",
-                  borderRadius: 2,
-                  boxShadow: 24,
-                  p: 4,
-                }}
-              >
+            <DesignModal open={itemModalOpen} onClose={handleCloseModal} title={selectedCakeName||"Configure cake item"} footer={<><SecondaryButton onClick={handleCloseModal}>Close</SecondaryButton><PrimaryButton onClick={handleSubmit}>Add to cart</PrimaryButton></>}>
                 {selectedItem && (
                   <>
                     {/* Title and Price */}
-                    <Typography variant="h6" gutterBottom>
-                      {selectedCakeName}
-                    </Typography>
                     <Typography variant="h5" sx={{ mb: 3 }}>
                       <b>₹ {calculatePrice()}</b>
                     </Typography>
@@ -606,40 +581,9 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                       />
                     </div>
 
-                    {/* Action Buttons */}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginTop: "20px",
-                      }}
-                    >
-                      <Button
-                        variant="outlined"
-                        sx={{
-                          color: "red",
-                          borderColor: "red",
-                          "&:hover": {
-                            backgroundColor: "rgba(255, 0, 0, 0.1)",
-                            borderColor: "red",
-                          },
-                        }}
-                        onClick={handleCloseModal}
-                      >
-                        Close
-                      </Button>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={handleSubmit}
-                      >
-                        Add to Cart
-                      </Button>
-                    </div>
                   </>
                 )}
-              </Box>
-            </Modal>
+            </DesignModal>
           </Paper>
           <Paper>
             <Table>
@@ -664,7 +608,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                     <TableCell>{item.qty}</TableCell>
                     <TableCell>₹{item.price}</TableCell>
                     <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
+                      <div className="mads-table-actions">
                         <IconButton
                           color="error"
                           onClick={() => handleDeleteItem(item.row_id)}
@@ -678,7 +622,7 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                         >
                           <Edit />
                         </IconButton> */}
-                      </Box>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -704,16 +648,9 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
                   />
                 )}
               /> */}
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                fullWidth
-                sx={{ textTransform: "capitalize" }}
-                onClick={() => setModalOpen(true)}
-              >
+              <SecondaryButton onClick={() => setModalOpen(true)}>
                 Select Customer
-              </Button>
+              </SecondaryButton>
               <AddNewCustomerModal
                 open={modalOpen}
                 setModalOpen={setModalOpen}
@@ -761,26 +698,17 @@ const ManualOrder = ({ setShow, editableData, setEditableData }) => {
               className="d-flex justify-content-between"
               style={{ marginTop: 10, textAlign: "right" }}
             >
-              <Button
-                variant="contained"
-                color="error"
-                sx={{ marginRight: 2 }}
-                onClick={handleCancel}
-              >
+              <SecondaryButton onClick={handleCancel}>
                 Cancel
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                onClick={handleFinish}
-              >
+              </SecondaryButton>
+              <PrimaryButton onClick={handleFinish}>
                 Finish
-              </Button>
+              </PrimaryButton>
             </div>
           </Paper>
         </Grid>
       </Grid>
-    </div>
+    </WizardPageTemplate>
   );
 };
 

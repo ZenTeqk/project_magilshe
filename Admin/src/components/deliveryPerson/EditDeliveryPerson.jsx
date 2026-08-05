@@ -1,23 +1,13 @@
 import { useState, useContext, useEffect } from "react";
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
-import { Offcanvas } from "react-bootstrap";
 import { useDispatch } from "react-redux";
-import {
-  addMainCategoryReducerData,
-  editMainCategoryReducerData,
-} from "../../redux/reducer/ChildReducer/MainCategoryReducer";
 import { PostApi } from "../../hooks/Post/PostApi";
-import {
-  CreateDeliveryPersonUrl,
-  CreateMainCategoryUrl,
-} from "../../Constant/urls/urls";
+import {CreateDeliveryPersonUrl} from "../../Constant/urls/urls";
 import MainContext from "../../context/MainContext";
 import {
   addDeliveryPersonReducerData,
   editDeliveryPersonReducerData,
 } from "../../redux/reducer/ChildReducer/DeliveryPersonReducer";
+import {DateInput,Drawer,Field,NotesInput,PhoneInput,PrimaryButton,SecondaryButton,TextInput} from "../../admin/design-system";
 
 const EditDeliveryPerson = ({
   show,
@@ -149,129 +139,7 @@ const EditDeliveryPerson = ({
     
   };
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail
-                ? "Edit delivery Person"
-                : "Add delivery Person"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              id="person_name"
-              className="my-2"
-              label="Delivery Person Name"
-              fullWidth
-              size="small"
-              required
-              value={deliveryPersonDetails.name || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "name");
-              }}
-            />
-            <TextField
-              id="person_phone"
-              className="my-2"
-              label="Mobile Number"
-              fullWidth
-              size="small"
-              required
-              value={deliveryPersonDetails.phone || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "phone");
-              }}
-            />
-            <TextField
-              id="person_email"
-              className="my-2"
-              label="Email"
-              fullWidth
-              size="small"
-              required
-              value={deliveryPersonDetails.email || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "email");
-              }}
-            />
-            <TextField
-              id="person_dob"
-              className="my-2"
-              label="DOB"
-              fullWidth
-              size="small"
-              required
-              value={deliveryPersonDetails.dob || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "dob");
-              }}
-            />
-            <TextField
-              id="person_address"
-              className="my-2"
-              label="Address"
-              multiline
-              rows={3}
-              fullWidth
-              size="small"
-              required
-              value={deliveryPersonDetails.address || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "address");
-              }}
-            />
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                handleOnchange(e.target.files[0], "image");
-              }}
-            />
-            {preview && (
-              <div className="mt-2">
-                <img
-                  src={preview}
-                  alt="Preview"
-                  style={{
-                    width: "100px",
-                    height: "100px",
-                    borderRadius: "10px",
-                  }}
-                />
-              </div>
-            )}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleAddDeliveryPerson();
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail
-                  ? "Edit delivery Person"
-                  : "Add delivery Person"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit delivery person":"Add delivery person"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleAddDeliveryPerson}>{isEditableDataAvail?"Update delivery person":"Add delivery person"}</PrimaryButton></>}><div className="mads-form-grid"><Field label="Name" required><TextInput value={deliveryPersonDetails.name||""} onChange={event=>handleOnchange(event.target.value,"name")}/></Field><Field label="Mobile number" required><PhoneInput value={deliveryPersonDetails.phone||""} onChange={event=>handleOnchange(event.target.value,"phone")}/></Field><Field label="Email" required><input type="email" value={deliveryPersonDetails.email||""} onChange={event=>handleOnchange(event.target.value,"email")}/></Field><Field label="Date of birth" required><DateInput value={deliveryPersonDetails.dob||""} onChange={event=>handleOnchange(event.target.value,"dob")}/></Field><Field label="Address" required><NotesInput rows={3} value={deliveryPersonDetails.address||""} onChange={event=>handleOnchange(event.target.value,"address")}/></Field><Field label="Photo"><input type="file" accept="image/*" onChange={event=>handleOnchange(event.target.files[0],"image")}/></Field>{preview&&<img className="mads-management-image-preview" src={preview} alt="Delivery person preview"/>}</div></Drawer>;
 };
 
 export default EditDeliveryPerson;

@@ -1,8 +1,4 @@
 import { useState, useContext, useEffect } from "react";
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
-import { Offcanvas } from "react-bootstrap";
 import { useDispatch } from "react-redux";
 import {
   addMainCategoryReducerData,
@@ -11,6 +7,7 @@ import {
 import { PostApi } from "../../../hooks/Post/PostApi";
 import { CreateMainCategoryUrl } from "../../../Constant/urls/urls";
 import MainContext from "../../../context/MainContext";
+import {Drawer,Field,NotesInput,PrimaryButton,SecondaryButton,TextInput} from "../../../admin/design-system";
 
 const EditCategory = ({ show, setShow, editableData, setEditableData }) => {
   const { ShowNotification } = useContext(MainContext);
@@ -133,145 +130,7 @@ const EditCategory = ({ show, setShow, editableData, setEditableData }) => {
     handleClose();
   };
 
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit Main Category" : "Add Main Category"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              id="category-name"
-              className="my-2"
-              label="Category Name"
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.name || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "name");
-              }}
-            />
-            <TextField
-              id="category-description"
-              className="my-2"
-              label="Category Description"
-              multiline
-              rows={3}
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.description || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "description");
-              }}
-            />
-            <TextField
-              id="meta_title"
-              className="my-2"
-              label="Meta Title"
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.meta_title || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "meta_title");
-              }}
-            />
-            <TextField
-              id="meta_description"
-              className="my-2"
-              label="Meta Description"
-              multiline
-              rows={3}
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.meta_description || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "meta_description");
-              }}
-            />
-            <TextField
-              id="slug"
-              className="my-2"
-              label="Slug"
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.slug || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "slug");
-              }}
-              sx={{display: "none"}}
-            />
-            <TextField
-              id="content"
-              className="my-2"
-              label="Meta Keywords"
-              multiline
-              rows={3}
-              fullWidth
-              size="small"
-              required
-              value={cakeDetails.content || ""}
-              onChange={(e) => {
-                handleOnchange(e.target.value, "content");
-              }}
-            />
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                handleOnchange(e.target.files[0], "image");
-              }}
-            />
-            {preview && (
-              <div className="mt-2">
-                <img
-                  src={preview}
-                  alt="Preview"
-                  style={{
-                    width: "100px",
-                    height: "100px",
-                    borderRadius: "10px",
-                    objectFit: 'cover'
-                  }}
-                />
-              </div>
-            )}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleAddMainCategory();
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail
-                  ? "Edit Main Category"
-                  : "Add Main Category"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit main category":"Add main category"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleAddMainCategory}>{isEditableDataAvail?"Update category":"Add category"}</PrimaryButton></>}><div className="mads-form-grid"><Field label="Category name" required><TextInput value={cakeDetails.name||""} onChange={event=>handleOnchange(event.target.value,"name")}/></Field><Field label="Category description"><NotesInput rows={3} value={cakeDetails.description||""} onChange={event=>handleOnchange(event.target.value,"description")}/></Field><Field label="Meta title"><TextInput value={cakeDetails.meta_title||""} onChange={event=>handleOnchange(event.target.value,"meta_title")}/></Field><Field label="Meta description"><NotesInput rows={3} value={cakeDetails.meta_description||""} onChange={event=>handleOnchange(event.target.value,"meta_description")}/></Field><Field label="Meta keywords"><NotesInput rows={3} value={cakeDetails.content||""} onChange={event=>handleOnchange(event.target.value,"content")}/></Field><Field label="Category image" required={!isEditableDataAvail}><input type="file" accept="image/*" onChange={event=>handleOnchange(event.target.files[0],"image")}/></Field>{preview&&<img className="mads-management-image-preview" src={preview} alt="Category preview"/>}</div></Drawer>;
 };
 
 export default EditCategory;

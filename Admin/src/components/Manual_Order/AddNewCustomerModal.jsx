@@ -1,12 +1,4 @@
 import React, { useContext, useState } from "react";
-import {
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  TextField,
-  Button,
-} from "@mui/material";
 import { checkCustomer, ManualOrderCustomerUrl } from "../../Constant/urls/urls";
 import {
   addCustomersReducerData,
@@ -15,6 +7,7 @@ import {
 import { useDispatch } from "react-redux";
 import MainContext from "../../context/MainContext";
 import { PostApi } from "../../hooks/Post/PostApi";
+import { Field, Modal, NotesInput, PhoneInput, PrimaryButton, SecondaryButton, TextInput } from "../../admin/design-system";
 
 const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
   const dispatch = useDispatch();
@@ -165,31 +158,10 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
   };
 
   return (
-    <Dialog open={open} onClose={handleClose}>
-      <DialogTitle>Add New Customer</DialogTitle>
-      <DialogContent>
-
-        <TextField
-          name="phone"
-          label="Phone Number"
-          value={formData.phone}
-          onChange={handleChange}
-          fullWidth
-          margin="normal"
-          size="small"
-          disabled={isDoneSearch}
-          sx={{
-            minWidth: "500px"
-          }}
-        />
-
-        <div className="text-end">
-
-          <Button
-            variant="contained"
-            color="error"
-            className="me-2"
-            onClick={() => {
+    <Modal open={open} onClose={handleClose} title="Add new customer" footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleSubmit}>Add customer</PrimaryButton></>}>
+        <Field label="Phone number" required helperText="Check the phone number before entering a new customer."><PhoneInput name="phone" value={formData.phone} onChange={handleChange} disabled={isDoneSearch}/></Field>
+        <div className="mads-inline-actions">
+          <SecondaryButton onClick={() => {
               setIsDoneSearch(false);
               setFormData((prev) => ({
                 ...prev,
@@ -199,86 +171,20 @@ const AddNewCustomerModal = ({ open, setModalOpen, onSubmit }) => {
                 city: "",
                 pincode: "",
               }));
-            }}
-          >
-            Edit
-          </Button>
-
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => {
-              handleCheckUser();
-            }}
-          >
-            Check
-          </Button>
+            }}>Edit phone</SecondaryButton>
+          <SecondaryButton onClick={handleCheckUser}>Check customer</SecondaryButton>
         </div>
 
         {isDoneSearch && (
           <>
-            <TextField
-              name="name"
-              label="Name"
-              value={formData.name}
-              onChange={handleChange}
-              fullWidth
-              margin="normal"
-              size="small"
-            />
-            <TextField
-              name="email"
-              label="Email"
-              value={formData.email}
-              onChange={handleChange}
-              fullWidth
-              margin="normal"
-              size="small"
-            />
-            <TextField
-              name="address"
-              label="Address"
-              value={formData.address}
-              onChange={handleChange}
-              fullWidth
-              margin="normal"
-              size="small"
-            />
-            <TextField
-              name="city"
-              label="City"
-              value={formData.city}
-              onChange={handleChange}
-              fullWidth
-              margin="normal"
-              size="small"
-            />
-            <TextField
-              name="pincode"
-              label="pincode"
-              value={formData.pincode}
-              onChange={handleChange}
-              fullWidth
-              margin="normal"
-              size="small"
-            />
+            <Field label="Name" required><TextInput name="name" value={formData.name} onChange={handleChange}/></Field>
+            <Field label="Email"><input type="email" name="email" value={formData.email} onChange={handleChange}/></Field>
+            <Field label="Address"><NotesInput name="address" value={formData.address} onChange={handleChange}/></Field>
+            <Field label="City"><TextInput name="city" value={formData.city} onChange={handleChange}/></Field>
+            <Field label="Pincode"><TextInput name="pincode" inputMode="numeric" value={formData.pincode} onChange={handleChange}/></Field>
           </>
         )}
-
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose} color="error">
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          color="success"
-        // disabled={Object.values(formData)?.some((value) => !value?.trim())}
-        >
-          Submit
-        </Button>
-      </DialogActions>
-    </Dialog>
+    </Modal>
   );
 };
 

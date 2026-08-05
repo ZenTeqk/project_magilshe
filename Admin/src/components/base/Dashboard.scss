@@ -1,6 +1,9 @@
 .main-component{
   padding: 1.5rem 1rem;
+  background:#f5f7fb;
 }
+
+.main-component-section{min-width:0;background:#f5f7fb;color:#101828;font-family:Inter,"Segoe UI",sans-serif}
 
 .pl-0{
   padding-left: 0px;
@@ -89,4 +92,3 @@
 .main-component::-webkit-scrollbar-thumb:hover {
   background-color: #6b5ec9;
 }
-

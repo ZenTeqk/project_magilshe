@@ -112,7 +112,7 @@
 }
 
 .dashboard-sidebar {
-    border-right-color: #e1e1e1;
+    border-right: 0 !important;
     height: 100vh;
 }
 
@@ -177,3 +177,5 @@
         background-color: #ffffff !important;
     }
 }
+.sidebar-search{display:flex;align-items:center;gap:9px;margin:10px 12px 14px;padding:9px 11px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:rgba(255,255,255,.07);color:#aeb7c6}.sidebar-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#fff;font-size:12px}.sidebar-search input::placeholder{color:#9ba6b6}.dashboard-sidebar .ps-submenu-content{background:transparent!important}.dashboard-sidebar .ps-menu-button{border-radius:8px;margin:2px 8px;width:calc(100% - 16px)!important}.dashboard-sidebar .ps-menu-button:hover,.dashboard-sidebar .ps-menu-button.ps-active,.dashboard-sidebar .nested-menu-active>.ps-menu-button{background:rgba(255,255,255,.11)!important}.dashboard-sidebar .section-head{text-transform:uppercase;font-size:10px!important;letter-spacing:.11em!important}
+.dashboard-sidebar .ps-sidebar-container{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}.dashboard-sidebar .ps-sidebar-container::-webkit-scrollbar{width:5px}.dashboard-sidebar .ps-sidebar-container::-webkit-scrollbar-track{background:transparent}.dashboard-sidebar .ps-sidebar-container::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:8px}

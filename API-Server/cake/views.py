@@ -23,7 +23,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.db import transaction
 from cakery.common import StrongRandomPasswordGenerator, generate_username
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 
 
 from django.shortcuts import render
@@ -50,6 +50,7 @@ from cake import models as cake_model
 from category import models as category_model
 from kg.models import Kg as KGModel
 from unit import models as unit_model
+from tag.models import Tag
 from cake.serializers import cake_serializer, offer_serializer, getAWSUrl
 from django.utils import timezone
 from rest_framework import generics, filters
@@ -130,16 +131,16 @@ class GetCakeList(APIView):
             # order = request.query_params['sort']
             if "search" in request.query_params:
                 searchKey = request.query_params['search']
-                CakeObj = cake_model.Cake.objects.filter(status=True,name__icontains=searchKey).all()
-                cake_data = [cake_serializer(ht) for ht in  CakeObj]
+                CakeObj = self._optimized_queryset().filter(name__icontains=searchKey)
+                cake_data = self._serialize(CakeObj)
             elif "category" in request.query_params:
                 categoryKey = request.query_params['category']
-                CakeObj = cake_model.Cake.objects.filter(status=True,sub_category=categoryKey).all()
-                cake_data = [cake_serializer(ht) for ht in  CakeObj]
+                CakeObj = self._optimized_queryset().filter(sub_category=categoryKey)
+                cake_data = self._serialize(CakeObj)
 
             else:
-                CakeObj = cake_model.Cake.objects.filter(status=True).all()
-                cake_data = [cake_serializer(ht) for ht in  CakeObj]
+                CakeObj = self._optimized_queryset()
+                cake_data = self._serialize(CakeObj)
         except Exception as e:
             cake_data = []
             print("Get Cake List Error - {}".format(e))
@@ -147,6 +148,25 @@ class GetCakeList(APIView):
 
         
         return Response({'data' : cake_data})
+
+    def _optimized_queryset(self):
+        return cake_model.Cake.objects.filter(status=True).select_related(
+            'sub_category__main_category', 'unit'
+        ).prefetch_related(
+            Prefetch('cakeprice_set', queryset=cake_model.CakePrice.objects.select_related('cake', 'kg'), to_attr='_prefetched_prices'),
+            Prefetch('cakeimages_set', queryset=cake_model.CakeImages.objects.select_related('cake'), to_attr='_prefetched_images'),
+        )
+
+    def _serialize(self, queryset):
+        cakes = list(queryset)
+        tag_ids = {int(tag_id) for cake in cakes for tag_id in (cake.tag or []) if str(tag_id).isdigit()}
+        tag_name_map = dict(Tag.objects.filter(id__in=tag_ids).values_list('id', 'tag')) if tag_ids else {}
+        now = timezone.now()
+        active_offers = list(cake_model.Offer.objects.filter(status=True, offer_from__lte=now, offer_to__gte=now))
+        for cake in cakes:
+            cake._tag_name_map = tag_name_map
+            cake._active_offers = active_offers
+        return [cake_serializer(cake) for cake in cakes]
     
 class GetCakeData(APIView):
     permission_classes = []
@@ -515,4 +535,3 @@ class DeleteCakeOffer(APIView):
         except Exception as e:
             logger.exception(f"Delete Offer Error - {str(e)}")
             raise APIException({'message' : custom_error_message})
-

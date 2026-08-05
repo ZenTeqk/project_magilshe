@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect, useCallback, useMemo } from "react";
 import Cookies from "universal-cookie";
 import { toast } from "react-toastify";
 import Swal from "sweetalert2";
@@ -17,12 +17,15 @@ export const MainContextProvider = ({ children }) => {
 
   const { REACT_APP_CLIENT_ID } = process.env;
 
-  const headers = {
-    access_token: accessToken,
-    user_timezone: "Asia/Calcutta",
-    "Content-Type": "application/json",
-    client_id: REACT_APP_CLIENT_ID,
-  };
+  const headers = useMemo(
+    () => ({
+      access_token: accessToken,
+      user_timezone: "Asia/Calcutta",
+      "Content-Type": "application/json",
+      client_id: REACT_APP_CLIENT_ID,
+    }),
+    [accessToken, REACT_APP_CLIENT_ID]
+  );
 
   useEffect(() => {
     if (new Cookies().get("access_token")) {
@@ -32,10 +35,10 @@ export const MainContextProvider = ({ children }) => {
     }
   }, []);
 
-  const ShowNotification = (type, message) => {
+  const ShowNotification = useCallback((type, message) => {
     toast[type](message, {
       position: "top-right",
-      autoClose: 1000,
+      autoClose: 3500,
       hideProgressBar: false,
       closeOnClick: true,
       pauseOnHover: true,
@@ -43,9 +46,9 @@ export const MainContextProvider = ({ children }) => {
       progress: undefined,
       theme: "colored",
     });
-  };
+  }, []);
 
-  const ShowConfirmation = async (
+  const ShowConfirmation = useCallback(async (
     title,
     positiveButtonText,
     negativeButtonText
@@ -68,7 +71,7 @@ export const MainContextProvider = ({ children }) => {
       // Swal.fire("Changes are not saved", "", "info");
     }
     // });
-  };
+  }, []);
 
   useEffect(() => {
     return async () => {
@@ -83,26 +86,39 @@ export const MainContextProvider = ({ children }) => {
     }
   }, [accessToken]);
 
-  return (
-    <MainContext.Provider
-      value={{
-        ShowNotification,
-        ShowConfirmation,
-        accessToken,
-        setAccessToken,
+  const value = useMemo(
+    () => ({
+      ShowNotification,
+      ShowConfirmation,
+      accessToken,
+      setAccessToken,
 
-        isInitPreLoading,
-        isPreLoading,
-        setIsPreLoading,
-        setIsInitPreLoading,
-        activeLink,
-        setActiveLink,
-        headers,
-        userRole,
-        setUserRole,
-        isApiLoading, setIsApiLoading
-      }}
-    >
+      isInitPreLoading,
+      isPreLoading,
+      setIsPreLoading,
+      setIsInitPreLoading,
+      activeLink,
+      setActiveLink,
+      headers,
+      userRole,
+      setUserRole,
+      isApiLoading, setIsApiLoading
+    }),
+    [
+      ShowNotification,
+      ShowConfirmation,
+      accessToken,
+      isInitPreLoading,
+      isPreLoading,
+      activeLink,
+      headers,
+      userRole,
+      isApiLoading,
+    ]
+  );
+
+  return (
+    <MainContext.Provider value={value}>
       {children}
     </MainContext.Provider>
   );

@@ -1,8 +1,4 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { FormControl, Button, InputLabel, MenuItem, Select, TextField, Grid } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import { useDispatch, useSelector } from "react-redux";
 import MainContext from "../../context/MainContext";
 import { PostApi } from "../../hooks/Post/PostApi";
@@ -12,6 +8,7 @@ import {
   editOffersReducerData,
 } from "../../redux/reducer/ChildReducer/OffersReducer";
 import { ConvertDateTimeStrFunction } from "../../commonFunctions";
+import {Drawer,Field,NumberInput,PrimaryButton,SecondaryButton,TextInput} from "../../admin/design-system";
 
 const EditOffers = ({ show, setShow, editableData, setEditableData }) => {
   const { ShowNotification } = useContext(MainContext);
@@ -39,17 +36,16 @@ const EditOffers = ({ show, setShow, editableData, setEditableData }) => {
   useEffect(() => {
     if (Object.keys(editableData).length) {
 
-      const newIdList = new Set(editableData?.id_list);
       setOfferDetails({
         ...editableData,
-        id_list: { newIdList },
+        id_list: editableData?.id_list||[],
       });
       if (editableData?.url) {
         setPreview(editableData?.url);
       } else {
         setPreview("");
       }
-      setSelectedCakes(editableData?.cake_list)
+      setSelectedCakes(editableData?.cake_list||[])
     } else {
       const formattedDateTime = new Date().toISOString().slice(0, 16);
       setOfferDetails((prevDetails) => ({
@@ -74,7 +70,7 @@ const EditOffers = ({ show, setShow, editableData, setEditableData }) => {
       ...oldData,
       id_list: mappedObj,
     }));
-  }, [selectedCakes]);
+  }, [cake_list_reducer_data,selectedCakes]);
 
   useEffect(() => {
     if (offerDetails.offer_from) {
@@ -135,9 +131,7 @@ const EditOffers = ({ show, setShow, editableData, setEditableData }) => {
     }
   };
 
-  const handleCakeList = (e) => {
-    setSelectedCakes(e.target.value.flat());
-  };
+  const handleCakeList = (e) => setSelectedCakes(Array.from(e.target.selectedOptions,option=>Number(option.value)));
 
   const handleOffer = async (e) => {
     e.preventDefault();
@@ -199,176 +193,7 @@ const EditOffers = ({ show, setShow, editableData, setEditableData }) => {
 
     
   };
-  return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>
-              {isEditableDataAvail ? "Edit offer" : "Add offer"}
-            </Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-
-            <Grid container spacing={2}>
-
-              <Grid item md={12}>
-
-                <TextField
-                  id="offer name"
-                  className="my-2"
-                  label="offer Name"
-                  fullWidth
-                  size="small"
-                  required
-                  value={offerDetails.name || ""}
-                  onChange={(e) => {
-                    handleOnchange(e.target.value, "name");
-                  }}
-                />
-              </Grid>
-
-              <Grid item md={6}>
-                <TextField
-                  id="offer_start_date"
-                  className="my-2"
-                  label="Offer Start Date"
-                  fullWidth
-                  size="small"
-                  required
-                  value={offerDetails.offer_from || ""}
-                  onChange={(e) => {
-                    handleOnchange(e.target.value, "offer_from");
-                  }}
-                  type="datetime-local"
-                />
-              </Grid>
-
-              <Grid item md={6}>
-                <TextField
-                  id="offer_end_date"
-                  className="my-2"
-                  label="Offer End Date"
-                  fullWidth
-                  type="datetime-local"
-                  size="small"
-                  required
-                  value={offerDetails.offer_to || ""}
-                  onChange={(e) => {
-                    handleOnchange(e.target.value, "offer_to");
-                  }}
-
-                />
-              </Grid>
-
-              <Grid item md={4}>
-
-                <TextField
-                  id="offer_per"
-                  className="my-2"
-                  label="Offer Percentage"
-                  fullWidth
-                  size="small"
-                  required
-                  value={offerDetails.offer_per || ""}
-                  onChange={(e) => {
-                    handleOnchange(e.target.value, "offer_per");
-                  }}
-                  type="number"
-                />
-              </Grid>
-              <Grid item md={8}>
-
-                {/* display all Cakes */}
-                <FormControl fullWidth size="small" className="my-2">
-                  <InputLabel id="category-select-label">Offered Cakes</InputLabel>
-                  <Select
-                    labelId="category-select-label"
-                    id="category-select"
-                    label="Offered Cakes"
-                    multiple
-                    value={selectedCakes}
-                    onChange={handleCakeList}
-                  >
-                    {cake_list_reducer_data && cake_list_reducer_data.length > 0 ? (
-                      cake_list_reducer_data.map((val) => (
-                        <MenuItem key={val.id} value={val.id}>
-                          {val.name}
-                        </MenuItem>
-                      ))
-                    ) : (
-                      <MenuItem disabled>No Cakes available</MenuItem>
-                    )}
-                  </Select>
-                </FormControl>
-              </Grid>
-
-              <Grid item md={12}>
-
-                <Grid container spacing={2}>
-                  <Grid item md={9}>
-                    <div className="my-2">
-                      <InputLabel>Offer Image</InputLabel>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="mt-2"
-                        onChange={(e) => {
-                          handleOnchange(e.target.files[0], "image");
-                        }}
-                      />
-                    </div>
-                  </Grid>
-
-                  <Grid item md={3}>
-
-                    {preview && (
-                      <div className="text-start">
-                        <img
-                          src={preview}
-                          alt="Preview"
-                          style={{
-                            width: "100px",
-                            height: "100px",
-                            borderRadius: "10px",
-                            objectFit: "cover",
-                          }}
-                        />
-                      </div>
-                    )}
-                  </Grid>
-                </Grid>
-              </Grid>
-            </Grid>
-
-            {/* add cake button */}
-            <div className="text-end mt-4">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleOffer(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                {isEditableDataAvail ? "Update offer" : "Add offer"}
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
-  );
+  return <Drawer open={show} title={isEditableDataAvail?"Edit offer":"Add offer"} onClose={handleClose} footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleOffer}>{isEditableDataAvail?"Update offer":"Add offer"}</PrimaryButton></>}><div className="mads-form-grid"><Field label="Offer name" required><TextInput value={offerDetails.name||""} onChange={event=>handleOnchange(event.target.value,"name")}/></Field><Field label="Offer starts" required span={6}><TextInput type="datetime-local" value={offerDetails.offer_from||""} onChange={event=>handleOnchange(event.target.value,"offer_from")}/></Field><Field label="Offer ends" required span={6}><TextInput type="datetime-local" value={offerDetails.offer_to||""} onChange={event=>handleOnchange(event.target.value,"offer_to")}/></Field><Field label="Discount percentage" required span={6}><NumberInput min="0" max="99.9" step="0.1" value={offerDetails.offer_per||""} onChange={event=>handleOnchange(event.target.value,"offer_per")}/></Field><Field label="Offered products" span={6} helperText="Hold Ctrl or Command to select multiple products."><select className="mads-input" multiple value={selectedCakes} onChange={handleCakeList}>{(cake_list_reducer_data||[]).map(product=><option key={product.id} value={product.id}>{product.name}</option>)}</select></Field><Field label="Offer image"><input type="file" accept="image/*" onChange={event=>handleOnchange(event.target.files[0],"image")}/></Field>{preview&&<img className="mads-management-image-preview" src={preview} alt="Offer preview"/>}</div></Drawer>;
 };
 
 export default EditOffers;

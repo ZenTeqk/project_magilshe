@@ -1,19 +1,35 @@
-import { faFileLines, faSave } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, Grid, InputLabel, TextField } from "@mui/material";
-import React, { useContext, useEffect, useState } from "react";
-import { Card, Col, Row } from "react-bootstrap";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import MainContext from "../../context/MainContext";
-import { GetApi } from "../../hooks/Get/GetApi";
 import {
   GetConfigurationUrl,
   UpdateConfigurationUrl,
 } from "../../Constant/urls/urls";
-import PreLoaderComponent from "../../common/PreLoaderComponent";
 import { setConfigReducerData } from "../../redux/reducer/ChildReducer/ConfigReducer";
 import { useDispatch, useSelector } from "react-redux";
 import { PostApi } from "../../hooks/Post/PostApi";
-import { setIsConfigLoadingReducerData } from "../../redux/reducer/ChildReducer/CommonLoaderReducer";
+import { GetApi } from "../../hooks/Get/GetApi";
+import { SettingsPageTemplate } from "../../admin/templates";
+import { EmptyState, Field, FormSection, LoadingState, NotesInput, PhoneInput, PrimaryButton, SecondaryButton, TextInput } from "../../admin/design-system";
+
+const emptyConfiguration = {
+  id: 0,
+  name: "",
+  company_address: "",
+  email: "",
+  website: "",
+  mobile: "",
+  company_fax: "",
+  gst_number: "",
+  food_license_number: "",
+  map_iframe_link: "",
+  description: "",
+  return_policy: "",
+  meta: "",
+  image: null,
+  greeting_text: "",
+};
+
+const isConfigurationRecord = value => Boolean(value && !Array.isArray(value) && typeof value === "object" && Object.keys(value).length);
 
 const Config = () => {
   const { ShowNotification,setIsApiLoading } = useContext(MainContext);
@@ -23,35 +39,41 @@ const Config = () => {
   const { is_config_loading } = useSelector(
     (state) => state.CommonLoaderReducer
   );
-  const [companyDetails, setCompanyDetails] = useState({
-    id: 0,
-    name: "",
-    company_address: "",
-    email: "",
-    website: "",
-    mobile: 0,
-    company_fax: "",
-    gst_number: "",
-    food_license_number: "",
-    map_iframe_link: "",
-    description: "",
-    return_policy: "",
-    meta: "",
-    image: {},
-    greeting_text: "",
-  });
+  const [companyDetails, setCompanyDetails] = useState(emptyConfiguration);
 
   const [preview, setPreview] = useState("");
+  const [pageLoading, setPageLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
 
   useEffect(() => {
-    setCompanyDetails(config_reducer_data);
-    if (config_reducer_data?.url) {
-      setPreview(config_reducer_data?.url);
-    } else {
-      setPreview("");
+    if (isConfigurationRecord(config_reducer_data)) {
+      setCompanyDetails({...emptyConfiguration,...config_reducer_data});
+      setPreview(config_reducer_data?.url || "");
     }
   }, [config_reducer_data]);
+
+  const loadConfiguration = useCallback(async () => {
+    setPageLoading(true);
+    setLoadFailed(false);
+    try {
+      const result = await GetApi(GetConfigurationUrl);
+      if (result?.status === 200 && isConfigurationRecord(result.data?.data)) {
+        dispatch(setConfigReducerData(result.data.data));
+      } else {
+        setLoadFailed(true);
+      }
+    } catch (error) {
+      console.error("getConfiguration Error:", error);
+      setLoadFailed(true);
+    } finally {
+      setPageLoading(false);
+    }
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (!is_config_loading && !isConfigurationRecord(config_reducer_data)) loadConfiguration();
+  }, [config_reducer_data, is_config_loading, loadConfiguration]);
 
   const handleOnchange = (value, name) => {
     
@@ -76,20 +98,18 @@ const Config = () => {
         case "phone":
           const regex_mobile = /^[6-9]\d{9}$/;
           const is_valid_mobile = regex_mobile.test(value);
-          if (!is_valid_mobile)
-            return ShowNotification(
-              "error",
-              "Please Enter Valid Mobile Number"
-            );
+          if (!is_valid_mobile) {
+            ShowNotification("error", "Please enter a valid 10-digit mobile number");
+            return false;
+          }
           break;
         case "email":
           const regex_email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           const is_valid_email = regex_email.test(value);
-          if (!is_valid_email)
-            return ShowNotification(
-              "error",
-              "Please Enter Valid Email Address"
-            );
+          if (!is_valid_email) {
+            ShowNotification("error", "Please enter a valid email address");
+            return false;
+          }
           break;
 
         default:
@@ -97,8 +117,9 @@ const Config = () => {
       }
     } else {
       ShowNotification("error", msg);
-      return;
+      return false;
     }
+    return true;
   };
 
 
@@ -115,8 +136,8 @@ const Config = () => {
     if (!companyDetails.image && !companyDetails.url)
       return handleValidate("Please Choose Company Logo");
 
-    handleValidate("", companyDetails.mobile, "phone");
-    handleValidate("", companyDetails.email, "email");
+    if (!handleValidate("", companyDetails.mobile, "phone")) return;
+    if (!handleValidate("", companyDetails.email, "email")) return;
 
     formdata.append("id", companyDetails?.id || 0);
     formdata.append("name", companyDetails?.name);
@@ -156,217 +177,35 @@ const Config = () => {
     }
   };
 
-  if (is_config_loading) {
-    return <PreLoaderComponent />;
+  if (is_config_loading || pageLoading) {
+    return <LoadingState label="Loading configuration" />;
+  }
+
+  if (loadFailed) {
+    return <SettingsPageTemplate title="General configuration" subtitle="Company identity and storefront defaults." breadcrumbs={[{label:"Configuration"},{label:"General configuration"}]} sections={[{key:"company",label:"Company details"}]} activeSection="company">
+      <EmptyState title="Configuration could not be loaded" description="Check that the API server is running, then try loading the company settings again." action={<SecondaryButton onClick={loadConfiguration}>Try again</SecondaryButton>}/>
+    </SettingsPageTemplate>;
   }
 
   return (
-    <div>
-      <section className="component-heading my-2">
-        <FontAwesomeIcon icon={faFileLines} className="mx-2" />
-        Configuration
-      </section>
-
-      <Card className="p-4 my-2">
-        <Grid container spacing={2}>
-          <Grid item md={6} xs={6} className="text-start">
-            <div className="my-2">
-              <InputLabel>Company Name</InputLabel>
-              <TextField
-                id="name"
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.name || ""}
-                onChange={(e) => handleOnchange(e.target.value, "name")}
-              />
-            </div>
-
-            <div className="my-2">
-              <InputLabel>Mobile Number</InputLabel>
-              <TextField
-                id="mobile_number"
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.mobile || ""}
-                onChange={(e) => handleOnchange(e.target.value, "mobile")}
-              />
-            </div>
-            <div className="my-2">
-              <InputLabel>Email</InputLabel>
-              <TextField
-                id="email"
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.email || ""}
-                onChange={(e) => handleOnchange(e.target.value, "email")}
-              />
-            </div>
-            <div className="my-2">
-              <InputLabel>Company Website</InputLabel>
-              <TextField
-                id="website"
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.website || ""}
-                onChange={(e) => handleOnchange(e.target.value, "website")}
-              />
-            </div>
-
-            <div className="my-2">
-              <InputLabel>GST-IN</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.gst_number || ""}
-                onChange={(e) => handleOnchange(e.target.value, "gst_number")}
-              />
-            </div>
-            <div className="my-2">
-              <InputLabel>Food License Number</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.food_license_number || ""}
-                onChange={(e) =>
-                  handleOnchange(e.target.value, "food_license_number")
-                }
-              />
-            </div>
-            <div className="my-2">
-              <InputLabel>Company Address</InputLabel>
-              <TextField
-                id="company_address"
-                className="my-2"
-                fullWidth
-                multiline
-                rows={3}
-                size="small"
-                required
-                value={companyDetails.company_address || ""}
-                onChange={(e) =>
-                  handleOnchange(e.target.value, "company_address")
-                }
-              />
-            </div>
-          </Grid>
-          <Grid item md={6} className="text-start">
-            <div>
-              <div className="my-2">
-                <InputLabel>Company Logo</InputLabel>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="mt-2"
-                  onChange={(e) => {
-                    handleOnchange(e.target.files[0], "image");
-                  }}
-                />
-              </div>
-              {preview && (
-                <div className="text-start">
-                  <img
-                    src={preview}
-                    alt="Preview"
-                    style={{
-                      width: "100px",
-                      height: "100px",
-                      borderRadius: "10px",
-                      objectFit: "cover",
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="my-2">
-              <InputLabel>Google Map Iframe</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                value={companyDetails.map_iframe_link || ""}
-                onChange={(e) =>
-                  handleOnchange(e.target.value, "map_iframe_link")
-                }
-              />
-            </div>
-
-            <div className="my-2">
-              <InputLabel>description</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                multiline
-                rows={4}
-                value={companyDetails.description || ""}
-                onChange={(e) => handleOnchange(e.target.value, "description")}
-              />
-            </div>
-
-            <div className="my-2">
-              <InputLabel>Return Policy</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                multiline
-                rows={4}
-                value={companyDetails.return_policy || ""}
-                onChange={(e) =>
-                  handleOnchange(e.target.value, "return_policy")
-                }
-              />
-            </div>
-            <div className="my-2">
-              <InputLabel>Meta</InputLabel>
-              <TextField
-                className="my-2"
-                fullWidth
-                size="small"
-                required
-                multiline
-                rows={4}
-                value={companyDetails.meta || ""}
-                onChange={(e) =>
-                  handleOnchange(e.target.value, "meta")
-                }
-              />
-            </div>
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => handleSave()}
-              >
-                <FontAwesomeIcon icon={faSave} className="mx-1" />
-                Save Configuration
-              </Button>
-            </div>
-          </Grid>
-        </Grid>
-      </Card>
-    </div>
+    <SettingsPageTemplate title="General configuration" subtitle="Company identity and storefront defaults." breadcrumbs={[{label:"Configuration"},{label:"General configuration"}]} sections={[{key:"company",label:"Company details"}]} activeSection="company" primaryAction={<PrimaryButton onClick={handleSave}>Save configuration</PrimaryButton>}>
+      <FormSection title="Company details">
+        <Field label="Company name" required span={6}><TextInput value={companyDetails.name||""} onChange={e=>handleOnchange(e.target.value,"name")}/></Field>
+        <Field label="Mobile number" required span={6}><PhoneInput value={companyDetails.mobile||""} onChange={e=>handleOnchange(e.target.value,"mobile")}/></Field>
+        <Field label="Email" required span={6}><input type="email" value={companyDetails.email||""} onChange={e=>handleOnchange(e.target.value,"email")}/></Field>
+        <Field label="Company website" span={6}><input type="url" value={companyDetails.website||""} onChange={e=>handleOnchange(e.target.value,"website")}/></Field>
+        <Field label="GST-IN" span={6}><TextInput value={companyDetails.gst_number||""} onChange={e=>handleOnchange(e.target.value,"gst_number")}/></Field>
+        <Field label="Food licence number" span={6}><TextInput value={companyDetails.food_license_number||""} onChange={e=>handleOnchange(e.target.value,"food_license_number")}/></Field>
+        <Field label="Company address"><NotesInput rows={3} value={companyDetails.company_address||""} onChange={e=>handleOnchange(e.target.value,"company_address")}/></Field>
+      </FormSection>
+      <FormSection title="Brand and storefront">
+        <Field label="Company logo" span={6}><input type="file" accept="image/*" onChange={e=>handleOnchange(e.target.files[0],"image")}/></Field>{preview&&<div className="mads-field" style={{"--mads-field-span":6}}><img className="mads-thumbnail mads-thumbnail--large" src={preview} alt="Company logo preview"/></div>}
+        <Field label="Google Map iframe" span={12}><TextInput value={companyDetails.map_iframe_link||""} onChange={e=>handleOnchange(e.target.value,"map_iframe_link")}/></Field>
+        <Field label="Description"><NotesInput rows={4} value={companyDetails.description||""} onChange={e=>handleOnchange(e.target.value,"description")}/></Field>
+        <Field label="Return policy"><NotesInput rows={4} value={companyDetails.return_policy||""} onChange={e=>handleOnchange(e.target.value,"return_policy")}/></Field>
+        <Field label="Metadata"><NotesInput rows={4} value={companyDetails.meta||""} onChange={e=>handleOnchange(e.target.value,"meta")}/></Field>
+      </FormSection>
+    </SettingsPageTemplate>
   );
 };
 

@@ -1,0 +1,3 @@
+export const formatMoney=(value,currency="INR")=>value===null||value===undefined||value===""?"—":new Intl.NumberFormat("en-IN",{style:"currency",currency,maximumFractionDigits:2}).format(Number(value));
+export const formatDate=value=>value?new Intl.DateTimeFormat("en-IN",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(value)):"—";
+export const formatTime=value=>{if(!value)return "—";const [hours,minutes]=String(value).split(":");const date=new Date();date.setHours(Number(hours),Number(minutes||0),0,0);return new Intl.DateTimeFormat("en-IN",{hour:"numeric",minute:"2-digit",hour12:true}).format(date);};

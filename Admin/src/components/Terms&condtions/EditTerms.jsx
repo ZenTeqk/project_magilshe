@@ -1,13 +1,10 @@
-import { faPlus } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, TextField } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import { Offcanvas } from "react-bootstrap";
 import { PutApi } from "../../hooks/Post/PutApi";
 import { TermsConditionsUrl } from "../../Constant/urls/urls";
 import MainContext from "../../context/MainContext";
 import { useDispatch } from "react-redux";
 import { setTermsReducerData } from "../../redux/reducer/ChildReducer/PolicyReducer";
+import { Drawer, Field, PrimaryButton, RichTextEditor, SecondaryButton } from "../../admin/design-system";
 
 const EditTermsConditions = ({ show, setShow, editableData }) => {
   const { ShowNotification } = useContext(MainContext);
@@ -46,55 +43,9 @@ const EditTermsConditions = ({ show, setShow, editableData }) => {
   };
 
   return (
-    <>
-      <div>
-        <Offcanvas
-          className="cgm-expiry-user-action-modal"
-          show={show}
-          onHide={handleClose}
-          placement={"end"}
-        >
-          <Offcanvas.Header closeButton>
-            <Offcanvas.Title>Update Terms & Conditions</Offcanvas.Title>
-          </Offcanvas.Header>
-          <Offcanvas.Body>
-            <TextField
-              autoFocus
-              margin="dense"
-              id="content"
-              multiline
-              rows={20}
-              value={termsModalValue}
-              onChange={(e) => {
-                setTermsModalValue(e.target.value)
-              }}
-              type="text"
-              fullWidth
-              variant="outlined"
-            />
-
-            {/* add cake button */}
-            <div className="text-end">
-              <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                style={{
-                  textTransform: "none",
-                  borderRadius: "5px",
-                }}
-                onClick={(e) => {
-                  handleSaveTerms(e);
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} className="mx-1" />
-                Update
-              </Button>
-            </div>
-          </Offcanvas.Body>
-        </Offcanvas>
-      </div>
-    </>
+    <Drawer open={show} onClose={handleClose} title="Update Terms & Conditions" footer={<><SecondaryButton onClick={handleClose}>Cancel</SecondaryButton><PrimaryButton onClick={handleSaveTerms}>Save terms</PrimaryButton></>}>
+      <Field label="Terms & Conditions" required helperText="Use Heading, • List, 1. List and Indent to structure sections; switch to Preview to check formatting before saving. This content is shown to customers."><RichTextEditor rows={18} value={termsModalValue||""} onChange={setTermsModalValue} ariaLabel="Terms & Conditions content"/></Field>
+    </Drawer>
   );
 };
 

@@ -1,29 +1,16 @@
-import {
-  faEdit,
-  faFileLines,
-  faRefresh,
-  faPlus,
-  faTrash,
-  faEye,
-  faFile,
-} from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { Button, Chip, Grid } from "@mui/material";
 import React, { useContext, useEffect, useState } from "react";
-import DataTable from "react-data-table-component";
 import { useDispatch, useSelector } from "react-redux";
 import EditOrders from "./EditOrders";
 import MainContext from "../../context/MainContext";
-import PreLoaderComponent from "../../common/PreLoaderComponent";
 import { GetApi } from "../../hooks/Get/GetApi";
 import { GetOrderUrl } from "../../Constant/urls/urls";
 import { setOrdersReducerData } from "../../redux/reducer/ChildReducer/OrdersReducer";
 import { convertDateFormat } from "../../commonFunctions";
-import "./Orders.scss";
 import BillView from "./BillView";
 import { setIsOrdersLoadingReducerData } from "../../redux/reducer/ChildReducer/CommonLoaderReducer";
-import { use } from "react";
 import { useNavigate } from "react-router";
+import { formatMoney, ManagementPage, ManagementTable, PrimaryButton, SecondaryButton, StatusBadge } from "../../admin/design-system";
+
 
 const Orders = () => {
   const { ShowNotification } = useContext(MainContext);
@@ -100,32 +87,21 @@ const Orders = () => {
     },
     {
       name: "Amount",
-      selector: (row) => `₹${row?.cart_details[0]?.price || 0}`,
+      selector: (row) => (row?.cart_details||[]).reduce((sum,item)=>sum+(Number(item?.price)||0)*(Number(item?.qty)||0),0),
+      cell: (row) => formatMoney((row?.cart_details||[]).reduce((sum,item)=>sum+(Number(item?.price)||0)*(Number(item?.qty)||0),0)),
       width: "10%",
     },
     {
       name: "Customer",
       selector: (row) => row?.id,
       width: "25%",
-      cell: (row) => (
-        <div className="text-start customer-info ">
-          <h4>{row?.customer?.name}</h4>
-          <p>Mob: {row?.customer?.phone}</p>
-          <p>Email: {row?.customer?.email}</p>
-        </div>
-      ),
+      cell: (row) => <div><strong>{row?.customer?.name||"—"}</strong><div className="mads-muted">{row?.customer?.phone||"—"}</div><div className="mads-muted">{row?.customer?.email||"—"}</div></div>,
     },
     {
       name: "Delivery Address",
       selector: (row) => row?.id,
       width: "25%",
-      cell: (row) => (
-        <div className="text-start address-info">
-          <h4>{row?.delivery_address?.address_title}</h4>
-          <p>{row?.delivery_address?.address}</p>
-          <p>{row?.delivery_address?.pincode}</p>
-        </div>
-      ),
+      cell: (row) => <div><strong>{row?.delivery_address?.address_title||"—"}</strong><div className="mads-muted">{row?.delivery_address?.address||"—"}</div><div className="mads-muted">{row?.delivery_address?.pincode||""}</div></div>,
     },
     {
       name: (
@@ -155,29 +131,13 @@ const Orders = () => {
       name: "Order Type",
       selector: (row) => row?.is_manual_order,
       minWidth: "15%",
-      cell: (row) => (
-        <div className="text-center">
-          <Chip
-            label={row?.is_manual_order ? "Manual" : "Online"}
-            color={row?.is_manual_order ? "success" : "info"}
-            style={{ borderRadius: "5px" }}
-          />
-        </div>
-      ),
+      cell: (row) => <StatusBadge tone={row?.is_manual_order?"success":"info"}>{row?.is_manual_order?"Manual":"Online"}</StatusBadge>,
     },
     {
       name: "Order Status",
       selector: (row) => row?.image_url,
       minWidth: "15%",
-      cell: (row) => (
-        <div className="text-center">
-          <Chip
-            label={statusArray[row?.delivery_status]}
-            color="secondary"
-            style={{ borderRadius: "5px" }}
-          />
-        </div>
-      ),
+      cell: (row) => <StatusBadge>{statusArray[row?.delivery_status]||"Unknown"}</StatusBadge>,
     },
 
     // {
@@ -250,73 +210,14 @@ const Orders = () => {
   };
 
   if (is_orders_loading) {
-    return <PreLoaderComponent />;
+    return <ManagementPage title="Online orders" subtitle="Orders placed through the customer storefront." loading />;
   }
 
   return (
-    <div className="cgm-purchase-section">
-      <Grid container spaing={2} className="mb-2">
-        <Grid item md={6} xs={6} className="text-end search-section">
-          <section className="component-heading my-1">
-            <FontAwesomeIcon icon={faFileLines} className="mx-2" /> Cake Orders
-          </section>
-        </Grid>
-        <Grid item md={6} xs={6} className="text-end top-action-button-group">
-          <div className="ml-auto">
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              style={{
-                textTransform: "none",
-                borderRadius: "5px",
-              }}
-              onClick={() => {
-                navigate('/manual-order')
-              }}
-            >
-              <FontAwesomeIcon icon={faPlus} className="mx-1" />
-              Add Manual Orders
-            </Button>
-            <Button
-              variant="contained"
-              color="success"
-              className="mx-1"
-              size="small"
-              style={{
-                textTransform: "none",
-                borderRadius: "5px",
-              }}
-              onClick={() => getOrders()}
-            >
-              <FontAwesomeIcon icon={faRefresh} className="mx-1" />{" "}
-              <span>Refresh</span>
-            </Button>
-          </div>
-        </Grid>
-      </Grid>
-
-      <div className={`dt-table`}>
-        <DataTable
-          columns={categoryDTColumns}
-          striped
-          data={[...orders_reducer_data].sort((a, b) => b.id - a.id)} 
-          className="dt-table-container"
-          pagination
-          // customStyles={customStyles} 
-          //   paginationPerPage={categoryParam?.limit}
-          //   paginationServer
-          //   paginationTotalRows={orders_reducer_dataCount}
-          //   onChangePage={handlePageChange}
-          //   onChangeRowsPerPage={handleRowsPerPageChange}
-          searchable
-          onRowClicked={(row) => {
-            handleRowClick(row)
-            
-            
-          }}
-        />
-      </div>
+    <>
+      <ManagementPage title="Online orders" subtitle="Review storefront and manually entered customer orders." breadcrumbs={[{label:"Operations"},{label:"Online orders"}]} primaryAction={<PrimaryButton onClick={()=>navigate('/manual-order')}>New manual order</PrimaryButton>} secondaryActions={<SecondaryButton onClick={getOrders}>Refresh</SecondaryButton>}>
+        <ManagementTable columns={categoryDTColumns} data={[...orders_reducer_data].sort((a,b)=>b.id-a.id)} searchPlaceholder="Search orders" emptyTitle="No online orders" emptyDescription="New storefront orders will appear here." onRowClick={handleRowClick}/>
+      </ManagementPage>
 
       <EditOrders
         show={show}
@@ -328,7 +229,7 @@ const Orders = () => {
       />
 
       <BillView show={showBill} setShow={setShowBill} setShowBill={setShow} billData={editableData} />
-    </div>
+    </>
   );
 };
 

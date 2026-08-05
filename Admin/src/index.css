@@ -1,6 +1,6 @@
 body {
   margin: 0;
-  font-family: "Poppins", sans-serif !important;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: #f3f3f3;
@@ -18,7 +18,7 @@ code {
 
 
 .app-dashboard * {
-  font-family: "Poppins", sans-serif !important;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
 }
 
 .fitness-login {
@@ -35,7 +35,7 @@ code {
 }
 
 .Toastify__toast {
-  font-family: "Poppins", sans-serif !important;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif !important;
 }
 
 .header-row {

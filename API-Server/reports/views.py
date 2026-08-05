@@ -24,7 +24,10 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from cakery.common import StrongRandomPasswordGenerator, generate_username
 from django.db.models.functions import ExtractMonth, ExtractDay
-from django.db.models import Q
+from django.db.models import Avg, Count, F, Max, Q, Sum
+from django.db.models.functions import TruncDate
+from django.utils import timezone
+from decimal import Decimal
 
 
 from django.shortcuts import render
@@ -53,6 +56,95 @@ from order.serializers import cake_order_serialier
 
 from occasion.models import Occasion
 from occasion.serializers import occasion_serializer
+from crm.models import CRMDelivery, CRMInvoice, CRMOrder, CRMOrderItem, Lead, LeadActivity, Quotation, QuotationActivity, QuotationPayment
+from customer.models import Customer
+
+
+def _crm_report_dates(request):
+    today = timezone.localdate()
+    try:
+        start = datetime.strptime(request.query_params.get("from_date", ""), "%Y-%m-%d").date()
+        end = datetime.strptime(request.query_params.get("to_date", ""), "%Y-%m-%d").date()
+    except ValueError:
+        start, end = today - timedelta(days=29), today
+    return (end, start) if start > end else (start, end)
+
+
+def _crm_status_counts(queryset, field="status"):
+    return {row[field] or "Unspecified": row["total"] for row in queryset.values(field).annotate(total=Count("id"))}
+
+
+class CRMAnalyticsReport(APIView):
+    """Read-only management snapshot assembled from existing CRM documents."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        start, end = _crm_report_dates(request)
+        search = request.query_params.get("search", "").strip()
+        status_filter = request.query_params.get("status", "").strip()
+        module_filter = request.query_params.get("module", "").strip().lower()
+        leads = Lead.objects.filter(created_on__date__range=(start, end))
+        quotations = Quotation.objects.filter(created_on__date__range=(start, end))
+        orders = CRMOrder.objects.filter(confirmed_on__date__range=(start, end))
+        invoices = CRMInvoice.objects.filter(generated_on__date__range=(start, end))
+        deliveries = CRMDelivery.objects.filter(created_on__date__range=(start, end))
+        payments = QuotationPayment.objects.filter(payment_date__range=(start, end))
+        if search:
+            customer_q = Q(customer_name__icontains=search) | Q(phone__icontains=search)
+            leads = leads.filter(customer_q | Q(lead_no__icontains=search))
+            quotations = quotations.filter(customer_q | Q(quotation_no__icontains=search))
+            orders = orders.filter(customer_q | Q(order_no__icontains=search))
+            invoices = invoices.filter(customer_q | Q(invoice_no__icontains=search))
+            deliveries = deliveries.filter(Q(order__customer_name__icontains=search) | Q(order__phone__icontains=search) | Q(delivery_no__icontains=search))
+            payments = payments.filter(Q(quotation__customer_name__icontains=search) | Q(quotation__phone__icontains=search))
+
+        funnel = [
+            {"key": "leads", "label": "Leads", "value": leads.count()},
+            {"key": "quotations", "label": "Quotations", "value": quotations.count()},
+            {"key": "orders", "label": "Orders", "value": orders.count()},
+            {"key": "invoices", "label": "Invoices", "value": invoices.count()},
+            {"key": "deliveries", "label": "Deliveries", "value": deliveries.count()},
+            {"key": "completed", "label": "Completed", "value": deliveries.filter(delivery_status="Delivered Successfully").count()},
+        ]
+        previous = None
+        for stage in funnel:
+            stage["conversion"] = round(stage["value"] * 100 / previous, 1) if previous else 100
+            stage["drop_off"] = max((previous or stage["value"]) - stage["value"], 0)
+            previous = stage["value"]
+
+        collected = payments.aggregate(value=Sum("amount"))["value"] or Decimal("0")
+        advance = payments.filter(Q(quotation__crm_order__isnull=True) | Q(created_on__lte=F("quotation__crm_order__confirmed_on"))).aggregate(value=Sum("amount"))["value"] or Decimal("0")
+        outstanding = invoices.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
+        revenue_trend = list(payments.annotate(day=TruncDate("payment_date")).values("day").annotate(value=Sum("amount")).order_by("day"))
+        customer_rows = list(orders.values("phone", "customer_name").annotate(total_orders=Count("id"), total_spend=Sum("total_amount"), last_order=Max("confirmed_on")).order_by("-total_spend")[:25])
+        product_rows = list(CRMOrderItem.objects.filter(order__in=orders).values("item_name", "flavour", "weight").annotate(quantity=Sum("quantity"), revenue=Sum("amount"), orders=Count("order", distinct=True)).order_by("-quantity")[:20])
+        occasions = list(leads.values("occasion").annotate(value=Count("id")).order_by("-value")[:12])
+        sources = list(leads.values("lead_source").annotate(value=Count("id")).order_by("-value")[:12])
+        delivery_methods = list(deliveries.values("delivery_type").annotate(value=Count("id")).order_by("-value"))
+
+        lead_events = LeadActivity.objects.filter(created_on__date__range=(start, end)).select_related("lead", "staff")
+        quotation_events = QuotationActivity.objects.filter(created_on__date__range=(start, end)).select_related("quotation", "staff")
+        if search:
+            lead_events = lead_events.filter(Q(lead__customer_name__icontains=search) | Q(lead__phone__icontains=search))
+            quotation_events = quotation_events.filter(Q(quotation__customer_name__icontains=search) | Q(quotation__phone__icontains=search))
+        timeline = []
+        if module_filter in ("", "lead"):
+            timeline.extend({"id": f"lead-{row.id}", "module": "Lead", "action": row.action, "reference": row.lead.lead_no, "customer": row.lead.customer_name, "staff": (row.staff.get_full_name() or row.staff.username) if row.staff else None, "created_on": row.created_on} for row in lead_events[:100])
+        if module_filter in ("", "quotation", "order", "invoice", "delivery"):
+            timeline.extend({"id": f"quotation-{row.id}", "module": "Quotation", "action": row.action, "reference": row.quotation.quotation_no, "customer": row.quotation.customer_name, "staff": (row.staff.get_full_name() or row.staff.username) if row.staff else None, "created_on": row.created_on} for row in quotation_events[:100])
+        timeline = sorted(timeline, key=lambda row: row["created_on"], reverse=True)[:100]
+        if status_filter:
+            timeline = [row for row in timeline if status_filter.lower() in row["action"].lower()]
+
+        return Response({
+            "range": {"from_date": start, "to_date": end},
+            "overview": {"leads": _crm_status_counts(leads), "quotations": _crm_status_counts(quotations), "orders": _crm_status_counts(orders), "invoices": _crm_status_counts(invoices), "deliveries": _crm_status_counts(deliveries, field="delivery_status")},
+            "totals": {"leads": leads.count(), "quotations": quotations.count(), "orders": orders.count(), "invoices": invoices.count(), "deliveries": deliveries.count(), "new_customers": Customer.objects.filter(date_joined__date__range=(start, end)).count()},
+            "revenue": {"collected": collected, "outstanding": outstanding, "advance_collected": advance, "balance_collected": max(collected - advance, Decimal("0")), "average_order": orders.aggregate(value=Avg("total_amount"))["value"] or 0, "trend": revenue_trend},
+            "funnel": funnel, "customers": customer_rows, "products": product_rows, "occasions": occasions,
+            "lead_sources": sources, "delivery_methods": delivery_methods, "timeline": timeline,
+        })
 
 class GetOrderReport(APIView):
     def get(self, request):

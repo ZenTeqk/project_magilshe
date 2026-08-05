@@ -1,20 +1,7 @@
 import React, { useContext, useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  Autocomplete,
-  Grid,
-  TextField,
-  Button,
-  IconButton,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  Paper,
-  Typography,
-} from "@mui/material";
-import { Add, AddBox, Delete, PlusOne } from "@mui/icons-material";
+import {Autocomplete,Grid,TextField,IconButton,Table,TableHead,TableRow,TableCell,TableBody,Paper,Typography} from "@mui/material";
+import {AddBox,Delete} from "@mui/icons-material";
 import { PostApi } from "../../hooks/Post/PostApi";
 import { ItemsUrl, PurchaseUrl } from "../../Constant/urls/urls";
 import MainContext from "../../context/MainContext";
@@ -29,6 +16,8 @@ import {
   setPurchaseReducerData,
 } from "../../redux/reducer/ChildReducer/PurchaseReducer";
 import { PutApi } from "../../hooks/Post/PutApi";
+import { WizardPageTemplate } from "../../admin/templates";
+import {PrimaryButton,SecondaryButton} from "../../admin/design-system";
 
 const Purchase = ({ setShow, editableData, setEditableData }) => {
 
@@ -304,31 +293,7 @@ const Purchase = ({ setShow, editableData, setEditableData }) => {
   };
 
   return (
-    <div>
-      <Grid container spacing={2} alignItems="center" className="mb-3">
-        <Grid item md={3}>
-          <TextField
-            variant="outlined"
-            fullWidth
-            label="Receiving Mode"
-            size="small"
-          />
-        </Grid>
-        <Grid item md={3}>
-          <TextField
-            variant="outlined"
-            fullWidth
-            label="Stock Source"
-            size="small"
-          />
-        </Grid>
-        <Grid item md={6} textAlign="right">
-          <Button variant="contained" color="primary" startIcon={<Add />}>
-            New Item
-          </Button>
-        </Grid>
-      </Grid>
-
+    <WizardPageTemplate title={editableData?`Edit purchase #${editableData.id}`:"New purchase"} subtitle="Record supplier invoice details and stock quantities." breadcrumbs={[{label:"Operations"},{label:"Purchases"},{label:editableData?"Edit":"New"}]} steps={[{label:"Purchase details"},{label:"Items"},{label:"Review"}]} currentStep={purchaseItems.length?1:0}>
       <Grid container spacing={2}>
         <Grid item md={9}>
           <Paper>
@@ -584,26 +549,17 @@ const Purchase = ({ setShow, editableData, setEditableData }) => {
               className="d-flex justify-content-between"
               style={{ marginTop: 10, textAlign: "right" }}
             >
-              <Button
-                variant="contained"
-                color="error"
-                onClick={handleCancelClick}
-                sx={{ marginRight: 2 }}
-              >
+              <SecondaryButton onClick={handleCancelClick}>
                 Cancel
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                onClick={handleFinishClick}
-              >
+              </SecondaryButton>
+              <PrimaryButton onClick={handleFinishClick}>
                 Finish
-              </Button>
+              </PrimaryButton>
             </div>
           </Paper>
         </Grid>
       </Grid>
-    </div>
+    </WizardPageTemplate>
   );
 };
 

@@ -33,6 +33,7 @@ urlpatterns = [
     path('delivery-person/', include("delivery_person.urls")),
     path('testimonial/', include("testimonials.urls")),
     path('configuration/', include("configuration.urls")),
+    path("crm/", include("crm.urls")),
     path('reports/', include("reports.urls")),
     path('occasion/', include("occasion.urls")),    #Occasion
     path('unit/', include("unit.urls")),            #Unit/Types
