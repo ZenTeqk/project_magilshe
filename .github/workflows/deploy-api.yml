@@ -1,0 +1,82 @@
+name: Deploy API Server
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'API-Server/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.API_DEPLOY_SSH_KEY }}
+
+      - name: Add server to known_hosts
+        run: ssh-keyscan -H ${{ secrets.API_SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        run: |
+          rsync -az --delete \
+            --exclude='.git/' \
+            --exclude='venv/' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='.env' \
+            --exclude='static/' \
+            --exclude='media/' \
+            --exclude='db.sqlite3' \
+            --exclude='nohup.out' \
+            --exclude='*.zip' \
+            API-Server/ ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }}:/home/${{ secrets.API_DEPLOY_USER }}/api/cakery/
+
+      - name: Write .env from secrets
+        run: |
+          ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "cat > ~/api/cakery/.env" <<EOF
+          DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASS=${{ secrets.DB_PASS }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          AWS_STORAGE_BUCKET_NAME=${{ secrets.AWS_STORAGE_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_ACCESS_KEY_ID=${{ secrets.AWS_S3_ACCESS_KEY_ID }}
+          AWS_S3_SECRET_ACCESS_KEY=${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
+          AWS_S3_REGION_NAME=${{ secrets.AWS_S3_REGION_NAME }}
+          EOF
+
+      - name: Install dependencies, migrate, collectstatic
+        run: |
+          ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} '
+            set -e
+            cd ~/api/cakery
+            ~/api/venv/bin/pip install -r requirements.txt
+            ~/api/venv/bin/python manage.py migrate --noinput
+            ~/api/venv/bin/python manage.py collectstatic --noinput
+          '
+
+      - name: Restart API service
+        run: |
+          ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} 'sudo systemctl restart gunicorn-api'
+
+      - name: Health check
+        run: |
+          sleep 3
+          STATUS=$(ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
+          echo "API responded with HTTP $STATUS"
+          if [[ "$STATUS" != "200" && "$STATUS" != "401" && "$STATUS" != "403" ]]; then
+            echo "Health check failed - service did not come back up cleanly"
+            ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} 'sudo systemctl status gunicorn-api --no-pager -l | head -30'
+            exit 1
+          fi
