@@ -56,6 +56,20 @@ def get_s3_client():
     return client
 
 
+def get_s3_file_url(key, expires_in=3600):
+    """Return a browser-viewable URL for an S3 object, including private buckets."""
+    if not key:
+        return None
+    try:
+        return get_s3_client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.AWS_STORAGE_BUCKET_NAME, "Key": str(key)},
+            ExpiresIn=expires_in,
+        )
+    except Exception:
+        return f"{settings.IMAGE_BASE_URL}/{str(key).lstrip('/')}"
+
+
 class StrongRandomPasswordGenerator(object):
 
     char_set = {

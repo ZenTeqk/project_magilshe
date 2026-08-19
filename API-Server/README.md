@@ -48,5 +48,3 @@ response : {
         "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzMzMDczNDUwLCJpYXQiOjE3MzI5ODcwNTAsImp0aSI6ImEyZGYzNzczNDc2YjQzYzdiN2M1N2IzYWI3MTRjYWE0IiwidXNlcl9pZCI6MTJ9.AkhslQsGPEmFSeLfLIc75EPkIqg2sOn8NiGXHIh9XH8"
     }
 }
-
-<!-- pipeline verification ping 2026-08-05T14:59:10Z -->

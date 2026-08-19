@@ -441,6 +441,8 @@ class CRMDelivery(models.Model):
 
     # Magilshe Delivery
     delivery_person = models.ForeignKey("delivery_person.DeliveryPerson", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_deliveries")
+    delivery_person_name_snapshot = models.CharField(max_length=300, null=True, blank=True)
+    delivery_person_phone_snapshot = models.CharField(max_length=15, null=True, blank=True)
     delivery_time = models.DateTimeField(null=True, blank=True)
     delivery_location = models.TextField(null=True, blank=True)
     delivery_notes = models.TextField(null=True, blank=True)
@@ -453,6 +455,11 @@ class CRMDelivery(models.Model):
     porter_time = models.DateTimeField(null=True, blank=True)
     porter_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     porter_notes = models.TextField(null=True, blank=True)
+    external_platform = models.ForeignKey("delivery_person.DeliveryPlatform", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_deliveries")
+    external_delivery_person = models.ForeignKey("delivery_person.ExternalDeliveryPerson", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_deliveries")
+    external_platform_name_snapshot = models.CharField(max_length=150, null=True, blank=True)
+    external_person_name_snapshot = models.CharField(max_length=300, null=True, blank=True)
+    external_person_phone_snapshot = models.CharField(max_length=15, null=True, blank=True)
 
     # Completion / Damage / Failure outcome
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -526,6 +533,7 @@ class CRMOption(models.Model):
         ("delivery_method", "Delivery Method"),
         ("delivery_time_slot", "Delivery Time Slot"),
         ("delivery_area", "Delivery Area"),
+        ("delivery_failure_reason", "Delivery Failure Reason"),
         ("order_priority", "Order Priority"),
         ("invoice_status", "Invoice Status"),
         ("payment_method", "Payment Method"),
@@ -572,6 +580,8 @@ class CustomerRecurringEvent(models.Model):
     source_lead = models.ForeignKey(
         Lead, null=True, blank=True, on_delete=models.SET_NULL, related_name="recurring_events",
     )
+    notes = models.TextField(null=True, blank=True)
+    reminder_days_before = models.PositiveSmallIntegerField(default=7)
     last_reminder_sent_on = models.DateField(null=True, blank=True)
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)

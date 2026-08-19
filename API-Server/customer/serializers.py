@@ -46,9 +46,13 @@ def profile_serializer(obj, cus_id):
     res['email'] = obj.email
     res['phone'] = obj.phone
     res['name'] = obj.first_name
+    res['first_name'] = obj.first_name
+    res['last_name'] = obj.last_name
     res['profile_url'] = None if(obj.profile_picture_name == "" or obj.profile_picture_name == None) else f'{settings.IMAGE_BASE_URL}/{aws_domain_name}/customer/profile/{obj.profile_picture_name}.{obj.profile_picture_ext}'
 
     res['is_active'] = obj.is_active
+    res['date_joined'] = obj.date_joined
+    res['last_login'] = obj.last_login
     res['address_details'] = [customer_address_serializer(ht) for ht in CustomerAddress.objects.filter(customer=obj.id).all()]
 
     active_cart = Cart.objects.filter(customer = int(cus_id), status=True).all()

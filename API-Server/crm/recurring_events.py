@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from .models import CustomerRecurringEvent
 
@@ -34,14 +34,45 @@ def sync_recurring_event(lead):
     return event
 
 
-def recurring_event_summary(event, today=None):
+def recurring_event_status(event, today=None):
+    """Upcoming / Reminder Due / Overdue / Completed, derived purely from dates
+    already on the model (no extra "completed" flag needed): a reminder counts
+    as completed for the *current* cycle if, on the day it was last sent, the
+    event's own next_occurrence() calculation already pointed at the same
+    upcoming date we're evaluating now — i.e. it wasn't sent for a past cycle."""
     today = today or date.today()
     next_occurrence = event.next_occurrence(today)
+    reminder_date = next_occurrence - timedelta(days=event.reminder_days_before)
+    completed = bool(
+        event.last_reminder_sent_on
+        and event.next_occurrence(event.last_reminder_sent_on) == next_occurrence
+    )
+    # next_occurrence() always rolls forward to be >= today, so "overdue" can
+    # only mean "the event day itself has arrived and nobody actioned it yet".
+    if completed:
+        status = "Completed"
+    elif today >= next_occurrence:
+        status = "Overdue"
+    elif today >= reminder_date:
+        status = "Reminder Due"
+    else:
+        status = "Upcoming"
+    return next_occurrence, reminder_date, completed, status
+
+
+def recurring_event_summary(event, today=None):
+    today = today or date.today()
+    next_occurrence, reminder_date, completed, status = recurring_event_status(event, today)
     return {
         "id": event.id,
         "event_type": event.event_type,
         "original_date": event.original_date,
+        "notes": event.notes,
+        "reminder_days_before": event.reminder_days_before,
         "next_occurrence": next_occurrence,
+        "reminder_date": reminder_date,
         "days_until": (next_occurrence - today).days,
         "last_reminder_sent_on": event.last_reminder_sent_on,
+        "is_completed": completed,
+        "status": status,
     }

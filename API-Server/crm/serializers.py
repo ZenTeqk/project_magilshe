@@ -1,17 +1,169 @@
+from datetime import date
+import uuid
+
 from rest_framework import serializers
 from django.utils import timezone
 from django.conf import settings
-from cakery.common import aws_domain_name
+from django.db import transaction
+from cakery.common import aws_domain_name, get_s3_file_url
+from cakery.file_upload_to_aws import put_image_to_s3
+from customer.models import Customer, CustomerAddress
 from .models import (
-    CRMOption, Lead, LeadActivity, LeadReferenceImage, Quotation,
+    CRMOption, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation,
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment,
 )
+from .recurring_events import recurring_event_status
 
 
 class CRMOptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = CRMOption
         fields = "__all__"
+
+
+class CRMCustomerAddressUpdateSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = CustomerAddress
+        fields = ("id", "title", "address", "city", "pincode", "is_primary")
+
+    def validate_pincode(self, value):
+        if value and (not value.isdigit() or len(value) != 6):
+            raise serializers.ValidationError("Pincode must contain exactly 6 digits.")
+        return value
+
+
+class CRMCustomerUpdateSerializer(serializers.ModelSerializer):
+    addresses = CRMCustomerAddressUpdateSerializer(many=True, required=False, write_only=True)
+    delete_address_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, write_only=True
+    )
+
+    class Meta:
+        model = Customer
+        fields = ("first_name", "last_name", "email", "phone", "is_active", "addresses", "delete_address_ids")
+
+    def validate_phone(self, value):
+        digits = "".join(character for character in str(value or "") if character.isdigit())
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        if not digits or len(digits) != 10 or digits[0] not in "6789":
+            raise serializers.ValidationError("Enter a valid 10-digit Indian mobile number.")
+        duplicate_query = Customer.objects.filter(phone=digits)
+        if self.instance:
+            duplicate_query = duplicate_query.exclude(pk=self.instance.pk)
+        duplicate = duplicate_query.exists()
+        if duplicate:
+            raise serializers.ValidationError("Another customer already uses this mobile number.")
+        return digits
+
+    @transaction.atomic
+    def create(self, validated_data):
+        addresses = validated_data.pop("addresses", [])
+        validated_data.pop("delete_address_ids", None)
+        phone = validated_data["phone"]
+        username = phone
+        suffix = 1
+        while Customer.objects.filter(username=username).exists():
+            username = f"customer-{phone}-{suffix}"
+            suffix += 1
+        customer = Customer(username=username, is_staff=False, **validated_data)
+        customer.set_unusable_password()
+        customer.save()
+        primary_created = False
+        for index, address_data in enumerate(addresses):
+            is_primary = bool(address_data.get("is_primary")) or (index == 0 and not primary_created)
+            address_data["is_primary"] = is_primary
+            address = CustomerAddress.objects.create(
+                customer=customer,
+                created_by=self.context["request"].user,
+                **address_data,
+            )
+            if address.is_primary:
+                customer.customeraddress_set.exclude(pk=address.pk).update(is_primary=False)
+                primary_created = True
+        return customer
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        addresses = validated_data.pop("addresses", None)
+        delete_ids = validated_data.pop("delete_address_ids", [])
+        instance = super().update(instance, validated_data)
+        if delete_ids:
+            instance.customeraddress_set.filter(id__in=delete_ids).delete()
+        if addresses is not None:
+            primary_id = None
+            for address_data in addresses:
+                address_id = address_data.pop("id", None)
+                address = instance.customeraddress_set.filter(id=address_id).first() if address_id else None
+                if address:
+                    for field, value in address_data.items():
+                        setattr(address, field, value)
+                    address.updated_by = self.context["request"].user
+                    address.save()
+                else:
+                    address = CustomerAddress.objects.create(
+                        customer=instance, created_by=self.context["request"].user, **address_data
+                    )
+                if address.is_primary:
+                    primary_id = address.id
+            if primary_id:
+                instance.customeraddress_set.exclude(id=primary_id).update(is_primary=False)
+        return instance
+
+
+class CustomerRecurringEventSerializer(serializers.ModelSerializer):
+    """Manual CRUD for customer occasions/reminders, on top of the same model
+    auto-populated from Lead history by recurring_events.sync_recurring_event."""
+
+    event_date = serializers.DateField(write_only=True, required=False)
+    next_occurrence = serializers.SerializerMethodField()
+    reminder_date = serializers.SerializerMethodField()
+    days_until = serializers.SerializerMethodField()
+    is_completed = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustomerRecurringEvent
+        fields = (
+            "id", "customer", "event_type", "event_month", "event_day", "original_date",
+            "notes", "reminder_days_before", "last_reminder_sent_on", "source_lead",
+            "event_date", "next_occurrence", "reminder_date", "days_until", "is_completed", "status",
+            "created_on", "updated_on",
+        )
+        read_only_fields = (
+            "event_month", "event_day", "original_date", "last_reminder_sent_on",
+            "source_lead", "created_on", "updated_on",
+        )
+
+    def _status(self, obj):
+        return recurring_event_status(obj)
+
+    def get_next_occurrence(self, obj):
+        return self._status(obj)[0]
+
+    def get_reminder_date(self, obj):
+        return self._status(obj)[1]
+
+    def get_is_completed(self, obj):
+        return self._status(obj)[2]
+
+    def get_status(self, obj):
+        return self._status(obj)[3]
+
+    def get_days_until(self, obj):
+        return (self._status(obj)[0] - date.today()).days
+
+    def validate(self, attrs):
+        event_date = attrs.pop("event_date", None)
+        if event_date:
+            attrs["event_month"] = event_date.month
+            attrs["event_day"] = event_date.day
+            attrs["original_date"] = event_date
+        elif self.instance is None:
+            raise serializers.ValidationError({"event_date": "This field is required."})
+        return attrs
 
 
 class LeadActivitySerializer(serializers.ModelSerializer):
@@ -29,7 +181,7 @@ class LeadReferenceImageSerializer(serializers.ModelSerializer):
         model = LeadReferenceImage
         fields = ("id", "original_name", "url", "created_on")
     def get_url(self, obj):
-        return f"{settings.IMAGE_BASE_URL}/{aws_domain_name}/crm/lead/reference/{obj.file_name}.{obj.file_ext}"
+        return get_s3_file_url(f"{aws_domain_name}/crm/lead/reference/{obj.file_name}.{obj.file_ext}")
 
 
 class LeadSerializer(serializers.ModelSerializer):
@@ -122,6 +274,25 @@ class QuotationPaymentSerializer(serializers.ModelSerializer):
 
     def get_collected_by_name(self, obj):
         return str(obj.collected_by) if obj.collected_by else "System"
+
+    def create(self, validated_data):
+        proof = validated_data.pop("proof", None)
+        if proof:
+            ext = proof.name.rsplit(".", 1)[-1].lower() if "." in proof.name else ""
+            if ext not in {"jpg", "jpeg", "png", "webp", "pdf"}:
+                raise serializers.ValidationError({"proof": "Supported files: JPG, JPEG, PNG, WEBP and PDF."})
+            key = f"{aws_domain_name}/crm/quotation/payment-proof/{uuid.uuid4()}.{ext}"
+            if not put_image_to_s3(proof, key):
+                raise serializers.ValidationError({"proof": "Payment proof upload failed."})
+            validated_data["proof"] = key
+        return super().create(validated_data)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.proof:
+            name = instance.proof.name
+            data["proof"] = get_s3_file_url(name) if name.startswith(f"{aws_domain_name}/") else instance.proof.url
+        return data
 
 
 class QuotationActivitySerializer(serializers.ModelSerializer):
@@ -364,7 +535,7 @@ class CRMDeliveryDamageImageSerializer(serializers.ModelSerializer):
         model = CRMDeliveryDamageImage
         fields = ("id", "original_name", "url", "created_on")
     def get_url(self, obj):
-        return f"{settings.IMAGE_BASE_URL}/{aws_domain_name}/crm/delivery/damage/{obj.file_name}.{obj.file_ext}"
+        return get_s3_file_url(f"{aws_domain_name}/crm/delivery/damage/{obj.file_name}.{obj.file_ext}")
 
 
 class CRMDeliverySerializer(serializers.ModelSerializer):
@@ -381,6 +552,8 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
     advance_paid = serializers.DecimalField(source="order.advance_paid", max_digits=12, decimal_places=2, read_only=True)
     balance_amount = serializers.DecimalField(source="order.balance_amount", max_digits=12, decimal_places=2, read_only=True)
     delivery_person_name = serializers.CharField(source="delivery_person.name", read_only=True)
+    external_platform_name = serializers.CharField(source="external_platform.name", read_only=True)
+    external_delivery_person_name = serializers.CharField(source="external_delivery_person.name", read_only=True)
     scheduled_at = serializers.SerializerMethodField()
     damage_images = CRMDeliveryDamageImageSerializer(many=True, read_only=True)
     timeline = QuotationActivitySerializer(source="order.quotation.activities", many=True, read_only=True)
@@ -395,3 +568,23 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
 
     def get_scheduled_at(self, obj):
         return obj.scheduled_at
+
+    def update(self, instance, validated_data):
+        delivery_type = validated_data.get("delivery_type", instance.delivery_type)
+        person = validated_data.get("delivery_person")
+        external_person = validated_data.get("external_delivery_person")
+        platform = validated_data.get("external_platform") or (external_person.platform if external_person else None)
+        if delivery_type == "Magilshe Delivery" and person:
+            validated_data["delivery_person_name_snapshot"] = person.name
+            validated_data["delivery_person_phone_snapshot"] = person.phone
+        if delivery_type == "Porter Delivery" and external_person:
+            validated_data.update({
+                "external_platform": platform,
+                "external_platform_name_snapshot": platform.name if platform else None,
+                "external_person_name_snapshot": external_person.name,
+                "external_person_phone_snapshot": external_person.phone,
+                "porter_id": external_person.partner_id,
+                "porter_name": external_person.name,
+                "porter_contact": external_person.phone,
+            })
+        return super().update(instance, validated_data)

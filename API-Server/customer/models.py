@@ -10,6 +10,7 @@ class Customer(AbstractUser):
     email_verified_at = models.DateTimeField(null=True, blank=True)    
     profile_picture_name = models.UUIDField(null=True, blank=True)
     profile_picture_ext = models.CharField(max_length=10, blank=True, null=True)
+    role = models.ForeignKey("AccessRole", null=True, blank=True, on_delete=models.SET_NULL, related_name="users")
 
     class Meta:
         verbose_name_plural = "Customer"
@@ -41,3 +42,35 @@ class CustomerAddress(models.Model):
         verbose_name_plural = "Customer Address"
         ordering = ['id']
         default_permissions = ()
+
+
+class AccessPermission(models.Model):
+    code = models.CharField(max_length=120, unique=True, db_index=True)
+    module = models.CharField(max_length=60, db_index=True)
+    resource = models.CharField(max_length=60, db_index=True)
+    action = models.CharField(max_length=40)
+    name = models.CharField(max_length=160)
+
+    class Meta:
+        ordering = ("module", "resource", "action")
+        default_permissions = ()
+
+    def __str__(self):
+        return self.code
+
+
+class AccessRole(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    is_super_admin = models.BooleanField(default=False)
+    permissions = models.ManyToManyField(AccessPermission, blank=True, related_name="roles")
+    created_on = models.DateTimeField(auto_now_add=True)
+    updated_on = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name",)
+        default_permissions = ()
+
+    def __str__(self):
+        return self.name

@@ -130,7 +130,7 @@ class QuotationTests(TestCase):
 class LeadCustomerLinkingTests(TestCase):
     def setUp(self):
         Customer = get_user_model()
-        self.staff = Customer.objects.create_user(
+        self.staff = Customer.objects.create_superuser(
             username="crm-staff", password="test-password"
         )
         self.client = APIClient()
@@ -145,6 +145,51 @@ class LeadCustomerLinkingTests(TestCase):
             "cake_type": "Theme Cake",
             "quantity": 1,
         }
+
+    def test_customer_management_can_create_persisted_customer(self):
+        response = self.client.post("/crm/customers/", {
+            "first_name": "New",
+            "last_name": "Customer",
+            "phone": "9876501234",
+            "email": "new.customer@example.com",
+            "is_active": True,
+            "addresses": [{
+                "title": "Home", "address": "12 Cake Street", "city": "Chennai",
+                "pincode": "600001", "is_primary": True,
+            }],
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        Customer = get_user_model()
+        customer = Customer.objects.get(pk=response.data["id"])
+        self.assertEqual(customer.phone, "9876501234")
+        self.assertFalse(customer.has_usable_password())
+        self.assertEqual(customer.customeraddress_set.get().city, "Chennai")
+
+    def test_lead_conversion_carries_decimal_weight_and_is_duplicate_safe(self):
+        lead = Lead.objects.create(
+            customer_name="Weighted Cake Customer",
+            phone="9876543210",
+            occasion="Birthday",
+            event_date=timezone.localdate() + timedelta(days=2),
+            cake_type="Theme Cake",
+            weight="1.50",
+            quantity=2,
+            customer_notes="Use the supplied design",
+            status="Won",
+            winning_reason="Customer approved",
+        )
+
+        first = self.client.post(f"/crm/leads/{lead.id}/convert/", {}, format="json")
+        second = self.client.post(f"/crm/leads/{lead.id}/convert/", {}, format="json")
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(Quotation.objects.filter(lead=lead).count(), 1)
+        item = Quotation.objects.get(lead=lead).items.get()
+        self.assertEqual(str(item.weight), "1.50")
+        self.assertEqual(item.quantity, 2)
+        self.assertIn("supplied design", item.description)
 
     def test_new_lead_links_one_exact_existing_customer(self):
         Customer = get_user_model()

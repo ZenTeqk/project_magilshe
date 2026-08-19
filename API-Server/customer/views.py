@@ -119,12 +119,20 @@ class GetMyProfile(APIView):
 class UpdateProfile(APIView):
     def post(self, request):
         try:
-            
             data = validate_request(request, request.data)
-
-            db_param = {
-                "first_name" : data['name'],
-            }
+            profile = customer_model.Customer.objects.get(id=request.user.id)
+            db_param = {"first_name": data.get('first_name', data.get('name', profile.first_name))}
+            if "last_name" in data:
+                db_param["last_name"] = data.get("last_name", "")
+            if "phone" in data:
+                phone = "".join(character for character in str(data.get("phone") or "") if character.isdigit())
+                if len(phone) == 12 and phone.startswith("91"):
+                    phone = phone[2:]
+                if len(phone) != 10 or phone[0] not in "6789":
+                    raise APIException({'message': "Enter a valid 10-digit Indian mobile number"})
+                if customer_model.Customer.objects.filter(phone=phone).exclude(id=request.user.id).exists():
+                    raise APIException({'message': "Another account uses this mobile number"})
+                db_param["phone"] = phone
 
             if "image" in data:
                 image = data['image']
@@ -135,15 +143,10 @@ class UpdateProfile(APIView):
                         db_param["profile_picture_name"] = file_name
                         db_param["profile_picture_ext"] = ext
 
-            s_id = data.get('id', None)
-
-            if s_id and s_id.isdigit() and s_id != '0':
-                customer_model.Customer.objects.filter(id=int(s_id)).update(**db_param)
-                c_profile = customer_model.Customer.objects.get(id = int(s_id))
-                response = profile_serializer(c_profile, request.user.id)
-                return Response({'message' : 'Profile Updated Successfully','data' : response})
-            else:                
-                raise APIException({'message': "Unable to update"})
+            customer_model.Customer.objects.filter(id=request.user.id).update(**db_param)
+            c_profile = customer_model.Customer.objects.get(id=request.user.id)
+            response = profile_serializer(c_profile, request.user.id)
+            return Response({'message' : 'Profile Updated Successfully','data' : response})
          
         
         except APIException as api_exception:
@@ -164,30 +167,7 @@ class GetCustomerAddressList(APIView):
             address_data = {}
         
         return Response({'data' : address_data})
-
-
-
-class GetMyAccess(APIView):
-    """
-    Minimal stand-in for a full RBAC system: every staff/superuser gets
-    is_super_admin=True (unrestricted access), matching the old Admin app's
-    flat "any staff can do anything" model. No Role/Permission tables exist
-    yet -- role/permissions/permission_details are left empty until a real
-    RBAC system is built.
-    """
-    def get(self, request):
-        user = request.user
-        name = (f"{user.first_name} {user.last_name}".strip() or user.username)
-        return Response({
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "name": name,
-            "role": None,
-            "is_super_admin": bool(user.is_staff or user.is_superuser),
-            "permissions": [],
-            "permission_details": [],
-        })
+    
 
 
 
@@ -231,4 +211,3 @@ class GetCustomerFromPhone(APIView):
             logger.exception("Get Customer From Phone Error - {}".format(e))
             raise APIException({'message' : "Unable to Get"})
     
-

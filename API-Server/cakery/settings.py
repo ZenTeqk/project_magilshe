@@ -81,10 +81,13 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.IsAuthenticated',),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+        'customer.rbac.HasRBACPermission',
+    ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         # 'api.authentication.CustomJWTAuthentication',
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'customer.authentication.RBACJWTAuthentication',
     ),
     # 'DEFAULT_AUTHENTICATION_CLASSES' : [],
     'EXCEPTION_HANDLER': 'cakery.token_exception_handler.custom_exception_handler'

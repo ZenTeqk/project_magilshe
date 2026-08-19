@@ -54,6 +54,10 @@ from delivery_person.models import DeliveryPerson
 logger = logging.getLogger('cakery')
 
 class MyCakeOrderListView(APIView):
+    # Customer self-service, not staff/admin — RBAC's "operations" mapping on the
+    # order/ prefix would otherwise 403 every regular customer (empty permission set).
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, format=None):
         print("FROM FAYAS")
         orders = CakeOrder.objects.select_related('customer', 'delivery_partner', 'delivery_address').filter(customer=request.user.id)
@@ -114,6 +118,9 @@ class CakeOrderDetailView(APIView):
     
 
 class SaveCakeOrder(APIView):
+    # Customer checkout — same reasoning as MyCakeOrderListView above.
+    permission_classes = [IsAuthenticated]
+
     @transaction.atomic
     def post(self, request):
         try:
@@ -180,6 +187,9 @@ class GetAllCakeOrder(APIView):
 
 
 class GetMyCakeOrder(APIView):
+    # Customer self-service — same reasoning as MyCakeOrderListView above.
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         order_data = []
         try:
@@ -209,6 +219,10 @@ class GetIndividualOrder(APIView):
 
 
 class OrderStatusUpdate(APIView):
+    # Also called from the public Website (not just Admin) — same reasoning
+    # as MyCakeOrderListView above.
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         try:
             print("")

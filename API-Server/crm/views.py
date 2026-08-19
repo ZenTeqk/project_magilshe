@@ -7,23 +7,23 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import models, transaction
-from django.db.models import Count, OuterRef, Q, Subquery, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Count, Q
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from cakery.common import aws_domain_name, get_s3_session
 from cakery.file_upload_to_aws import put_image_to_s3
 from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerCommunicationLog, CustomerRecurringEvent,
-    Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationPayment,
+    Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment,
 )
 from .customer_matching import find_existing_customer
 from .recurring_events import recurring_event_summary, sync_recurring_event
 from .serializers import (
-    CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer, LeadReferenceImageSerializer, LeadSerializer,
-    QuotationListSerializer, QuotationPaymentSerializer, QuotationSerializer,
+    CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer,
+    CustomerRecurringEventSerializer, LeadReferenceImageSerializer, LeadSerializer,
+    QuotationListSerializer, QuotationPaymentSerializer, QuotationSerializer, CRMCustomerUpdateSerializer,
 )
 
 
@@ -42,31 +42,50 @@ class LeadViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(**{field: p[field]})
         if p.get("created_date"):
             qs = qs.filter(created_on__date=p["created_date"])
+        if p.get("from_date"):
+            qs = qs.filter(created_on__date__gte=p["from_date"])
+        if p.get("to_date"):
+            qs = qs.filter(created_on__date__lte=p["to_date"])
         return qs
 
     @action(detail=False, methods=["get"], url_path="crm-dashboard")
     def crm_dashboard(self, request):
         """One compact, cacheable snapshot avoids loading every module list."""
-        lead_counts = dict(Lead.objects.values_list("status").annotate(total=models.Count("id")))
+        from_date = request.query_params.get("from_date")
+        to_date = request.query_params.get("to_date")
+
+        def in_range(queryset, field):
+            if from_date:
+                queryset = queryset.filter(**{f"{field}__date__gte": from_date})
+            if to_date:
+                queryset = queryset.filter(**{f"{field}__date__lte": to_date})
+            return queryset
+
+        leads_qs = in_range(Lead.objects.all(), "created_on")
+        quotations_qs = in_range(Quotation.objects.all(), "created_on")
+        orders_qs = in_range(CRMOrder.objects.all(), "confirmed_on")
+        invoices_qs = in_range(CRMInvoice.objects.all(), "generated_on")
+        deliveries_qs = in_range(CRMDelivery.objects.all(), "created_on")
+        lead_counts = dict(leads_qs.values_list("status").annotate(total=models.Count("id")))
         document_counts = {
-            "quotations": Quotation.objects.count(), "orders": CRMOrder.objects.count(),
-            "invoices": CRMInvoice.objects.count(), "deliveries": CRMDelivery.objects.count(),
+            "quotations": quotations_qs.count(), "orders": orders_qs.count(),
+            "invoices": invoices_qs.count(), "deliveries": deliveries_qs.count(),
         }
         funnel = {
-            "total_leads": Lead.objects.count(),
-            "lead_only": Lead.objects.filter(quotation__isnull=True).count(),
-            "moved_to_quotation": Lead.objects.filter(quotation__isnull=False).count(),
-            "moved_to_order": Lead.objects.filter(quotation__crm_order__isnull=False).count(),
-            "moved_to_invoice": Lead.objects.filter(quotation__crm_order__invoice__isnull=False).count(),
-            "moved_to_delivery": Lead.objects.filter(quotation__crm_order__delivery__isnull=False).count(),
-            "completed": Lead.objects.filter(status="Completed").count(),
-            "won_not_quoted": Lead.objects.filter(status="Won", quotation__isnull=True).count(),
-            "lost": Lead.objects.filter(status="Lost").count(),
+            "total_leads": leads_qs.count(),
+            "lead_only": leads_qs.filter(quotation__isnull=True).count(),
+            "moved_to_quotation": quotations_qs.count(),
+            "moved_to_order": orders_qs.count(),
+            "moved_to_invoice": invoices_qs.count(),
+            "moved_to_delivery": deliveries_qs.count(),
+            "completed": leads_qs.filter(status="Completed").count(),
+            "won_not_quoted": leads_qs.filter(status="Won", quotation__isnull=True).count(),
+            "lost": leads_qs.filter(status="Lost").count(),
         }
         workflows = []
-        quotations = Quotation.objects.select_related(
+        quotations = in_range(Quotation.objects.select_related(
             "lead", "crm_order", "crm_order__invoice", "crm_order__delivery"
-        ).order_by("-updated_on")[:10]
+        ), "updated_on").order_by("-updated_on")[:10]
         for quotation in quotations:
             order = getattr(quotation, "crm_order", None)
             invoice = getattr(order, "invoice", None) if order else None
@@ -144,6 +163,10 @@ class LeadViewSet(viewsets.ModelViewSet):
         active = self.get_queryset().filter(
             status="Follow-up", follow_up_date__isnull=False
         ).order_by("follow_up_date", "follow_up_time", "id")
+        if request.query_params.get("from_date"):
+            active = active.filter(follow_up_date__gte=request.query_params["from_date"])
+        if request.query_params.get("to_date"):
+            active = active.filter(follow_up_date__lte=request.query_params["to_date"])
         completed_activity = LeadActivity.objects.filter(
             action="Follow-up Completed", created_on__date=today
         )
@@ -199,6 +222,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         return Response({"message": "Follow-up completed.", "data": self.get_serializer(lead).data})
 
     @action(detail=True, methods=["post"])
+    @transaction.atomic
     def convert(self, request, pk=None):
         lead = self.get_object()
         if lead.status != "Won":
@@ -226,19 +250,30 @@ class LeadViewSet(viewsets.ModelViewSet):
                 "flavour": lead.flavour,
                 "quantity": lead.quantity,
                 "event_date": lead.event_date,
-                "notes": lead.customer_notes,
+                "notes": "\n".join(filter(None, [lead.customer_notes, lead.cake_message, lead.remarks])),
                 "selected_address": primary_address,
                 "occasion": lead.occasion,
                 "delivery_date": lead.delivery_date,
                 "delivery_time": lead.delivery_time,
                 "delivery_type": lead.delivery_type,
-                "special_instructions": lead.internal_notes,
+                "special_instructions": "\n".join(filter(None, [lead.internal_notes, lead.staff_remarks, lead.internal_sales_notes])),
                 "sales_staff": lead.assigned_to,
                 "total_amount": lead.estimated_amount or lead.expected_price or 0,
                 "created_by": request.user,
             },
         )
         if created:
+            QuotationItem.objects.create(
+                quotation=quotation,
+                cake=lead.cake,
+                item_name=lead.cake_type or "Custom Cake",
+                description="\n".join(filter(None, [lead.theme, lead.cake_message, lead.customer_notes])),
+                flavour=lead.flavour,
+                weight=lead.weight,
+                quantity=lead.quantity or 1,
+                rate=lead.estimated_amount or lead.budget or lead.expected_price or 0,
+                gst_percentage=0,
+            )
             QuotationActivity.objects.create(
                 quotation=quotation, action="Quotation Created",
                 description=f"Created from {lead.lead_no}", staff=request.user,
@@ -334,31 +369,51 @@ class LeadViewSet(viewsets.ModelViewSet):
         return Response({"success_count": successes, "failed_count": len(failures), "errors": failures})
 
 
-class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
+class CRMCustomerViewSet(
+    mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     """Safe CRM projection of authentication customers and their business history."""
     serializer_class = None
 
+    def get_serializer_class(self):
+        if self.action in {"update", "partial_update"}:
+            return CRMCustomerUpdateSerializer
+        return CRMCustomerUpdateSerializer
+
+    def partial_update(self, request, *args, **kwargs):
+        customer = self.get_object()
+        serializer = CRMCustomerUpdateSerializer(customer, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        refreshed = self.get_queryset().get(pk=customer.pk)
+        return Response(self.summary(refreshed))
+
+    def create(self, request, *args, **kwargs):
+        serializer = CRMCustomerUpdateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        customer = serializer.save()
+        refreshed = self.get_queryset().get(pk=customer.pk)
+        return Response(self.summary(refreshed), status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
     def get_queryset(self):
         Customer = get_user_model()
-        # total_revenue is a Subquery (not a joined Sum) so it doesn't fan out
-        # against the other Count(..., distinct=True) annotations below.
-        revenue_subquery = (
-            CRMInvoice.objects.filter(customer=OuterRef("pk"))
-            .values("customer")
-            .annotate(total=Sum("amount_paid"))
-            .values("total")
-        )
-        queryset = Customer.objects.annotate(
+        not_cancelled = ~Q(crm_orders__status="Cancelled")
+        queryset = Customer.objects.filter(is_staff=False).annotate(
             lead_count=Count("crm_leads", distinct=True),
             quotation_count=Count("crm_quotations", distinct=True),
             order_count=Count("crm_orders", distinct=True),
             invoice_count=Count("crm_invoices", distinct=True),
             delivery_count=Count("crm_orders__delivery", distinct=True),
-            total_revenue=Coalesce(
-                Subquery(revenue_subquery, output_field=models.DecimalField()),
-                0,
-                output_field=models.DecimalField(),
-            ),
+            # "Valid" orders exclude Cancelled, matching CRMOrder.STATUS_CHOICES —
+            # this is the figure returning-customer/revenue logic must use, not
+            # the raw order_count above (kept for backward compatibility).
+            valid_order_count=Count("crm_orders", filter=not_cancelled, distinct=True),
+            total_revenue=models.Sum("crm_orders__total_amount", filter=not_cancelled),
+            last_order_date=models.Max("crm_orders__confirmed_on", filter=not_cancelled),
         ).prefetch_related("customeraddress_set")
         term = str(self.request.query_params.get("search") or "").strip()
         if term:
@@ -388,30 +443,43 @@ class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
             "counts": {"leads": customer.lead_count, "quotations": customer.quotation_count,
                        "orders": customer.order_count, "invoices": customer.invoice_count,
                        "deliveries": customer.delivery_count},
-            "total_revenue": customer.total_revenue,
-            "is_returning_customer": customer.order_count > 1,
+            "valid_order_count": customer.valid_order_count,
+            "total_revenue": customer.total_revenue or 0,
+            "last_order_date": customer.last_order_date,
+            "is_returning_customer": customer.valid_order_count > 1,
         }
 
     def list(self, request, *args, **kwargs):
         return Response([self.summary(customer) for customer in self.get_queryset()[:200]])
 
     @action(detail=False, methods=["get"], url_path="analytics")
-    def analytics(self, request, *args, **kwargs):
-        """Same customer summary as list(), with total_revenue/is_returning_customer
-        included, for the Customer Dashboard's aggregate stats/charts."""
-        return self.list(request, *args, **kwargs)
+    def analytics(self, request):
+        """Reuse the customer projection under the separately enforceable
+        analytics permission consumed by the Customer Dashboard."""
+        return self.list(request)
 
     def retrieve(self, request, *args, **kwargs):
         customer = self.get_queryset().get(pk=kwargs["pk"])
         data = self.summary(customer)
         data["history"] = {
-            "leads": list(customer.crm_leads.values("id", "lead_no", "status", "occasion", "created_on")),
+            "leads": list(customer.crm_leads.values(
+                "id", "lead_no", "status", "occasion", "event_date", "follow_up_date",
+                "follow_up_notes", "cake_type", "flavour", "quantity", "created_on"
+            )),
             "quotations": list(customer.crm_quotations.values("id", "quotation_no", "status", "total_amount", "created_on")),
-            "orders": list(customer.crm_orders.values("id", "order_no", "status", "total_amount", "confirmed_on")),
-            "invoices": list(customer.crm_invoices.values("id", "invoice_no", "status", "total_amount", "generated_on")),
-            "deliveries": list(CRMDelivery.objects.filter(order__customer=customer).values("id", "delivery_no", "delivery_status", "delivery_type", "created_on")),
+            "orders": list(customer.crm_orders.values(
+                "id", "order_no", "status", "total_amount", "event_date", "confirmed_on",
+                occasion=models.F("quotation__lead__occasion"),
+            )),
+            "invoices": list(customer.crm_invoices.values(
+                "id", "invoice_no", "status", "total_amount", "amount_paid", "balance_amount", "generated_on"
+            )),
+            "deliveries": list(CRMDelivery.objects.filter(order__customer=customer).values(
+                "id", "delivery_no", "delivery_status", "delivery_type", "pickup_time",
+                "delivery_time", "porter_time", "created_on"
+            )),
             "payments": list(QuotationPayment.objects.filter(quotation__customer=customer).values(
-                "id", "quotation_id", "amount", "payment_method", "payment_date", "created_on"
+                "id", "quotation_id", "quotation__quotation_no", "amount", "payment_method", "payment_date", "created_on"
             )),
             "communications": [{
                 "id": log.id, "channel": log.channel, "subject": log.subject, "message": log.message,
@@ -420,7 +488,42 @@ class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
             } for log in customer.communication_logs.select_related("staff").all()[:100]],
         }
         data["recurring_events"] = [recurring_event_summary(event) for event in customer.recurring_events.all()]
+        data["purchase_summary"] = self._purchase_summary(customer)
         return Response(data)
+
+    @staticmethod
+    def _purchase_summary(customer):
+        """Reliable purchase-behaviour metrics. Order count/revenue/last-order
+        reuse the annotations already computed once by get_queryset() (no
+        extra query); only the two "favourite" breakdowns need their own
+        query, and only here on the single-customer detail view (no N+1)."""
+        count = customer.valid_order_count
+        total_revenue = customer.total_revenue or 0
+        if count == 0:
+            return {
+                "total_orders": 0, "total_revenue": 0, "average_order_value": 0,
+                "last_order_date": None, "is_returning_customer": False,
+                "favourite_occasion": None, "favourite_flavour": None,
+            }
+        valid_orders = customer.crm_orders.exclude(status="Cancelled")
+        occasion_counts = (
+            valid_orders.exclude(quotation__lead__occasion__isnull=True)
+            .values("quotation__lead__occasion")
+            .annotate(n=Count("id")).order_by("-n").first()
+        )
+        flavour_counts = (
+            valid_orders.exclude(models.Q(flavour__isnull=True) | models.Q(flavour=""))
+            .values("flavour").annotate(n=Count("id")).order_by("-n").first()
+        )
+        return {
+            "total_orders": count,
+            "total_revenue": total_revenue,
+            "average_order_value": round(total_revenue / count, 2) if count else 0,
+            "last_order_date": customer.last_order_date,
+            "is_returning_customer": count > 1,
+            "favourite_occasion": occasion_counts["quotation__lead__occasion"] if occasion_counts else None,
+            "favourite_flavour": flavour_counts["flavour"] if flavour_counts else None,
+        }
 
     @action(detail=False, methods=["get"], url_path="upcoming-events")
     def upcoming_events(self, request):
@@ -462,6 +565,31 @@ class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
             staff=request.user if request.user.is_authenticated else None,
         )
         return Response({"data": {"id": log.id, "channel": log.channel, "created_on": log.created_on}})
+
+
+class CustomerRecurringEventViewSet(viewsets.ModelViewSet):
+    """Manual CRUD for customer occasions/reminders (Customer 360 → Events tab).
+    Same model the Lead pipeline already auto-populates via sync_recurring_event —
+    this just exposes it as a real, staff-editable resource."""
+    serializer_class = CustomerRecurringEventSerializer
+    queryset = CustomerRecurringEvent.objects.select_related("customer", "source_lead").all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        customer_id = self.request.query_params.get("customer")
+        if customer_id:
+            queryset = queryset.filter(customer_id=customer_id)
+        return queryset
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Marks the current reminder cycle as actioned (no message is sent —
+        this only logs that staff have handled it, same semantics as the
+        existing CRMCustomerViewSet.send_reminder action's date bookkeeping)."""
+        event = self.get_object()
+        event.last_reminder_sent_on = timezone.localdate()
+        event.save(update_fields=["last_reminder_sent_on", "updated_on"])
+        return Response(self.get_serializer(event).data)
 
 
 def _confirm_quotation_order(quotation, user):
@@ -556,12 +684,12 @@ class QuotationViewSet(viewsets.ModelViewSet):
         if len(term) < 2:
             return Response([])
         cache_version = cache.get("crm:customer-search:version", 1)
-        cache_key = f"crm:customer-search:{cache_version}:{term.casefold()}"
+        cache_key = f"crm:customer-search:customers-only:{cache_version}:{term.casefold()}"
         cached = cache.get(cache_key)
         if cached is not None:
             return Response(cached)
         Customer = get_user_model()
-        customers = Customer.objects.filter(
+        customers = Customer.objects.filter(is_staff=False).filter(
             Q(first_name__icontains=term) | Q(last_name__icontains=term) |
             Q(phone__icontains=term) | Q(email__icontains=term)
         ).prefetch_related("customeraddress_set")[:20]
@@ -696,6 +824,15 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         "quotation", "quotation__lead", "customer", "delivery_staff",
         "assigned_staff", "assigned_baker",
     ).prefetch_related("items", "quotation__activities", "quotation__lead__reference_images").all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        start, end = self.request.query_params.get("from_date"), self.request.query_params.get("to_date")
+        if start:
+            queryset = queryset.filter(Q(delivery_date__gte=start) | Q(delivery_date__isnull=True, event_date__gte=start))
+        if end:
+            queryset = queryset.filter(Q(delivery_date__lte=end) | Q(delivery_date__isnull=True, event_date__lte=end))
+        return queryset
 
     def create(self, request, *args, **kwargs):
         return Response(
@@ -852,7 +989,9 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
                 "address": order.delivery_address or quotation.address,
                 "subtotal": quotation.subtotal, "gst_amount": quotation.gst_amount,
                 "total_amount": order.total_amount, "amount_paid": order.advance_paid,
-                "balance_amount": order.balance_amount, "generated_by": request.user,
+                "balance_amount": order.balance_amount,
+                "status": "Paid" if order.balance_amount <= 0 else "Generated",
+                "generated_by": request.user,
             })
             if created:
                 order.status = "Invoice Pending"
@@ -866,6 +1005,15 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CRMInvoice.objects.select_related("order", "order__quotation", "customer").prefetch_related(
         "order__items", "order__quotation__payments", "order__quotation__activities",
     ).all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        start, end = self.request.query_params.get("from_date"), self.request.query_params.get("to_date")
+        if start:
+            queryset = queryset.filter(generated_on__date__gte=start)
+        if end:
+            queryset = queryset.filter(generated_on__date__lte=end)
+        return queryset
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
@@ -924,7 +1072,7 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 defaults.update({
                     "delivery_location": order.delivery_address, "delivery_time": scheduled,
-                    "delivery_notes": order.delivery_notes, "delivery_person": order.delivery_staff,
+                    "delivery_notes": order.delivery_notes,
                 })
             delivery, created = CRMDelivery.objects.get_or_create(order=order, defaults=defaults)
             order.status = "Delivery"
@@ -965,9 +1113,19 @@ def _missing_delivery_fields(delivery):
 
 class CRMDeliveryViewSet(viewsets.ModelViewSet):
     serializer_class = CRMDeliverySerializer
-    queryset = CRMDelivery.objects.select_related("order", "order__quotation", "order__invoice", "delivery_person").prefetch_related(
+    queryset = CRMDelivery.objects.select_related("order", "order__quotation", "order__invoice", "delivery_person", "external_platform", "external_delivery_person").prefetch_related(
         "order__items", "order__quotation__activities", "damage_images",
     ).all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        start, end = self.request.query_params.get("from_date"), self.request.query_params.get("to_date")
+        scheduled = Q()
+        if start:
+            scheduled &= (Q(pickup_time__date__gte=start) | Q(delivery_time__date__gte=start) | Q(porter_time__date__gte=start))
+        if end:
+            scheduled &= (Q(pickup_time__date__lte=end) | Q(delivery_time__date__lte=end) | Q(porter_time__date__lte=end))
+        return queryset.filter(scheduled) if start or end else queryset
 
     def create(self, request, *args, **kwargs):
         return Response({"message": "Deliveries are created from paid invoices."}, status=405)
