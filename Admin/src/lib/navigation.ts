@@ -81,14 +81,12 @@ export const navigation: NavEntry[] = [
     to: "/users",
     icon: UserCog,
     aliases: ["staff", "admin users", "team"],
-    comingSoon: true,
   },
   {
     label: "Roles & Permissions",
     to: "/roles",
     icon: UserCog,
     aliases: ["rbac", "permissions", "profiles"],
-    comingSoon: true,
   },
   {
     label: "CRM Pipeline",
@@ -166,11 +164,11 @@ export const navigation: NavEntry[] = [
     label: "Store Operations",
     icon: Store,
     items: [
-      { label: "Delivery Overview", to: "/delivery-management", icon: Truck, comingSoon: true },
+      { label: "Delivery Overview", to: "/delivery-management", icon: Truck },
       { label: "Delivery Records", to: "/delivery-management/records", icon: ClipboardList },
-      { label: "Delivery Staff", to: "/delivery-management/staff", icon: BikeIcon, aliases: ["rider"], comingSoon: true },
-      { label: "External Partners", to: "/delivery-management/partners", icon: Users, aliases: ["porter", "driver"], comingSoon: true },
-      { label: "Delivery Performance", to: "/delivery-management/performance", icon: LineChart, comingSoon: true },
+      { label: "Delivery Staff", to: "/delivery-management/staff", icon: BikeIcon, aliases: ["rider"] },
+      { label: "External Partners", to: "/delivery-management/partners", icon: Users, aliases: ["porter", "driver"] },
+      { label: "Delivery Performance", to: "/delivery-management/performance", icon: LineChart },
       {
         label: "Online Orders",
         to: "/orders",

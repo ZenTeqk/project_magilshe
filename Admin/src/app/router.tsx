@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { RequireAuth } from "./require-auth";
 import { RedirectIfAuthed } from "./redirect-if-authed";
 import { NotFoundPage } from "./not-found-page";
-import { ComingSoonPage } from "@/components/shared/coming-soon-page";
 
 const LoginPage = lazy(() => import("@/features/auth/pages/login-page"));
 
@@ -28,6 +27,9 @@ const CustomersPage = lazy(() => import("@/features/customers/pages/customers-pa
 const CustomerManagementPage = lazy(() => import("@/features/customers/pages/customer-management-page"));
 const CustomerProfilePage = lazy(() => import("@/features/customers/pages/customer-profile-page"));
 
+const UsersPage = lazy(() => import("@/features/users/pages/users-page"));
+const RolesPage = lazy(() => import("@/features/users/pages/roles-page"));
+
 const CategoriesPage = lazy(() => import("@/features/catalog/pages/categories-page"));
 const SubCategoriesPage = lazy(() => import("@/features/catalog/pages/subcategories-page"));
 const ProductsPage = lazy(() => import("@/features/catalog/pages/products-page"));
@@ -40,6 +42,10 @@ const GalleryPage = lazy(() => import("@/features/catalog/pages/gallery-page"));
 const OnlineOrdersPage = lazy(() => import("@/features/operations/pages/online-orders-page"));
 const ManualOrderPage = lazy(() => import("@/features/operations/pages/manual-order-page"));
 const PurchasePage = lazy(() => import("@/features/operations/pages/purchase-page"));
+const DeliveryStaffPage = lazy(() => import("@/features/operations/pages/delivery-person-page"));
+const DeliveryManagementPage = lazy(() => import("@/features/operations/pages/delivery-management-page"));
+const ExternalDeliveryPartnersPage = lazy(() => import("@/features/operations/pages/external-delivery-partners-page"));
+const DeliveryPersonProfilePage = lazy(() => import("@/features/operations/pages/delivery-person-profile-page"));
 const FeedbackPage = lazy(() => import("@/features/operations/pages/feedback-page"));
 const LegacyCustomersPage = lazy(() => import("@/features/operations/pages/legacy-customers-page"));
 
@@ -98,8 +104,8 @@ export function AppRouter() {
             <Route path="/crm/customers/manage" element={<CustomerManagementPage />} />
             <Route path="/crm/customers/:customerId" element={<CustomerProfilePage />} />
 
-            <Route path="/users" element={<ComingSoonPage title="Users" />} />
-            <Route path="/roles" element={<ComingSoonPage title="Roles & Permissions" />} />
+            <Route path="/users" element={<UsersPage />} />
+            <Route path="/roles" element={<RolesPage />} />
 
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/subcategories" element={<SubCategoriesPage />} />
@@ -113,13 +119,13 @@ export function AppRouter() {
             <Route path="/orders" element={<OnlineOrdersPage />} />
             <Route path="/manual-order" element={<ManualOrderPage />} />
             <Route path="/purchase" element={<PurchasePage />} />
-            <Route path="/delivery_person" element={<ComingSoonPage title="Delivery Staff" />} />
-            <Route path="/delivery-management" element={<ComingSoonPage title="Delivery Overview" />} />
-            <Route path="/delivery-management/staff" element={<ComingSoonPage title="Delivery Staff" />} />
-            <Route path="/delivery-management/partners" element={<ComingSoonPage title="External Partners" />} />
-            <Route path="/delivery-management/:kind/:id" element={<ComingSoonPage title="Delivery Profile" />} />
+            <Route path="/delivery_person" element={<DeliveryStaffPage />} />
+            <Route path="/delivery-management" element={<DeliveryManagementPage />} />
+            <Route path="/delivery-management/staff" element={<DeliveryStaffPage />} />
+            <Route path="/delivery-management/partners" element={<ExternalDeliveryPartnersPage />} />
+            <Route path="/delivery-management/:kind/:id" element={<DeliveryPersonProfilePage />} />
             <Route path="/delivery-management/records" element={<CrmDeliveryPage />} />
-            <Route path="/delivery-management/performance" element={<ComingSoonPage title="Delivery Performance" />} />
+            <Route path="/delivery-management/performance" element={<DeliveryManagementPage />} />
             <Route path="/feedback" element={<FeedbackPage />} />
             <Route path="/customers" element={<LegacyCustomersPage />} />
 

@@ -112,18 +112,15 @@ src/
 │   ├── dashboard/pages/    # Home Dashboard
 │   ├── crm/                # Leads, Follow-ups, Quotations, Orders, Invoices, Delivery,
 │   │                       # CRM Dashboard, CRM Settings
-│   ├── customers/          # Customer Dashboard, List, Profile (event reminders are
-│   │                       # read-only for now — no backend CRUD yet)
+│   ├── customers/          # Customer Dashboard, List, Profile (event reminders included)
 │   ├── catalog/pages/      # Categories, Sub Categories, Products, Items, Units, Tags, Gallery
-│   ├── operations/pages/   # Online/Manual Orders, Purchases, Feedback, legacy Customers
-│   │                       # (Delivery Management staff/platforms/partners: coming soon,
-│   │                       # no backend endpoints yet — routes show ComingSoonPage)
+│   ├── operations/pages/   # Online/Manual Orders, Purchases, Feedback, legacy Customers,
+│   │                       # Delivery Management (staff/platforms/partners)
 │   ├── marketing/pages/    # Offers, Banner, Events, Event Orders
 │   ├── reports/pages/      # Analytics, Order/Customer/Delivery/Occasion reports
 │   ├── settings/pages/     # Configuration, Terms, Settings, Profile
-│   └── users/pages/        # Users, Roles & Permissions — coming soon (no RBAC backend
-│                           # beyond a minimal customer/rbac/me/ that grants full access to
-│                           # any staff/superuser; no Role/Permission CRUD yet)
+│   └── users/pages/        # Users, Roles & Permissions — full RBAC (roles, permissions,
+│                           # staff assignment)
 │
 ├── lib/
 │   ├── api-client.ts    # the one Axios instance — request/response interceptors, token refresh
@@ -152,26 +149,24 @@ are the reference examples.
    `SectionCard`, `StatCard`, `EmptyState`, and the loading skeletons from
    `components/shared/` — don't build new table/card primitives per page.
 4. Register the route in `src/app/router.tsx` (lazy import + `<Route>` entry).
-5. If the page currently renders `ComingSoonPage` (see below), swap it to the real hook +
-   `DataTable`/`SectionCard`, following any existing CRM/Catalog page as the template, and
-   drop its `comingSoon` flag in `src/lib/navigation.ts`.
+5. If a future module's backend isn't ready yet, route it to
+   `components/shared/coming-soon-page.tsx`'s `ComingSoonPage` and flag it `comingSoon: true`
+   in `src/lib/navigation.ts` — swap both back once the real hook + `DataTable`/`SectionCard`
+   page is ready, following any existing CRM/Catalog page as the template.
 
 ## Current status
 
-Every module is real and backend-connected except:
+Every module is real and backend-connected, including:
 
-- **Users / Roles & Permissions** — no RBAC backend beyond a minimal `customer/rbac/me/`
-  endpoint (grants full access to any `is_staff`/`is_superuser` account, matching the old
-  Admin's flat access model). Both routes render `ComingSoonPage`; there's no Role/Permission
-  CRUD yet.
+- **Users / Roles & Permissions** — full RBAC (`AccessRole`/`AccessPermission` models,
+  `customer/rbac/{me,users,roles,permissions}/`). Existing staff were auto-promoted to a
+  seeded "Super Admin" role on rollout; a set of named business role profiles (CRM Staff,
+  Operations Staff, Accounts/Finance, etc.) are pre-seeded for finer-grained assignment.
 - **Delivery Management** (staff / platforms / partners / performance / per-person profile) —
-  the backend's `DeliveryPerson` model has no concept of platforms or external partners.
-  Routes render `ComingSoonPage`. "Delivery Records" (`/delivery-management/records`, backed
-  by `crm/deliveries/`) works normally.
-- **Customer event reminders** — creating/editing/completing/deleting a `CustomerRecurringEvent`
-  has no backend support (the model has no `notes`/`reminder_days_before` fields, and there's
-  no CRUD endpoint). Auto-detected events still display read-only on the customer profile;
-  the action buttons show a "coming soon" toast instead of calling the API.
+  backed by `delivery-person/management/{staff,platforms,partners}/` and
+  `DeliveryPlatform`/`ExternalDeliveryPerson` models.
+- **Customer event reminders** — full CRUD via `crm/customer-events/`
+  (`CustomerRecurringEvent` with `notes`/`reminder_days_before`).
 
 Everything else — Leads, Follow-ups, Quotations, CRM Orders, Invoices, Delivery, the CRM and
 Customer dashboards (including customer analytics/lifetime revenue), Catalog, Marketing,

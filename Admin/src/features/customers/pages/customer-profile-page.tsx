@@ -76,10 +76,6 @@ function CustomerProfilePage() {
   const [deleteEvent, setDeleteEvent] = useState<CustomerRecurringEvent | null>(null);
   const completeEvent = useCompleteCustomerEvent();
   const deleteEventMutation = useDeleteCustomerEvent();
-  // Creating/editing/completing/deleting events has no backend support yet
-  // (CustomerRecurringEvent has no notes/reminder_days_before fields, and no
-  // CRUD endpoints exist) — auto-detected events still display read-only below.
-  const eventsComingSoon = () => toast.info("Event reminders are read-only for now — editing is coming soon.");
 
   if (isLoading) {
     return (
@@ -266,7 +262,7 @@ function CustomerProfilePage() {
               title="Upcoming events"
               className="lg:col-span-1"
               actions={
-                <Button size="sm" variant="ghost" onClick={eventsComingSoon}>
+                <Button size="sm" variant="ghost" onClick={() => setEventDialog({ open: true, event: null })}>
                   <Plus className="size-4" /> Add
                 </Button>
               }
@@ -542,7 +538,7 @@ function CustomerProfilePage() {
             title="Customer events & reminders"
             description="Recurring occasions (birthday, anniversary, …) with an internal staff reminder"
             actions={
-              <Button size="sm" onClick={eventsComingSoon}>
+              <Button size="sm" onClick={() => setEventDialog({ open: true, event: null })}>
                 <Plus className="size-4" /> Add event
               </Button>
             }
@@ -568,17 +564,26 @@ function CustomerProfilePage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {!event.is_completed && (
-                        <Button size="sm" variant="outline" onClick={eventsComingSoon}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            completeEvent.mutate(
+                              { id: event.id, customer: customer.id },
+                              { onSuccess: () => toast.success("Reminder marked complete") },
+                            )
+                          }
+                        >
                           <Check className="size-4" /> Complete
                         </Button>
                       )}
                       <Button size="sm" variant="outline" onClick={() => createLeadFromEvent(event)}>
                         <UserRoundCheck className="size-4" /> Create Lead
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={eventsComingSoon}>
+                      <Button size="sm" variant="ghost" onClick={() => setEventDialog({ open: true, event })}>
                         <Pencil className="size-4" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={eventsComingSoon}>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteEvent(event)}>
                         <Trash2 className="size-4 text-danger" />
                       </Button>
                     </div>
