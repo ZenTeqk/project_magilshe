@@ -1,4 +1,0 @@
-import React from "react";
-import {Drawer,GridItem,ResponsiveGrid,SecondaryButton,StatusBadge} from "../../admin/design-system";
-
-export default function ViewCustomers({show,setShow,customerData}){const close=()=>setShow(false);return <Drawer open={show} title="Customer record" onClose={close} footer={<SecondaryButton onClick={close}>Close</SecondaryButton>}><ResponsiveGrid><GridItem span={12}><strong>Name</strong><div>{customerData.name||"—"}</div></GridItem><GridItem span={12}><strong>Email</strong><div>{customerData.email||"—"}</div></GridItem><GridItem span={12}><strong>Phone</strong><div>{customerData.phone||"—"}</div></GridItem><GridItem span={12}><strong>Status</strong><div><StatusBadge tone={customerData.is_active?"success":"neutral"}>{customerData.is_active?"Active":"Inactive"}</StatusBadge></div></GridItem></ResponsiveGrid></Drawer>;}

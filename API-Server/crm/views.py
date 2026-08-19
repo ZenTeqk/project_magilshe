@@ -7,7 +7,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import models, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -339,12 +340,25 @@ class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         Customer = get_user_model()
+        # total_revenue is a Subquery (not a joined Sum) so it doesn't fan out
+        # against the other Count(..., distinct=True) annotations below.
+        revenue_subquery = (
+            CRMInvoice.objects.filter(customer=OuterRef("pk"))
+            .values("customer")
+            .annotate(total=Sum("amount_paid"))
+            .values("total")
+        )
         queryset = Customer.objects.annotate(
             lead_count=Count("crm_leads", distinct=True),
             quotation_count=Count("crm_quotations", distinct=True),
             order_count=Count("crm_orders", distinct=True),
             invoice_count=Count("crm_invoices", distinct=True),
             delivery_count=Count("crm_orders__delivery", distinct=True),
+            total_revenue=Coalesce(
+                Subquery(revenue_subquery, output_field=models.DecimalField()),
+                0,
+                output_field=models.DecimalField(),
+            ),
         ).prefetch_related("customeraddress_set")
         term = str(self.request.query_params.get("search") or "").strip()
         if term:
@@ -374,10 +388,18 @@ class CRMCustomerViewSet(viewsets.ReadOnlyModelViewSet):
             "counts": {"leads": customer.lead_count, "quotations": customer.quotation_count,
                        "orders": customer.order_count, "invoices": customer.invoice_count,
                        "deliveries": customer.delivery_count},
+            "total_revenue": customer.total_revenue,
+            "is_returning_customer": customer.order_count > 1,
         }
 
     def list(self, request, *args, **kwargs):
         return Response([self.summary(customer) for customer in self.get_queryset()[:200]])
+
+    @action(detail=False, methods=["get"], url_path="analytics")
+    def analytics(self, request, *args, **kwargs):
+        """Same customer summary as list(), with total_revenue/is_returning_customer
+        included, for the Customer Dashboard's aggregate stats/charts."""
+        return self.list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         customer = self.get_queryset().get(pk=kwargs["pk"])

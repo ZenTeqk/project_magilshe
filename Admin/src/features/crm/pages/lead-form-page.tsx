@@ -1,0 +1,688 @@
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { ArrowLeft, ImagePlus, UserRoundCheck, X } from "lucide-react";
+import { PageHeader } from "@/components/shared/page-header";
+import { SectionCard } from "@/components/shared/section-card";
+import { CardSkeleton } from "@/components/shared/skeletons";
+import { Field } from "@/components/shared/field";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  useCreateLead,
+  useUpdateLead,
+  useLead,
+  useCrmOptions,
+  searchCrmCustomers,
+  useUploadLeadReferenceImages,
+  useDeleteLeadReferenceImage,
+  useConvertLead,
+  type CrmCustomerSearchResult,
+  type LeadStatus,
+} from "@/features/crm/hooks";
+import { WonQuotationDialog } from "@/features/crm/components/won-quotation-dialog";
+import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tracker";
+
+const blank = {
+  customer_name: "",
+  phone: "",
+  email: "",
+  whatsapp_number: "",
+  alternate_phone: "",
+  address: "",
+  city: "",
+  state: "",
+  pincode: "",
+  cake_type: "Custom Cake",
+  flavour: "",
+  shape: "",
+  weight: "",
+  quantity: 1,
+  theme: "",
+  occasion: "Birthday",
+  event_date: "",
+  delivery_date: "",
+  delivery_time: "",
+  budget: "",
+  estimated_amount: "",
+  cake_message: "",
+  customer_notes: "",
+  internal_notes: "",
+  status: "Open" as LeadStatus,
+  follow_up_date: "",
+  follow_up_time: "",
+  follow_up_notes: "",
+  lead_source: "Walk-in",
+  lead_source_details: "",
+  staff_remarks: "",
+  winning_reason: "",
+  loss_reason: "",
+  internal_sales_notes: "",
+};
+
+const statusChoicesByOriginal: Record<string, LeadStatus[]> = {
+  Open: ["Open", "Follow-up", "Won", "Lost"],
+  "Follow-up": ["Follow-up", "Won", "Lost"],
+  Won: ["Won"],
+  Lost: ["Lost"],
+};
+
+function LeadFormPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const draft = (location.state as { leadDraft?: Record<string, unknown> } | null)?.leadDraft;
+
+  const isEdit = !!id;
+  const { data: existingLead, isLoading } = useLead(id);
+  const createLead = useCreateLead();
+  const updateLead = useUpdateLead();
+  const uploadImages = useUploadLeadReferenceImages();
+  const deleteImage = useDeleteLeadReferenceImage();
+  const convertLead = useConvertLead();
+
+  const [form, setForm] = useState<typeof blank>({ ...blank, ...(draft ?? {}) });
+  const [originalStatus, setOriginalStatus] = useState<string>("Open");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
+  const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
+  const [wonLead, setWonLead] = useState<typeof existingLead | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const { data: occasions } = useCrmOptions("occasion");
+  const { data: cakeTypes } = useCrmOptions("cake_type");
+  const { data: flavours } = useCrmOptions("cake_flavour");
+  const { data: leadSources } = useCrmOptions("lead_source");
+  const { data: winningReasons } = useCrmOptions("winning_reason");
+  const { data: lossReasons } = useCrmOptions("loss_reason");
+
+  useEffect(() => {
+    if (existingLead) {
+      setForm({ ...blank, ...existingLead } as typeof blank);
+      setOriginalStatus(existingLead.status);
+    }
+  }, [existingLead]);
+
+  useEffect(() => {
+    if (isEdit) return;
+    clearTimeout(debounceRef.current);
+    const phoneDigits = form.phone.replace(/\D/g, "");
+    const term =
+      phoneDigits.length === 10
+        ? phoneDigits
+        : form.customer_name.length >= 3
+          ? form.customer_name
+          : "";
+    if (!term) {
+      setMatched(null);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      const results = await searchCrmCustomers(term);
+      setMatched(
+        results.length === 1
+          ? (results[0] ?? null)
+          : (results.find((r) => r.phone.replace(/\D/g, "") === phoneDigits) ?? null),
+      );
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [form.phone, form.customer_name, isEdit]);
+
+  const set = <K extends keyof typeof blank>(key: K, value: (typeof blank)[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const applyMatch = () => {
+    if (!matched) return;
+    setForm((f) => ({
+      ...f,
+      customer_name: matched.name || f.customer_name,
+      email: matched.email || f.email,
+      address: matched.addresses?.[0]?.address || f.address,
+      city: matched.addresses?.[0]?.city || f.city,
+      pincode: matched.addresses?.[0]?.pincode || f.pincode,
+    }));
+  };
+
+  const statusChoices = isEdit ? (statusChoicesByOriginal[originalStatus] ?? ["Open"]) : ["Open"];
+
+  const createQuotation = async () => {
+    if (!existingLead) return;
+    try {
+      const result = await convertLead.mutateAsync(existingLead.id);
+      toast.success(result.message, { description: `Quotation ${result.data.quotation_no}` });
+      navigate(`/crm/quotations/${result.data.id}/edit`);
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message ?? "Unable to create quotation.");
+    }
+  };
+
+  const submit = async () => {
+    const phoneDigits = form.phone.replace(/\D/g, "");
+    const clientErrors: Record<string, string> = {};
+    if (!/^[6-9]\d{9}$/.test(phoneDigits))
+      clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
+    if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
+    if (!form.event_date) clientErrors["event_date"] = "Event date is required.";
+    if (form.status === "Follow-up" && !form.follow_up_date) clientErrors["follow_up_date"] = "Next follow-up date is required.";
+    if (form.status === "Follow-up" && !form.follow_up_notes.trim()) clientErrors["follow_up_notes"] = "Follow-up notes are required.";
+    if (form.status === "Won" && !form.winning_reason.trim()) clientErrors["winning_reason"] = "Reason for winning is required.";
+    if (form.status === "Lost" && !form.loss_reason.trim()) clientErrors["loss_reason"] = "Reason for loss is required.";
+    setErrors(clientErrors);
+    if (Object.keys(clientErrors).length) return;
+
+    try {
+      const data = isEdit
+        ? await updateLead.mutateAsync({ id: id!, payload: form })
+        : await createLead.mutateAsync(form);
+
+      if (referenceFiles.length) {
+        await uploadImages.mutateAsync({ id: data.id, files: referenceFiles });
+        setReferenceFiles([]);
+      }
+      toast.success(isEdit ? "Lead updated successfully" : "Lead created successfully");
+
+      if (data.status === "Won" && originalStatus !== "Won") {
+        setWonLead(data);
+      } else {
+        navigate(`/crm/leads/${data.id}/edit`);
+      }
+    } catch (err: unknown) {
+      const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      const fieldErrors: Record<string, string> = {};
+      if (response) {
+        for (const [key, value] of Object.entries(response)) {
+          fieldErrors[key] = Array.isArray(value) ? String(value[0]) : String(value);
+        }
+      }
+      setErrors(fieldErrors);
+      toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? "Unable to save lead.");
+    }
+  };
+
+  if (isEdit && isLoading) {
+    return (
+      <div className="space-y-4">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/crm/leads")}>
+          <ArrowLeft className="size-4" /> All leads
+        </Button>
+      </div>
+
+      <PageHeader
+        title={isEdit ? (existingLead?.lead_no ?? "Edit lead") : "Create full lead"}
+        description={
+          isEdit && form.customer_name
+            ? `${form.customer_name} · Edit the existing enquiry without changing its workflow.`
+            : "All enquiry details in one clear, organised workspace."
+        }
+        actions={
+          <>
+            {existingLead?.status === "Won" && !existingLead.quotation_id && (
+              <Button onClick={createQuotation} disabled={convertLead.isPending}>
+                {convertLead.isPending ? "Creating…" : "Create Quotation"}
+              </Button>
+            )}
+            {existingLead?.status === "Won" && existingLead.quotation_id && (
+              <Button variant="outline" asChild><Link to={`/crm/quotations/${existingLead.quotation_id}/edit`}>Open Quotation</Link></Button>
+            )}
+            <Button onClick={submit} disabled={createLead.isPending || updateLead.isPending}>
+              {isEdit ? "Save changes" : "Create lead"}
+            </Button>
+          </>
+        }
+      />
+
+      {isEdit && existingLead && (
+        <div className="flex flex-wrap gap-6 rounded-2xl border border-border bg-card px-5 py-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Lead ID</p>
+            <p className="font-semibold tabular">{existingLead.lead_no}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Created</p>
+            <p className="font-semibold">
+              {new Date(existingLead.created_on).toLocaleDateString("en-IN")}
+            </p>
+          </div>
+          {existingLead.quotation_id && (
+            <div>
+              <p className="text-xs text-muted-foreground">Quotation</p>
+              <Link
+                to={`/crm/quotations/${existingLead.quotation_id}`}
+                className="font-semibold text-primary hover:underline"
+              >
+                View quotation
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      <SectionCard title="Customer Information">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Customer name" required error={errors["customer_name"]}>
+            <Input
+              value={form.customer_name}
+              onChange={(e) => set("customer_name", e.target.value)}
+            />
+          </Field>
+          <Field label="Phone" required error={errors["phone"]}>
+            <Input
+              value={form.phone}
+              maxLength={10}
+              onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))}
+            />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+          </Field>
+          <Field label="WhatsApp number">
+            <Input
+              value={form.whatsapp_number}
+              maxLength={10}
+              onChange={(e) => set("whatsapp_number", e.target.value.replace(/\D/g, ""))}
+            />
+          </Field>
+          <Field label="Alternate phone">
+            <Input
+              value={form.alternate_phone}
+              maxLength={10}
+              onChange={(e) => set("alternate_phone", e.target.value.replace(/\D/g, ""))}
+            />
+          </Field>
+          <Field label="City">
+            <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+          </Field>
+          <Field label="State">
+            <Input value={form.state} onChange={(e) => set("state", e.target.value)} />
+          </Field>
+          <Field label="Pincode">
+            <Input value={form.pincode} onChange={(e) => set("pincode", e.target.value)} />
+          </Field>
+          <Field label="Address" className="sm:col-span-2 lg:col-span-3">
+            <Textarea
+              rows={2}
+              value={form.address}
+              onChange={(e) => set("address", e.target.value)}
+            />
+          </Field>
+        </div>
+        {!isEdit && matched && (
+          <button
+            type="button"
+            onClick={applyMatch}
+            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-left text-xs text-primary transition-colors hover:bg-primary-soft/70"
+          >
+            <UserRoundCheck className="size-3.5 shrink-0" />
+            Existing customer found — {matched.name} ({matched.phone}). Tap to use their details.
+          </button>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Event Details">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Occasion" required>
+            <Select value={form.occasion} onValueChange={(v) => set("occasion", v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(occasions?.length
+                  ? occasions
+                  : ["Birthday", "Wedding", "Anniversary", "Other"]
+                ).map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Event date" required error={errors["event_date"]}>
+            <Input
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={form.event_date}
+              onChange={(e) => set("event_date", e.target.value)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Cake Details">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Cake type" required>
+            <Select value={form.cake_type} onValueChange={(v) => set("cake_type", v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(cakeTypes?.length ? cakeTypes : ["Custom Cake", "Photo Cake", "Tier Cake"]).map(
+                  (o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ),
+                )}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Flavour">
+            <Select value={form.flavour} onValueChange={(v) => set("flavour", v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(flavours ?? []).map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Shape">
+            <Input value={form.shape} onChange={(e) => set("shape", e.target.value)} />
+          </Field>
+          <Field label="Weight (kg)">
+            <Input
+              type="number"
+              min={0}
+              step="0.1"
+              inputMode="decimal"
+              placeholder="e.g. 1.5"
+              value={form.weight}
+              onChange={(e) => set("weight", e.target.value)}
+            />
+          </Field>
+          <Field label="Quantity" required>
+            <Input
+              type="number"
+              min={1}
+              value={form.quantity}
+              onChange={(e) => set("quantity", Number(e.target.value) || 1)}
+            />
+          </Field>
+          <Field label="Theme">
+            <Input value={form.theme} onChange={(e) => set("theme", e.target.value)} />
+          </Field>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-medium">Reference cake images</p>
+          <p className="text-xs text-muted-foreground">Supported: JPG, JPEG, PNG, WEBP. Images are uploaded when the lead is saved.</p>
+          <div className="flex flex-wrap gap-2">
+            {(existingLead?.reference_images ?? []).map((img) => (
+              <div
+                key={img.id}
+                className="group relative size-20 overflow-hidden rounded-xl border border-border"
+              >
+                <img src={img.url} alt={img.original_name} className="size-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => id && deleteImage.mutate({ leadId: id, imageId: img.id })}
+                  className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+            {referenceFiles.map((file, i) => (
+              <div
+                key={i}
+                className="group relative size-20 overflow-hidden rounded-xl border border-border"
+              >
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt={file.name}
+                  className="size-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setReferenceFiles((files) => files.filter((_, idx) => idx !== i))}
+                  className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            ))}
+            <label className="flex size-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border-strong text-center transition-colors hover:border-primary hover:bg-primary-soft/40">
+              <ImagePlus className="size-4 text-primary" />
+              <span className="text-[10px] text-muted-foreground">Add</span>
+              <input
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp"
+                className="hidden"
+                onChange={(e) =>
+                  setReferenceFiles((files) => [...files, ...Array.from(e.target.files ?? [])])
+                }
+              />
+            </label>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Delivery Information"
+        description="Only the expected handover date and time are captured at lead stage. Method and address are collected later."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Delivery date">
+            <Input
+              type="date"
+              value={form.delivery_date}
+              onChange={(e) => set("delivery_date", e.target.value)}
+            />
+          </Field>
+          <Field label="Delivery time">
+            <Input
+              type="time"
+              value={form.delivery_time}
+              onChange={(e) => set("delivery_time", e.target.value)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Pricing">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Budget">
+            <Input
+              type="number"
+              min={0}
+              value={form.budget}
+              onChange={(e) => set("budget", e.target.value)}
+            />
+          </Field>
+          <Field label="Estimated amount">
+            <Input
+              type="number"
+              min={0}
+              value={form.estimated_amount}
+              onChange={(e) => set("estimated_amount", e.target.value)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Status" description="Move the lead through the sales workflow.">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Status" required>
+            <Select value={form.status} onValueChange={(v) => set("status", v as LeadStatus)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {statusChoices.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-5">
+          <LeadWorkflowTracker status={existingLead?.status ?? form.status} hasQuotation={Boolean(existingLead?.quotation_id)} />
+        </div>
+        {form.status === "Follow-up" && (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Next follow-up date" required error={errors["follow_up_date"]}>
+              <Input
+                type="date"
+                value={form.follow_up_date}
+                onChange={(e) => set("follow_up_date", e.target.value)}
+              />
+            </Field>
+            <Field label="Follow-up time">
+              <Input
+                type="time"
+                value={form.follow_up_time}
+                onChange={(e) => set("follow_up_time", e.target.value)}
+              />
+            </Field>
+            <Field label="Follow-up notes" required error={errors["follow_up_notes"]} className="sm:col-span-2">
+              <Textarea
+                rows={3}
+                value={form.follow_up_notes}
+                onChange={(e) => set("follow_up_notes", e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+        {form.status === "Won" && (
+          <div className="mt-4">
+            <Field label="Reason for winning" required error={errors["winning_reason"]}>
+              <Select value={form.winning_reason} onValueChange={(value) => set("winning_reason", value)}>
+                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectContent>{(winningReasons ?? []).map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
+              </Select>
+              {!winningReasons?.length && <p className="text-xs text-warning">Add an active winning reason in CRM Settings.</p>}
+            </Field>
+          </div>
+        )}
+        {form.status === "Lost" && (
+          <div className="mt-4">
+            <Field label="Reason for loss" required error={errors["loss_reason"]}>
+              <Select value={form.loss_reason} onValueChange={(value) => set("loss_reason", value)}>
+                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectContent>{(lossReasons ?? []).map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
+              </Select>
+              {!lossReasons?.length && <p className="text-xs text-warning">Add an active loss reason in CRM Settings.</p>}
+            </Field>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Cake Content">
+        <div className="grid gap-4">
+          <Field label="Message to appear on cake">
+            <Textarea
+              rows={2}
+              value={form.cake_message}
+              onChange={(e) => set("cake_message", e.target.value)}
+            />
+          </Field>
+          <Field label="Customer notes">
+            <Textarea
+              rows={2}
+              value={form.customer_notes}
+              onChange={(e) => set("customer_notes", e.target.value)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Sales Information">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Lead source">
+            <Select value={form.lead_source} onValueChange={(v) => set("lead_source", v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(leadSources?.length
+                  ? leadSources
+                  : ["Walk-in", "Instagram", "Referral", "Website"]
+                ).map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Lead source details">
+            <Input
+              value={form.lead_source_details}
+              onChange={(e) => set("lead_source_details", e.target.value)}
+            />
+          </Field>
+          <Field label="Internal sales notes" className="sm:col-span-2">
+            <Textarea
+              rows={2}
+              value={form.internal_sales_notes}
+              onChange={(e) => set("internal_sales_notes", e.target.value)}
+            />
+          </Field>
+        </div>
+      </SectionCard>
+
+      {isEdit && existingLead?.activities && existingLead.activities.length > 0 && (
+        <SectionCard title="Activity">
+          <ol className="relative space-y-4 border-l border-border pl-5">
+            {existingLead.activities.map((a) => (
+              <li key={a.id} className="relative">
+                <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
+                <p className="text-sm">
+                  <span className="font-semibold">{a.staff_name}</span>{" "}
+                  <span className="text-muted-foreground">{a.action}</span>
+                </p>
+                {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
+                <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                  {new Date(a.created_on).toLocaleString("en-IN")}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </SectionCard>
+      )}
+
+      <WonQuotationDialog
+        lead={wonLead ?? null}
+        open={wonLead !== null}
+        onOpenChange={(v) => {
+          if (!v) {
+            const lead = wonLead;
+            setWonLead(null);
+            navigate(`/crm/leads/${(lead as { id: string | number })?.id}/edit`);
+          }
+        }}
+        onGenerated={(quotationId) => {
+          setWonLead(null);
+          navigate(`/crm/quotations/${quotationId}/edit`);
+        }}
+      />
+    </>
+  );
+}
+
+export default LeadFormPage;

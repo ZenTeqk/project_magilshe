@@ -1,0 +1,246 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 5px);
+  --radius-lg: calc(var(--radius) - 2px);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --radius-3xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-soft: var(--shadow-soft);
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+}
+
+/*
+ * Magilshe design language v4 — white + charcoal + terracotta professional
+ * CRM theme. Neutral gray surfaces/text/borders dominate (~90%); terracotta
+ * is a restrained brand accent (buttons, active nav, focus, highlights),
+ * never a full-page or full-card fill. Info blue is the secondary accent
+ * (charts, informational states), not a second brand color.
+ */
+:root {
+  --radius: 0.75rem;
+  --background: #F6F8FB;
+  --foreground: #172033;
+  --surface: #FFFFFF;
+  --surface-muted: #F8FAFC;
+  --card: #FFFFFF;
+  --card-foreground: #172033;
+  --popover: #FFFFFF;
+  --popover-foreground: #172033;
+  --primary: #2563EB;
+  --primary-foreground: #FFFFFF;
+  --primary-soft: #EFF6FF;
+  --accent: #7C3AED;
+  --accent-foreground: #FFFFFF;
+  --accent-soft: #F5F3FF;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #172033;
+  --muted: #F1F5F9;
+  --muted-foreground: #667085;
+  --success: #16A34A;
+  --success-soft: #F0FDF4;
+  --warning: #D97706;
+  --warning-soft: #FFFBEB;
+  --danger: #DC2626;
+  --danger-soft: #FEF2F2;
+  --info: #0891B2;
+  --info-soft: #ECFEFF;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --input: #CBD5E1;
+  --ring: #2563EB;
+  --chart-1: #2563EB;
+  --chart-2: #7C3AED;
+  --chart-3: #16A34A;
+  --chart-4: #D97706;
+  --chart-5: #0891B2;
+  --sidebar: #172033;
+  --sidebar-foreground: #E2E8F0;
+  --sidebar-primary: #60A5FA;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #243149;
+  --sidebar-accent-foreground: #F7F8FA;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #60A5FA;
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.035), 0 4px 12px -8px rgba(15, 23, 42, 0.1);
+  --shadow-lift: 0 8px 24px -12px rgba(15, 23, 42, 0.2);
+}
+
+.dark {
+  --background: oklch(0.17 0.018 45);
+  --foreground: oklch(0.96 0.008 60);
+  --surface: oklch(0.213 0.02 45);
+  --surface-muted: oklch(0.245 0.022 48);
+  --card: oklch(0.213 0.02 45);
+  --card-foreground: oklch(0.96 0.008 60);
+  --popover: oklch(0.22 0.02 45);
+  --popover-foreground: oklch(0.96 0.008 60);
+  --primary: oklch(0.71 0.15 48);
+  --primary-foreground: oklch(0.18 0.025 45);
+  --primary-soft: oklch(0.32 0.06 46);
+  --accent: oklch(0.68 0.1 195);
+  --accent-foreground: oklch(0.18 0.025 45);
+  --accent-soft: oklch(0.29 0.05 195);
+  --secondary: oklch(0.27 0.022 48);
+  --secondary-foreground: oklch(0.95 0.008 60);
+  --muted: oklch(0.27 0.022 48);
+  --muted-foreground: oklch(0.7 0.02 55);
+  --success: oklch(0.72 0.13 152);
+  --success-soft: oklch(0.3 0.055 152);
+  --warning: oklch(0.78 0.13 78);
+  --warning-soft: oklch(0.32 0.06 70);
+  --danger: oklch(0.68 0.17 25);
+  --danger-soft: oklch(0.32 0.07 25);
+  --info: oklch(0.72 0.1 230);
+  --info-soft: oklch(0.3 0.05 230);
+  --border: oklch(1 0 0 / 9%);
+  --border-strong: oklch(1 0 0 / 16%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.71 0.15 48);
+  --chart-1: oklch(0.71 0.15 48);
+  --chart-2: oklch(0.68 0.1 195);
+  --chart-3: oklch(0.78 0.12 95);
+  --chart-4: oklch(0.72 0.1 152);
+  --chart-5: oklch(0.72 0.13 350);
+  --sidebar: oklch(0.15 0.02 45);
+  --sidebar-foreground: oklch(0.88 0.012 55);
+  --sidebar-primary: oklch(0.71 0.15 48);
+  --sidebar-primary-foreground: oklch(0.18 0.025 45);
+  --sidebar-accent: oklch(0.25 0.03 46);
+  --sidebar-accent-foreground: oklch(0.96 0.008 60);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.71 0.15 48);
+  --shadow-soft: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 1px 3px oklch(0 0 0 / 0.35), 0 8px 24px -12px oklch(0 0 0 / 0.5);
+  --shadow-lift: 0 2px 6px oklch(0 0 0 / 0.4), 0 18px 40px -18px oklch(0 0 0 / 0.65);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+  .tabular,
+  table,
+  .stat-value {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  ::selection {
+    background: var(--primary-soft);
+  }
+}
+
+@utility glass-panel {
+  background: color-mix(in oklab, var(--surface) 78%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+@utility surface-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/* Flat primary fill — kept as one utility name so every "primary action"
+   surface (buttons, accent stat cards) stays in sync, but no longer a
+   two-color gradient: the brief calls for one strong accent, not decoration. */
+@utility gradient-brand {
+  background-color: var(--primary);
+}
+
+@utility text-gradient-brand {
+  background-image: linear-gradient(100deg, var(--primary), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-rise {
+  animation: rise-in 0.32s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

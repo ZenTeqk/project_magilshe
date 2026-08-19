@@ -60,22 +60,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies and build React app (Admin)
         working-directory: Admin
         env:
-          REACT_APP_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
-          REACT_APP_IS_SKIP_OTP: ${{ secrets.REACT_APP_IS_SKIP_OTP }}
-          CI: false
+          VITE_API_BASE_URL: ${{ secrets.REACT_APP_BASE_URL }}
         run: |
-          echo "BASE URL is $REACT_APP_BASE_URL"
+          echo "BASE URL is $VITE_API_BASE_URL"
           npm install
           npm run build
 
       - name: Deploy to S3 (Admin)
         run: |
-          aws s3 sync Admin/build s3://magilshe-admin-panel --delete --region ap-south-1
+          aws s3 sync Admin/dist s3://magilshe-admin-panel --delete --region ap-south-1
 
       - name: Invalidate CloudFront cache (Admin)
         run: |

@@ -164,7 +164,30 @@ class GetCustomerAddressList(APIView):
             address_data = {}
         
         return Response({'data' : address_data})
-    
+
+
+
+class GetMyAccess(APIView):
+    """
+    Minimal stand-in for a full RBAC system: every staff/superuser gets
+    is_super_admin=True (unrestricted access), matching the old Admin app's
+    flat "any staff can do anything" model. No Role/Permission tables exist
+    yet -- role/permissions/permission_details are left empty until a real
+    RBAC system is built.
+    """
+    def get(self, request):
+        user = request.user
+        name = (f"{user.first_name} {user.last_name}".strip() or user.username)
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "name": name,
+            "role": None,
+            "is_super_admin": bool(user.is_staff or user.is_superuser),
+            "permissions": [],
+            "permission_details": [],
+        })
 
 
 

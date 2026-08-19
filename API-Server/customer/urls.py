@@ -8,4 +8,5 @@ urlpatterns = [
     path('get-my-profile/', views.GetMyProfile.as_view(), name="get_my_profile"),
     path('update-profile/', views.UpdateProfile.as_view(), name="update_profile"),
     path('check-customer/', views.GetCustomerFromPhone.as_view(), name="check_customer"),
+    path('rbac/me/', views.GetMyAccess.as_view(), name="rbac_me"),
 ]
