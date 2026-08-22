@@ -82,12 +82,7 @@ export const navigation: NavEntry[] = [
     icon: UserCog,
     aliases: ["staff", "admin users", "team"],
   },
-  {
-    label: "Roles & Permissions",
-    to: "/roles",
-    icon: UserCog,
-    aliases: ["rbac", "permissions", "profiles"],
-  },
+  { label: "Roles & Permissions", to: "/roles", icon: UserCog, aliases: ["rbac", "permissions", "profiles"] },
   {
     label: "CRM Pipeline",
     icon: Target,
@@ -192,12 +187,6 @@ export const navigation: NavEntry[] = [
         to: "/feedback",
         icon: MessageSquareHeart,
         aliases: ["testimonials"],
-      },
-      {
-        label: "Customers (Legacy)",
-        to: "/customers",
-        icon: UserSearch,
-        aliases: ["accounts"],
       },
     ],
   },

@@ -36,6 +36,8 @@ export type CrmCustomerSummary = {
 export type CustomerAddress = {
   id?: number;
   title: string;
+  person_name: string;
+  phone: string;
   address: string;
   city: string;
   pincode: string;
@@ -62,11 +64,11 @@ export function useCrmCustomers() {
   });
 }
 
-export function useCrmCustomerAnalytics() {
+export function useCrmCustomerAnalytics(params?: { from_date?: string; to_date?: string }) {
   return useQuery({
-    queryKey: ["crm", "customer-analytics"],
+    queryKey: ["crm", "customer-analytics", params],
     queryFn: async () => {
-      const { data } = await apiClient.get(endpoints.crm.customerAnalytics);
+      const { data } = await apiClient.get(endpoints.crm.customerAnalytics, { params });
       return unwrapList<CrmCustomerSummary>(data);
     },
   });

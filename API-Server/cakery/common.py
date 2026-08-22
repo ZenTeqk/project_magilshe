@@ -39,11 +39,15 @@ def get_s3_session():
     Get s3 session
     :return:
     """
-    session = Session(
-        aws_access_key_id=settings.AWS_S3_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_S3_SECRET_ACCESS_KEY
-    )
-    return session
+    options = {}
+    if settings.AWS_S3_ACCESS_KEY_ID and settings.AWS_S3_SECRET_ACCESS_KEY:
+        options.update(
+            aws_access_key_id=settings.AWS_S3_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_S3_SECRET_ACCESS_KEY,
+        )
+    if settings.AWS_S3_REGION_NAME:
+        options["region_name"] = settings.AWS_S3_REGION_NAME
+    return Session(**options)
 
 
 def get_s3_client():
@@ -52,7 +56,7 @@ def get_s3_client():
     :return:
     """
     session = get_s3_session()
-    client = session.client('s3')
+    client = session.client('s3', endpoint_url=settings.AWS_S3_ENDPOINT_URL or None)
     return client
 
 
@@ -67,7 +71,7 @@ def get_s3_file_url(key, expires_in=3600):
             ExpiresIn=expires_in,
         )
     except Exception:
-        return f"{settings.IMAGE_BASE_URL}/{str(key).lstrip('/')}"
+        return f"{settings.IMAGE_BASE_URL}/{str(key).lstrip('/')}" if settings.IMAGE_BASE_URL else None
 
 
 class StrongRandomPasswordGenerator(object):

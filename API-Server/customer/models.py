@@ -26,6 +26,8 @@ class Customer(AbstractUser):
 class CustomerAddress(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, null = True, blank=True)
     title = models.CharField(max_length = 300, null = True, blank=True)
+    person_name = models.CharField(max_length=300, null=True, blank=True)
+    phone = models.CharField(max_length=15, null=True, blank=True)
     address = models.TextField(null=True, blank=True)
     city = models.TextField(null=True, blank=True)
     pincode = models.CharField(max_length = 6, null=True, blank=True)

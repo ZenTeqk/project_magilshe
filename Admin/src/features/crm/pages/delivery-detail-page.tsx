@@ -40,6 +40,7 @@ const fromLocalInput = (value: string) => (value ? new Date(value).toISOString()
 
 type FormState = {
   delivery_type: DeliveryType;
+  customer_address: string;
   recipient_name: string;
   recipient_phone: string;
   pickup_person_type: string;
@@ -67,6 +68,7 @@ type FormState = {
 function toForm(d: CrmDelivery): FormState {
   return {
     delivery_type: d.delivery_type,
+    customer_address: d.customer_address !== null ? String(d.customer_address) : "",
     recipient_name: d.recipient_name ?? "",
     recipient_phone: d.recipient_phone ?? "",
     pickup_person_type: d.pickup_person_type ?? "",
@@ -96,6 +98,7 @@ function toPatchPayload(id: string | number, form: FormState): DeliveryPatchInpu
   const base = {
     id,
     delivery_type: form.delivery_type,
+    customer_address: form.customer_address || null,
     recipient_name: form.recipient_name || null,
     recipient_phone: form.recipient_phone || null,
   };
@@ -162,6 +165,21 @@ function DeliveryDetailPage() {
   const busy = updateDelivery.isPending || workflowAction.isPending || uploadDamageImages.isPending;
 
   const change = (key: keyof FormState, value: string) => setForm((f) => (f ? { ...f, [key]: value } : f));
+
+  const selectCustomerAddress = (addressId: string) => setForm((current) => {
+    if (!current) return current;
+    const address = delivery?.customer_addresses.find((item) => String(item.id) === addressId);
+    if (!address) return current;
+    const location = [address.address, address.city, address.pincode].filter(Boolean).join(", ");
+    return {
+      ...current,
+      customer_address: addressId,
+      recipient_name: address.person_name || current.recipient_name,
+      recipient_phone: address.phone || current.recipient_phone,
+      delivery_location: location,
+      porter_location: location,
+    };
+  });
 
   const changeDeliveryType = (deliveryType: DeliveryType) => setForm((current) => {
     if (!current || current.delivery_type === deliveryType) return current;
@@ -338,6 +356,20 @@ function DeliveryDetailPage() {
           <Field label="Recipient name"><Input value={form.recipient_name} onChange={(e) => change("recipient_name", e.target.value)} /></Field>
           <Field label="Recipient phone"><Input value={form.recipient_phone} onChange={(e) => change("recipient_phone", e.target.value)} /></Field>
         </div>
+
+        {!isPickup && delivery.customer_addresses.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-2 text-sm font-medium">Customer delivery address</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {delivery.customer_addresses.map((address) => (
+                <label key={address.id} className={cn("flex cursor-pointer gap-3 rounded-xl border p-3 text-sm", form.customer_address === String(address.id) ? "border-primary bg-primary-soft" : "border-border")}>
+                  <input type="radio" name="customer-address" value={address.id} checked={form.customer_address === String(address.id)} onChange={(event) => selectCustomerAddress(event.target.value)} />
+                  <span className="min-w-0"><span className="block font-medium">{address.title || "Address"}{address.is_primary ? " · Default" : ""}</span><span className="block">{address.person_name} · {address.phone}</span><span className="block text-muted-foreground">{[address.address, address.city, address.pincode].filter(Boolean).join(", ")}</span></span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isPickup && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">

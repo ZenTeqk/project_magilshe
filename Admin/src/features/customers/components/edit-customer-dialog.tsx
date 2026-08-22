@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Field } from "@/components/shared/field";
 import { useUpdateCustomer, type CrmCustomerSummary, type CustomerAddress } from "@/features/customers/hooks";
 
-const emptyAddress = (): CustomerAddress => ({ title: "", address: "", city: "", pincode: "", is_primary: false });
+const emptyAddress = (): CustomerAddress => ({ title: "", person_name: "", phone: "", address: "", city: "", pincode: "", is_primary: false });
 
 export function EditCustomerDialog({ open, onOpenChange, customer }: { open: boolean; onOpenChange: (v: boolean) => void; customer: CrmCustomerSummary }) {
   const update = useUpdateCustomer();
@@ -19,7 +19,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: { open: boo
 
   useEffect(() => {
     if (!open) return;
-    setForm({ first_name: customer.first_name ?? "", last_name: customer.last_name ?? "", email: customer.email ?? "", phone: customer.phone ?? "", is_active: customer.is_active, addresses: customer.addresses.map((address) => ({ ...address })) });
+    setForm({ first_name: customer.first_name ?? "", last_name: customer.last_name ?? "", email: customer.email ?? "", phone: customer.phone ?? "", is_active: customer.is_active, addresses: customer.addresses.map((address) => ({ ...address, person_name: address.person_name ?? "", phone: address.phone ?? "" })) });
     setDeletedAddressIds([]); setErrors({});
   }, [open, customer]);
 
@@ -35,7 +35,10 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: { open: boo
     const validation: Record<string, string> = {};
     if (!form.first_name.trim() && !form.last_name.trim()) validation["name"] = "First name or last name is required.";
     if (!/^[6-9]\d{9}$/.test(phone)) validation["phone"] = "Enter a valid 10-digit Indian mobile number.";
-    form.addresses.forEach((address, index) => { if (address.pincode && !/^\d{6}$/.test(address.pincode)) validation[`address_${index}`] = "Pincode must contain exactly 6 digits."; });
+    form.addresses.forEach((address, index) => {
+      if (address.pincode && !/^\d{6}$/.test(address.pincode)) validation[`address_${index}`] = "Pincode must contain exactly 6 digits.";
+      if (address.phone && !/^[6-9]\d{9}$/.test(address.phone)) validation[`address_phone_${index}`] = "Enter a valid 10-digit phone number.";
+    });
     setErrors(validation); if (Object.keys(validation).length) return;
     try {
       await update.mutateAsync({ id: customer.id, ...form, phone, delete_address_ids: deletedAddressIds });
@@ -65,6 +68,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: { open: boo
         {form.addresses.map((address, index) => <div key={address.id ?? `new-${index}`} className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-2">
           <Field label="Label"><Input placeholder="Home, Office, Other" value={address.title} onChange={(event) => changeAddress(index, { title: event.target.value })} /></Field>
           <Field label="Pincode" error={errors[`address_${index}`]}><Input inputMode="numeric" maxLength={6} value={address.pincode} onChange={(event) => changeAddress(index, { pincode: event.target.value.replace(/\D/g, "") })} /></Field>
+          <Field label="Recipient name"><Input placeholder="Person receiving this delivery" value={address.person_name} onChange={(event) => changeAddress(index, { person_name: event.target.value })} /></Field>
+          <Field label="Recipient phone" error={errors[`address_phone_${index}`]}><Input inputMode="numeric" maxLength={10} value={address.phone} onChange={(event) => changeAddress(index, { phone: event.target.value.replace(/\D/g, "") })} /></Field>
           <Field label="Address" className="sm:col-span-2"><Textarea rows={3} className="min-h-24 resize-y" placeholder="Enter the complete street address" value={address.address} onChange={(event) => changeAddress(index, { address: event.target.value })} /></Field>
           <Field label="City"><Input value={address.city} onChange={(event) => changeAddress(index, { city: event.target.value })} /></Field>
           <div className="flex items-end justify-between gap-2"><label className="flex items-center gap-2 pb-2 text-sm"><Switch checked={address.is_primary} onCheckedChange={(checked) => changeAddress(index, { is_primary: checked })} /> Primary</label><Button type="button" size="icon" variant="ghost" className="text-danger" onClick={() => removeAddress(index)} aria-label="Remove address"><Trash2 className="size-4" /></Button></div>

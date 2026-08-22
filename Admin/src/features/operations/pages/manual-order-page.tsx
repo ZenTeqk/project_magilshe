@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { SectionCard } from "@/components/shared/section-card";
 import { Field } from "@/components/shared/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -203,8 +204,7 @@ function ManualOrderPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
-            <h3 className="mb-3 text-sm font-semibold">Select an item</h3>
+          <SectionCard title="Select an item">
             {cakesLoading ? (
               <p className="text-sm text-muted-foreground">Loading products…</p>
             ) : (
@@ -223,9 +223,9 @@ function ManualOrderPage() {
                 ))}
               </div>
             )}
-          </div>
+          </SectionCard>
 
-          <div className="scroll-slim overflow-x-auto rounded-2xl border border-border bg-card shadow-soft">
+          <div className="scroll-slim overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
             <table className="w-full min-w-max text-sm">
               <thead className="bg-surface-muted/70 text-xs uppercase text-muted-foreground">
                 <tr>
@@ -263,8 +263,7 @@ function ManualOrderPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
-            <h3 className="mb-3 text-sm font-semibold">Customer</h3>
+          <SectionCard title="Customer">
             <Field label="Phone number" required help="Check the phone number before entering a new customer." className="mb-3">
               <Input value={customer.phone} disabled={customer.searched} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
             </Field>
@@ -291,9 +290,9 @@ function ManualOrderPage() {
                 )}
               </div>
             )}
-          </div>
+          </SectionCard>
 
-          <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
+          <SectionCard>
             <Field label="Delivery date & time" required>
               <Input type="datetime-local" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
             </Field>
@@ -307,7 +306,7 @@ function ManualOrderPage() {
                 {addManualCart.isPending || saveManualOrder.isPending ? "Saving…" : "Finish"}
               </Button>
             </div>
-          </div>
+          </SectionCard>
         </div>
       </div>
 

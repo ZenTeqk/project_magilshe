@@ -149,7 +149,7 @@ class DeliveryPersonSerializer(serializers.ModelSerializer):
 class CustomerAddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerAddress
-        fields = ['id', 'customer', 'title', 'address', 'city', 'pincode', 'is_primary', 'created_on', 'created_by', 'updated_by', 'updated_on']
+        fields = ['id', 'customer', 'title', 'person_name', 'phone', 'address', 'city', 'pincode', 'is_primary', 'created_on', 'created_by', 'updated_by', 'updated_on']
 
 class CartSerializer(serializers.ModelSerializer):
     cake_price = CakePriceSerializer()

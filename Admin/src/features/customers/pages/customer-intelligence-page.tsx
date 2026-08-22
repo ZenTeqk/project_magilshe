@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Bar,
@@ -14,44 +14,15 @@ import {
 } from "recharts";
 import { ArrowUpRight, Gift, IndianRupee, Repeat, UserCheck, UserPlus, Users } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
+import { Surface, SurfaceHeading as Heading } from "@/components/shared/command-surface";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusChip } from "@/components/shared/status-chip";
 import { CardSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
+import { lastNDays } from "@/features/reports/reports-hooks";
 import { useCrmCustomerAnalytics, useUpcomingCustomerEvents } from "@/features/customers/hooks";
-
-function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <section
-      className={`overflow-hidden rounded-xl border border-border bg-card shadow-soft ${className}`}
-    >
-      {children}
-    </section>
-  );
-}
-function Heading({
-  eyebrow,
-  title,
-  detail,
-  action,
-}: {
-  eyebrow: string;
-  title: string;
-  detail?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-      <div>
-        <p className="text-[10px] font-bold tracking-[.16em] text-info uppercase">{eyebrow}</p>
-        <h2 className="mt-1 text-sm font-semibold">{title}</h2>
-        {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
-      </div>
-      {action}
-    </header>
-  );
-}
 const month = (value: string) =>
   new Date(value).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
 const chartColors = [
@@ -67,7 +38,8 @@ const date = (value: string | null) =>
 
 export default function CustomerIntelligencePage() {
   const navigate = useNavigate();
-  const customers = useCrmCustomerAnalytics();
+  const [range, setRange] = useState(lastNDays(0));
+  const customers = useCrmCustomerAnalytics(range);
   const events = useUpcomingCustomerEvents(30);
   const stats = useMemo(() => {
     const rows = customers.data ?? [];
@@ -157,11 +129,14 @@ export default function CustomerIntelligencePage() {
         title="Customer intelligence"
         description="Growth, retention, customer value and upcoming opportunities."
         actions={
-          <Button variant="outline" asChild>
-            <Link to="/crm/customers/manage">
-              Customer management <ArrowUpRight />
-            </Link>
-          </Button>
+          <>
+            <DateRangeToolbar value={range} onChange={setRange} onRefresh={() => customers.refetch()} isFetching={customers.isFetching} />
+            <Button variant="outline" asChild>
+              <Link to="/crm/customers/manage">
+                Customer management <ArrowUpRight />
+              </Link>
+            </Button>
+          </>
         }
       />
       <Surface className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-3 xl:grid-cols-5 xl:divide-y-0">

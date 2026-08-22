@@ -98,9 +98,7 @@ export function useRecordInvoicePayment() {
       Object.entries(fields).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== "") form.append(key, value as string | Blob);
       });
-      const { data } = await apiClient.post<CrmInvoice>(endpoints.crm.invoiceRecordPayment(id), form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const { data } = await apiClient.post<CrmInvoice>(endpoints.crm.invoiceRecordPayment(id), form);
       return data;
     },
     onSuccess: (data, { id }) => {

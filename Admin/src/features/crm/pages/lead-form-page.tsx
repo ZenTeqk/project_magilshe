@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, ImagePlus, UserRoundCheck, X } from "lucide-react";
+import { ArrowLeft, ImagePlus, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { CardSkeleton } from "@/components/shared/skeletons";
@@ -21,7 +21,6 @@ import {
   useUpdateLead,
   useLead,
   useCrmOptions,
-  searchCrmCustomers,
   useUploadLeadReferenceImages,
   useDeleteLeadReferenceImage,
   useConvertLead,
@@ -30,8 +29,10 @@ import {
 } from "@/features/crm/hooks";
 import { WonQuotationDialog } from "@/features/crm/components/won-quotation-dialog";
 import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tracker";
+import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 
 const blank = {
+  customer_id: null as number | null,
   customer_name: "",
   phone: "",
   email: "",
@@ -95,7 +96,6 @@ function LeadFormPage() {
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
   const [wonLead, setWonLead] = useState<typeof existingLead | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const { data: occasions } = useCrmOptions("occasion");
   const { data: cakeTypes } = useCrmOptions("cake_type");
@@ -111,43 +111,20 @@ function LeadFormPage() {
     }
   }, [existingLead]);
 
-  useEffect(() => {
-    if (isEdit) return;
-    clearTimeout(debounceRef.current);
-    const phoneDigits = form.phone.replace(/\D/g, "");
-    const term =
-      phoneDigits.length === 10
-        ? phoneDigits
-        : form.customer_name.length >= 3
-          ? form.customer_name
-          : "";
-    if (!term) {
-      setMatched(null);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchCrmCustomers(term);
-      setMatched(
-        results.length === 1
-          ? (results[0] ?? null)
-          : (results.find((r) => r.phone.replace(/\D/g, "") === phoneDigits) ?? null),
-      );
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [form.phone, form.customer_name, isEdit]);
-
   const set = <K extends keyof typeof blank>(key: K, value: (typeof blank)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  const applyMatch = () => {
-    if (!matched) return;
+  const applyMatch = (customer: CrmCustomerSearchResult) => {
+    setMatched(customer);
     setForm((f) => ({
       ...f,
-      customer_name: matched.name || f.customer_name,
-      email: matched.email || f.email,
-      address: matched.addresses?.[0]?.address || f.address,
-      city: matched.addresses?.[0]?.city || f.city,
-      pincode: matched.addresses?.[0]?.pincode || f.pincode,
+      customer_id: customer.id,
+      customer_name: customer.name || f.customer_name,
+      phone: customer.phone.slice(-10) || f.phone,
+      email: customer.email || f.email,
+      address: customer.addresses?.[0]?.address || f.address,
+      city: customer.addresses?.[0]?.city || f.city,
+      pincode: customer.addresses?.[0]?.pincode || f.pincode,
     }));
   };
 
@@ -324,16 +301,7 @@ function LeadFormPage() {
             />
           </Field>
         </div>
-        {!isEdit && matched && (
-          <button
-            type="button"
-            onClick={applyMatch}
-            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-left text-xs text-primary transition-colors hover:bg-primary-soft/70"
-          >
-            <UserRoundCheck className="size-3.5 shrink-0" />
-            Existing customer found — {matched.name} ({matched.phone}). Tap to use their details.
-          </button>
-        )}
+        {!isEdit && <CustomerMatchPicker term={form.phone.length >= 3 ? form.phone : form.customer_name} selected={matched} onSelect={applyMatch} onChange={() => { setMatched(null); setForm((f) => ({ ...f, customer_id: null })); }}/>} 
       </SectionCard>
 
       <SectionCard title="Event Details">
@@ -427,7 +395,7 @@ function LeadFormPage() {
 
         <div className="mt-4 space-y-2">
           <p className="text-xs font-medium">Reference cake images</p>
-          <p className="text-xs text-muted-foreground">Supported: JPG, JPEG, PNG, WEBP. Images are uploaded when the lead is saved.</p>
+          <p className="text-xs text-muted-foreground">Supported: JPG, JPEG, PNG, WEBP up to 10 MB. Images are uploaded when the lead is saved.</p>
           <div className="flex flex-wrap gap-2">
             {(existingLead?.reference_images ?? []).map((img) => (
               <div

@@ -6,8 +6,8 @@ conventional, widely-adopted React stack, talking to the existing Django REST ba
 
 `Admin/` (the old CRA app) remains the **functional reference** — its API contracts, auth
 flow, business rules and workflows are authoritative. This app is the **new product
-direction** and, as of the cutover, the live production admin panel. See "Current status"
-below for what's real vs. still coming.
+direction**. See `../MAGLISHE_ADMIN_STATUS.md` at the repo root for the current
+module-by-module implementation status (what's real, what's still mock).
 
 ## Tech stack
 
@@ -104,30 +104,26 @@ src/
 │   ├── ui/            # shadcn primitives — generally don't hand-edit, re-generate instead
 │   ├── layout/         # AppShell, sidebar, top bar, command palette, theme toggle
 │   └── shared/         # DataTable, PageHeader, SectionCard, StatCard, StatusChip,
-│                        # EmptyState, skeletons, ComingSoonPage
+│                        # EmptyState, skeletons, ListModule/MasterModule scaffolds
 │
-├── features/           # one folder per business domain — every module below is real and
-│   │                    # backend-connected unless noted otherwise
+├── features/           # one folder per business domain
 │   ├── auth/pages/
 │   ├── dashboard/pages/    # Home Dashboard
-│   ├── crm/                # Leads, Follow-ups, Quotations, Orders, Invoices, Delivery,
-│   │                       # CRM Dashboard, CRM Settings
-│   ├── customers/          # Customer Dashboard, List, Profile (event reminders included)
-│   ├── catalog/pages/      # Categories, Sub Categories, Products, Items, Units, Tags, Gallery
-│   ├── operations/pages/   # Online/Manual Orders, Purchases, Feedback, legacy Customers,
-│   │                       # Delivery Management (staff/platforms/partners)
-│   ├── marketing/pages/    # Offers, Banner, Events, Event Orders
-│   ├── reports/pages/      # Analytics, Order/Customer/Delivery/Occasion reports
-│   ├── settings/pages/     # Configuration, Terms, Settings, Profile
-│   └── users/pages/        # Users, Roles & Permissions — full RBAC (roles, permissions,
-│                           # staff assignment)
+│   ├── crm/                # hooks.ts (real) + pages/ (CRM Dashboard real; Leads,
+│   │                       # Quotations, Orders, Invoices, Delivery, Settings still mock)
+│   ├── customers/          # hooks.ts (real) + pages/ (Customer Dashboard, List, Profile — real)
+│   ├── catalog/pages/      # mock
+│   ├── operations/pages/   # mock
+│   ├── marketing/pages/    # mock
+│   ├── reports/pages/      # mock
+│   └── settings/pages/     # mock
 │
 ├── lib/
 │   ├── api-client.ts    # the one Axios instance — request/response interceptors, token refresh
 │   ├── endpoints.ts      # every backend endpoint path, named — add here before calling it
 │   ├── auth-storage.ts    # token get/set/clear, isAuthenticated()
 │   ├── navigation.ts     # sidebar IA, breadcrumbs, quick-create, "coming soon" flags
-│   ├── data.ts            # currency formatter + status-constant arrays used across pages
+│   ├── data.ts            # sample data still used by mock pages
 │   ├── status-tones.ts    # status → badge color mapping
 │   └── utils.ts
 │
@@ -149,26 +145,16 @@ are the reference examples.
    `SectionCard`, `StatCard`, `EmptyState`, and the loading skeletons from
    `components/shared/` — don't build new table/card primitives per page.
 4. Register the route in `src/app/router.tsx` (lazy import + `<Route>` entry).
-5. If a future module's backend isn't ready yet, route it to
-   `components/shared/coming-soon-page.tsx`'s `ComingSoonPage` and flag it `comingSoon: true`
-   in `src/lib/navigation.ts` — swap both back once the real hook + `DataTable`/`SectionCard`
-   page is ready, following any existing CRM/Catalog page as the template.
+5. If the page previously showed the "Preview layout" banner (i.e. it used
+   `ListModule`/`MasterModule` on mock data), swap it to the real hook and drop those
+   wrapper components in favor of `DataTable` directly, following the Customers page as the
+   template.
 
 ## Current status
 
-Every module is real and backend-connected, including:
-
-- **Users / Roles & Permissions** — full RBAC (`AccessRole`/`AccessPermission` models,
-  `customer/rbac/{me,users,roles,permissions}/`). Existing staff were auto-promoted to a
-  seeded "Super Admin" role on rollout; a set of named business role profiles (CRM Staff,
-  Operations Staff, Accounts/Finance, etc.) are pre-seeded for finer-grained assignment.
-- **Delivery Management** (staff / platforms / partners / performance / per-person profile) —
-  backed by `delivery-person/management/{staff,platforms,partners}/` and
-  `DeliveryPlatform`/`ExternalDeliveryPerson` models.
-- **Customer event reminders** — full CRUD via `crm/customer-events/`
-  (`CustomerRecurringEvent` with `notes`/`reminder_days_before`).
-
-Everything else — Leads, Follow-ups, Quotations, CRM Orders, Invoices, Delivery, the CRM and
-Customer dashboards (including customer analytics/lifetime revenue), Catalog, Marketing,
-Reports, Configuration, and core Store Operations — is real, wired to the Django backend in
-`API-Server/`, and verified against live data.
+See `../MAGLISHE_ADMIN_STATUS.md` for the full module-by-module matrix. Short version: auth,
+routing, the design system, and the Home/CRM/Customer dashboards are real and backend-connected.
+Every other module (Leads, Quotations, CRM Orders, Invoices, Delivery, Catalog, Store
+Operations, Marketing, Reports, Configuration) is still on sample data — those pages are
+visibly flagged with a "Preview layout" banner and a "Soon" sidebar tag so nothing pretends to
+be real.

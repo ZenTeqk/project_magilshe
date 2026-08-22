@@ -21,6 +21,7 @@ class RBACJWTAuthentication(JWTAuthentication):
             ("workflow-action", "workflow_action"), ("record-payment", "record_payment"),
             ("confirm-order", "confirm_order"), ("generate-invoice", "generate_invoice"),
             ("move-to-delivery", "move_to_delivery"), ("import", "import_file"),
+            ("payment-completed", "payment_completed"),
             ("complete-follow-up", "workflow_action"), ("follow-up-note", "workflow_action"),
             ("/convert/", "workflow_action"),
         ):

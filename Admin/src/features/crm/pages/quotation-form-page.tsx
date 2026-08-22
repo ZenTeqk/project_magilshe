@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Eye, Plus, Settings2, Trash2, UserRoundCheck } from "lucide-react";
+import { ArrowLeft, Download, Eye, Plus, Settings2, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -50,6 +50,7 @@ import { GstRateDialog } from "@/features/crm/components/gst-rate-dialog";
 import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-quotation-payment-dialog";
 import { buildQuotationPdf } from "@/features/crm/lib/quotation-pdf";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
+import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 
 const emptyItem: QuotationItem = {
   item_name: "",
@@ -108,7 +109,6 @@ function QuotationFormPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [gstDialogOpen, setGstDialogOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (existingQuotation) {
@@ -139,6 +139,7 @@ function QuotationFormPage() {
     if (isEdit || !leadForPrefill) return;
     setForm((f) => ({
       ...f,
+      customer: leadForPrefill.customer_id ?? null,
       customer_name: leadForPrefill.customer_name ?? "",
       phone: leadForPrefill.phone ?? "",
       email: leadForPrefill.email ?? "",
@@ -166,38 +167,23 @@ function QuotationFormPage() {
   }, [leadForPrefill, isEdit]);
 
   useEffect(() => {
-    clearTimeout(debounceRef.current);
-    const phoneDigits = form.phone.replace(/\D/g, "");
-    const term =
-      phoneDigits.length === 10
-        ? phoneDigits
-        : form.customer_name.length >= 3
-          ? form.customer_name
-          : "";
-    if (!term) {
-      setMatched(null);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchCrmCustomers(term);
-      setMatched(
-        results.length === 1
-          ? (results[0] ?? null)
-          : (results.find((r) => r.phone.replace(/\D/g, "") === phoneDigits) ?? null),
-      );
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [form.phone, form.customer_name]);
+    if (!leadForPrefill?.customer_id || !leadForPrefill.phone) return;
+    searchCrmCustomers(leadForPrefill.phone).then((results) => {
+      const customer = results.find((row) => row.id === leadForPrefill.customer_id);
+      if (customer) setMatched(customer);
+    });
+  }, [leadForPrefill]);
 
-  const applyMatch = () => {
-    if (!matched) return;
-    const primary = matched.addresses.find((address) => address.is_primary) ?? matched.addresses[0];
+  const applyMatch = (customer: CrmCustomerSearchResult) => {
+    setMatched(customer);
+    const primary = customer.addresses.find((address) => address.is_primary) ?? customer.addresses[0];
     const addressText = primary ? [primary.address, primary.city, primary.pincode].filter(Boolean).join(", ") : "";
     setForm((f) => ({
       ...f,
-      customer: matched.id,
-      customer_name: matched.name || f.customer_name,
-      email: matched.email || f.email,
+      customer: customer.id,
+      customer_name: customer.name || f.customer_name,
+      phone: customer.phone.slice(-10) || f.phone,
+      email: customer.email || f.email,
       billing_address: addressText || f.billing_address,
       address: addressText || f.address,
     }));
@@ -471,16 +457,7 @@ function QuotationFormPage() {
             />
           </Field>
         </div>
-        {!isEdit && matched && (
-          <button
-            type="button"
-            onClick={applyMatch}
-            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-left text-xs text-primary hover:bg-primary-soft/70"
-          >
-            <UserRoundCheck className="size-3.5 shrink-0" /> Existing customer found —{" "}
-            {matched.name} ({matched.phone}). Tap to use their details.
-          </button>
-        )}
+        {!isEdit && <CustomerMatchPicker term={form.phone.length >= 3 ? form.phone : form.customer_name} selected={matched} onSelect={applyMatch} onChange={() => { setMatched(null); setForm((f) => ({ ...f, customer: null })); }}/>} 
       </SectionCard>
 
       <SectionCard title="Address">

@@ -140,6 +140,7 @@ export type LeadReferenceImage = {
 
 export type Lead = {
   id: string | number;
+  customer_id: number | null;
   lead_no: string;
   customer_name: string;
   phone: string;
@@ -315,9 +316,7 @@ export function useUploadLeadReferenceImages() {
     mutationFn: async ({ id, files }: { id: string | number; files: File[] }) => {
       const form = new FormData();
       files.forEach((file) => form.append("images", file));
-      const { data } = await apiClient.post(endpoints.crm.leadReferenceImages(id), form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const { data } = await apiClient.post(endpoints.crm.leadReferenceImages(id), form);
       return data as { data: LeadReferenceImage[] };
     },
     onSuccess: (_data, { id }) => {
@@ -395,6 +394,8 @@ export type CrmCustomerSearchResult = {
   name: string;
   phone: string;
   email: string | null;
+  is_active?: boolean;
+  customer_since?: string;
   addresses: Array<{
     id: number;
     title: string;

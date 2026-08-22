@@ -145,6 +145,7 @@ export function useGenerateInvoice() {
 export type DirectOrderItem = { item_name: string; description?: string; flavour?: string; weight?: string; quantity: number; rate: number; gst_percentage: number };
 
 export type CreateDirectOrderInput = {
+  customer?: number | undefined;
   customer_name: string;
   phone: string;
   email?: string | undefined;

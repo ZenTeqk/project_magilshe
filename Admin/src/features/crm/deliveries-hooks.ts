@@ -50,6 +50,17 @@ export type CrmDelivery = {
   delivery_type: DeliveryType;
   recipient_name: string | null;
   recipient_phone: string | null;
+  customer_address: number | null;
+  customer_addresses: Array<{
+    id: number;
+    title: string | null;
+    person_name: string;
+    phone: string;
+    address: string | null;
+    city: string | null;
+    pincode: string | null;
+    is_primary: boolean;
+  }>;
   delivery_status: DeliveryStatus;
   scheduled_at: string | null;
   completed_at: string | null;
@@ -139,6 +150,7 @@ export type DeliveryPatchInput = {
   delivery_type: DeliveryType;
   recipient_name?: string | null;
   recipient_phone?: string | null;
+  customer_address?: number | string | null;
   pickup_person_type?: string | null;
   pickup_person_relationship?: string | null;
   pickup_person_name?: string | null;

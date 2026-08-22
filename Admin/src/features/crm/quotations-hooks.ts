@@ -230,9 +230,6 @@ export function useRecordQuotationPayment() {
       const { data } = await apiClient.post<Quotation>(
         endpoints.crm.quotationRecordPayment(id),
         form,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
       );
       return data;
     },

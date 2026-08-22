@@ -101,9 +101,12 @@ function InvoiceDetailPage() {
               </Button>
             )}
             {nextAction === "move_to_delivery" && (
-              <Button size="sm" onClick={moveDelivery} disabled={moveToDelivery.isPending}>
-                {moveToDelivery.isPending ? "Moving…" : "Move to Delivery"}
-              </Button>
+              <>
+                <Button size="sm" disabled>Payment Completed</Button>
+                <Button size="sm" onClick={moveDelivery} disabled={moveToDelivery.isPending}>
+                  {moveToDelivery.isPending ? "Moving…" : "Move to Delivery"}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -177,7 +180,7 @@ function InvoiceDetailPage() {
                     <td className="px-5 py-3 tabular">{p.payment_date?.slice(0, 10)}</td>
                     <td className="px-5 py-3">{p.collected_by_name ?? "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      {p.proof ? <a href={p.proof} target="_blank" rel="noreferrer" className="text-primary underline">View proof</a> : "—"}
+                      {p.proof ? <a href={p.proof} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-primary underline"><img src={p.proof} alt="Payment proof" className="size-10 rounded-md border object-cover" />View proof</a> : "—"}
                     </td>
                   </tr>
                 ))}

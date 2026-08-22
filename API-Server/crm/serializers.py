@@ -13,6 +13,7 @@ from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment,
 )
 from .recurring_events import recurring_event_status
+from .uploads import validate_image_upload
 
 
 class CRMOptionSerializer(serializers.ModelSerializer):
@@ -26,12 +27,22 @@ class CRMCustomerAddressUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomerAddress
-        fields = ("id", "title", "address", "city", "pincode", "is_primary")
+        fields = ("id", "title", "person_name", "phone", "address", "city", "pincode", "is_primary")
 
     def validate_pincode(self, value):
         if value and (not value.isdigit() or len(value) != 6):
             raise serializers.ValidationError("Pincode must contain exactly 6 digits.")
         return value
+
+    def validate_phone(self, value):
+        digits = "".join(character for character in str(value or "") if character.isdigit())
+        if not digits:
+            return None
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        if len(digits) != 10 or digits[0] not in "6789":
+            raise serializers.ValidationError("Enter a valid 10-digit Indian mobile number.")
+        return digits
 
 
 class CRMCustomerUpdateSerializer(serializers.ModelSerializer):
@@ -185,6 +196,10 @@ class LeadReferenceImageSerializer(serializers.ModelSerializer):
 
 
 class LeadSerializer(serializers.ModelSerializer):
+    customer_id = serializers.PrimaryKeyRelatedField(
+        source="customer", queryset=Customer.objects.filter(is_staff=False),
+        required=False, allow_null=True,
+    )
     cake_name = serializers.CharField(source="cake.name", read_only=True)
     assigned_to_name = serializers.SerializerMethodField()
     quotation_id = serializers.IntegerField(source="quotation.id", read_only=True)
@@ -278,9 +293,10 @@ class QuotationPaymentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         proof = validated_data.pop("proof", None)
         if proof:
-            ext = proof.name.rsplit(".", 1)[-1].lower() if "." in proof.name else ""
-            if ext not in {"jpg", "jpeg", "png", "webp", "pdf"}:
-                raise serializers.ValidationError({"proof": "Supported files: JPG, JPEG, PNG, WEBP and PDF."})
+            try:
+                ext = validate_image_upload(proof)
+            except ValueError as error:
+                raise serializers.ValidationError({"proof": str(error)})
             key = f"{aws_domain_name}/crm/quotation/payment-proof/{uuid.uuid4()}.{ext}"
             if not put_image_to_s3(proof, key):
                 raise serializers.ValidationError({"proof": "Payment proof upload failed."})
@@ -557,6 +573,7 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
     scheduled_at = serializers.SerializerMethodField()
     damage_images = CRMDeliveryDamageImageSerializer(many=True, read_only=True)
     timeline = QuotationActivitySerializer(source="order.quotation.activities", many=True, read_only=True)
+    customer_addresses = serializers.SerializerMethodField()
 
     class Meta:
         model = CRMDelivery
@@ -569,8 +586,41 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
     def get_scheduled_at(self, obj):
         return obj.scheduled_at
 
+    def get_customer_addresses(self, obj):
+        customer = obj.order.customer
+        if not customer:
+            return []
+        fallback_name = " ".join(filter(None, [customer.first_name, customer.last_name])).strip() or customer.username
+        return [{
+            "id": address.id,
+            "title": address.title,
+            "person_name": address.person_name or fallback_name,
+            "phone": address.phone or customer.phone,
+            "address": address.address,
+            "city": address.city,
+            "pincode": address.pincode,
+            "is_primary": address.is_primary,
+        } for address in customer.customeraddress_set.order_by("-is_primary", "id")]
+
+    def validate_customer_address(self, address):
+        order = self.instance.order if self.instance else None
+        if order and address and address.customer_id != order.customer_id:
+            raise serializers.ValidationError("Select an address saved for this delivery's customer.")
+        return address
+
     def update(self, instance, validated_data):
         delivery_type = validated_data.get("delivery_type", instance.delivery_type)
+        address = validated_data.get("customer_address")
+        if address and address.pk != instance.customer_address_id:
+            customer = instance.order.customer
+            fallback_name = " ".join(filter(None, [customer.first_name, customer.last_name])).strip() if customer else ""
+            location = ", ".join(filter(None, [address.address, address.city, address.pincode]))
+            validated_data["recipient_name"] = address.person_name or fallback_name or instance.order.customer_name
+            validated_data["recipient_phone"] = address.phone or (customer.phone if customer else None) or instance.order.phone
+            if delivery_type == "Porter Delivery":
+                validated_data["porter_location"] = location
+            elif delivery_type == "Magilshe Delivery":
+                validated_data["delivery_location"] = location
         person = validated_data.get("delivery_person")
         external_person = validated_data.get("external_delivery_person")
         platform = validated_data.get("external_platform") or (external_person.platform if external_person else None)

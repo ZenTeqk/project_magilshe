@@ -1,11 +1,141 @@
 from datetime import date, timedelta
+from io import BytesIO
 from unittest.mock import patch
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 from django.contrib.auth import get_user_model
+from customer.models import CustomerAddress
 from django.utils import timezone
 from rest_framework.test import APIClient
-from .models import CRMDelivery, CRMInvoice, CRMOrder, Lead, Quotation
-from .serializers import LeadSerializer, QuotationSerializer
+from .models import CRMDelivery, CRMInvoice, CRMOrder, Lead, LeadReferenceImage, Quotation, QuotationPayment
+from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationSerializer
+from .uploads import validate_image_upload
+
+
+class ImageUploadValidationTests(SimpleTestCase):
+    def test_accepts_a_real_supported_image(self):
+        content = BytesIO()
+        Image.new("RGB", (1, 1), "white").save(content, format="PNG")
+        upload = SimpleUploadedFile("proof.png", content.getvalue(), content_type="image/png")
+        self.assertEqual(validate_image_upload(upload), "png")
+
+    def test_rejects_a_non_image_with_an_image_extension(self):
+        upload = SimpleUploadedFile("fake.png", b"not-an-image", content_type="image/png")
+        with self.assertRaisesRegex(ValueError, "valid image"):
+            validate_image_upload(upload)
+
+
+class CustomerDeliveryAddressPersistenceTests(TestCase):
+    def test_selected_address_reference_and_snapshot_survive_address_changes(self):
+        customer = get_user_model().objects.create_user(
+            username="9876543999", first_name="John", last_name="Doe", phone="9876543999"
+        )
+        address = CustomerAddress.objects.create(
+            customer=customer, title="Office", person_name="Jane Doe", phone="9876543111",
+            address="XYZ Office, Main Road", city="Nagercoil", pincode="629001",
+        )
+        quotation = Quotation.objects.create(customer=customer, customer_name="John Doe", phone=customer.phone)
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer=customer, customer_name="John Doe", phone=customer.phone
+        )
+        delivery = CRMDelivery.objects.create(order=order)
+
+        serializer = CRMDeliverySerializer(delivery, data={"customer_address": address.id}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        delivery = serializer.save()
+        self.assertEqual(delivery.customer_address_id, address.id)
+        self.assertEqual(delivery.recipient_name, "Jane Doe")
+        self.assertEqual(delivery.recipient_phone, "9876543111")
+        self.assertEqual(delivery.delivery_location, "XYZ Office, Main Road, Nagercoil, 629001")
+
+        address.address = "Changed later"
+        address.save(update_fields=("address", "updated_on"))
+        serializer = CRMDeliverySerializer(
+            delivery,
+            data={"customer_address": address.id, "delivery_notes": "Keep historical destination"},
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        delivery = serializer.save()
+        self.assertEqual(delivery.delivery_location, "XYZ Office, Main Road, Nagercoil, 629001")
+
+        address.delete()
+        delivery.refresh_from_db()
+        self.assertIsNone(delivery.customer_address_id)
+        self.assertEqual(delivery.delivery_location, "XYZ Office, Main Road, Nagercoil, 629001")
+
+
+class PersistentUploadFlowTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.staff = User.objects.create_superuser(username="upload-admin", password="password")
+        self.client = APIClient()
+        self.client.force_authenticate(self.staff)
+
+    @staticmethod
+    def image(name="proof.png"):
+        content = BytesIO()
+        Image.new("RGB", (2, 2), "white").save(content, format="PNG")
+        return SimpleUploadedFile(name, content.getvalue(), content_type="image/png")
+
+    @patch("crm.views.put_image_to_s3", return_value=True)
+    @patch("crm.serializers.get_s3_file_url", side_effect=lambda key: f"https://files.example/{key}")
+    def test_existing_lead_save_then_reference_upload_persists(self, _url, _upload):
+        lead = Lead.objects.create(
+            customer_name="Image Customer", phone="9876543210", occasion="Birthday",
+            event_date=timezone.localdate() + timedelta(days=2), cake_type="Custom Cake", quantity=1,
+        )
+        update = self.client.patch(
+            f"/crm/leads/{lead.id}/", {"customer_name": "Updated Image Customer"}, format="json"
+        )
+        self.assertEqual(update.status_code, 200, update.data)
+
+        upload = self.client.post(
+            f"/crm/leads/{lead.id}/reference-images/", {"images": [self.image("cake.png")]},
+            format="multipart",
+        )
+
+        self.assertEqual(upload.status_code, 201, upload.data)
+        self.assertEqual(LeadReferenceImage.objects.filter(lead=lead).count(), 1)
+        refreshed = self.client.get(f"/crm/leads/{lead.id}/")
+        self.assertEqual(refreshed.status_code, 200, refreshed.data)
+        self.assertEqual(refreshed.data["customer_name"], "Updated Image Customer")
+        self.assertEqual(len(refreshed.data["reference_images"]), 1)
+        self.assertIn("crm/lead/reference", refreshed.data["reference_images"][0]["url"])
+
+    @patch("crm.serializers.put_image_to_s3", return_value=True)
+    @patch("crm.serializers.get_s3_file_url", side_effect=lambda key: f"https://files.example/{key}")
+    def test_invoice_payment_multipart_saves_record_and_proof_reference(self, _url, _upload):
+        quotation = Quotation.objects.create(
+            customer_name="Payment Customer", phone="9876543211", total_amount="1000.00",
+            advance_received=True, advance_amount="400.00", status="Order Confirmed",
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name, phone=quotation.phone,
+            total_amount="1000.00", advance_paid="400.00",
+        )
+        invoice = CRMInvoice.objects.create(
+            invoice_no="INV-UPLOAD-1", order=order, customer_name=order.customer_name,
+            phone=order.phone, total_amount="1000.00", amount_paid="400.00",
+            balance_amount="600.00", status="Generated",
+        )
+
+        response = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            {"amount": "600.00", "payment_date": timezone.localdate().isoformat(),
+             "payment_method": "UPI", "proof": self.image()}, format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        payment = QuotationPayment.objects.get(quotation=quotation)
+        self.assertTrue(payment.proof.name.startswith("cakery/crm/quotation/payment-proof/"))
+        invoice.refresh_from_db()
+        self.assertEqual((str(invoice.amount_paid), str(invoice.balance_amount), invoice.status),
+                         ("1000.00", "0.00", "Paid"))
+        refreshed = self.client.get(f"/crm/invoices/{invoice.id}/")
+        self.assertEqual(refreshed.status_code, 200, refreshed.data)
+        self.assertIn("crm/quotation/payment-proof", refreshed.data["payments"][0]["proof"])
 
 
 class LeadSerializerTests(TestCase):
@@ -204,6 +334,29 @@ class LeadCustomerLinkingTests(TestCase):
         self.assertEqual(lead.customer, customer)
         self.assertEqual(lead.customer_name, "Narendran A")
         self.assertNotIn("customer", response.data)
+        self.assertEqual(response.data["customer_id"], customer.id)
+
+    def test_customer_search_returns_multiple_matches_and_selected_id_wins(self):
+        Customer = get_user_model()
+        first = Customer.objects.create_user(
+            username="similar-one", phone="9876543999", first_name="John", last_name="Mathew"
+        )
+        second = Customer.objects.create_user(
+            username="similar-two", phone="9876543999", first_name="John", last_name="Mathews"
+        )
+
+        search = self.client.get("/crm/quotations/customer-search/", {"q": "John Math"})
+
+        self.assertEqual(search.status_code, 200, search.data)
+        self.assertEqual({row["id"] for row in search.data}, {first.id, second.id})
+        self.assertTrue(all("customer_since" in row for row in search.data))
+
+        payload = self.lead_data(second.phone)
+        payload["customer_id"] = second.id
+        response = self.client.post("/crm/leads/", payload, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Lead.objects.get(pk=response.data["id"]).customer, second)
 
     def test_customer_match_returns_prefill_profile(self):
         Customer = get_user_model()
@@ -291,6 +444,10 @@ class PhaseThreeWorkflowTests(TestCase):
             "payment_date": timezone.localdate().isoformat(),
         }, format="json")
         self.assertEqual(payment.status_code, 201, payment.data)
+        self.assertEqual(payment.data["status"], "Paid")
+        self.assertEqual(str(payment.data["balance_amount"]), "0.00")
+        quotation.refresh_from_db()
+        self.assertEqual(str(quotation.advance_amount), "500.00")
         self.assertEqual(client.post(f"/crm/invoices/{invoice_id}/payment-completed/", {}, format="json").status_code, 200)
         delivery_response = client.post(f"/crm/invoices/{invoice_id}/move-to-delivery/", {}, format="json")
         self.assertEqual(delivery_response.status_code, 201, delivery_response.data)
@@ -460,6 +617,22 @@ class OrderDirectCreationAndCancellationTests(TestCase):
         self.assertEqual(order.items.count(), 1)
         self.assertIsNotNone(order.quotation_id)
         self.assertIsNone(order.quotation.lead_id)
+
+    def test_direct_order_links_an_existing_customer_by_phone(self):
+        client, _ = self._client("direct-order-existing-customer-staff")
+        Customer = get_user_model()
+        customer = Customer.objects.create_user(
+            username="9876511199", phone="9876511199", first_name="Existing Customer"
+        )
+
+        response = client.post(
+            "/crm/orders/direct/", self.direct_order_payload(phone=customer.phone), format="json"
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        order = CRMOrder.objects.get(pk=response.data["data"]["id"])
+        self.assertEqual(order.customer, customer)
+        self.assertEqual(order.quotation.customer, customer)
 
     def test_direct_order_requires_a_positive_advance_amount(self):
         client, _ = self._client("direct-order-noadvance-staff")

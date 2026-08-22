@@ -20,6 +20,7 @@ from .models import (
 )
 from .customer_matching import find_existing_customer
 from .recurring_events import recurring_event_summary, sync_recurring_event
+from .uploads import validate_image_upload
 from .serializers import (
     CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer,
     CustomerRecurringEventSerializer, LeadReferenceImageSerializer, LeadSerializer,
@@ -111,7 +112,9 @@ class LeadViewSet(viewsets.ModelViewSet):
 
 
     def perform_create(self, serializer):
-        customer = find_existing_customer(serializer.validated_data.get("phone"))
+        customer = serializer.validated_data.get("customer")
+        if customer is None:
+            customer = find_existing_customer(serializer.validated_data.get("phone"))
         lead = serializer.save(created_by=self.request.user, customer=customer)
         LeadActivity.objects.create(lead=lead, action="Lead Created", staff=self.request.user)
         sync_recurring_event(lead)
@@ -119,7 +122,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         previous_status = serializer.instance.status
         save_kwargs = {"updated_by": self.request.user}
-        if "phone" in serializer.validated_data:
+        if "customer" not in serializer.validated_data and "phone" in serializer.validated_data:
             save_kwargs["customer"] = find_existing_customer(serializer.validated_data["phone"])
         lead = serializer.save(**save_kwargs)
         LeadActivity.objects.create(lead=lead, action="Lead Edited", staff=self.request.user)
@@ -150,6 +153,9 @@ class LeadViewSet(viewsets.ModelViewSet):
             "email": customer.email,
             "address_details": [{
                 "id": address.id,
+                "title": address.title,
+                "person_name": address.person_name,
+                "phone": address.phone,
                 "address": address.address,
                 "city": address.city,
                 "pincode": address.pincode,
@@ -293,9 +299,10 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"message": "Select at least one image."}, status=400)
         created = []
         for upload in uploads:
-            ext = upload.name.rsplit(".", 1)[-1].lower()
-            if ext not in {"jpg", "jpeg", "png", "webp"}:
-                return Response({"message": f"{upload.name}: unsupported file type."}, status=400)
+            try:
+                ext = validate_image_upload(upload)
+            except ValueError as error:
+                return Response({"message": f"{upload.name}: {error}"}, status=400)
             file_name = uuid.uuid4()
             key = f"{aws_domain_name}/crm/lead/reference/{file_name}.{ext}"
             if not put_image_to_s3(upload, key):
@@ -436,6 +443,7 @@ class CRMCustomerViewSet(
             "phone_verified_at": customer.phone_verified_at,
             "email_verified_at": customer.email_verified_at,
             "addresses": [{"id": address.id, "title": address.title,
+                           "person_name": address.person_name, "phone": address.phone,
                            "address": address.address, "city": address.city,
                            "pincode": address.pincode, "is_primary": address.is_primary,
                            "created_on": address.created_on, "updated_on": address.updated_on}
@@ -456,7 +464,12 @@ class CRMCustomerViewSet(
     def analytics(self, request):
         """Reuse the customer projection under the separately enforceable
         analytics permission consumed by the Customer Dashboard."""
-        return self.list(request)
+        queryset = self.get_queryset()
+        if request.query_params.get("from_date"):
+            queryset = queryset.filter(date_joined__date__gte=request.query_params["from_date"])
+        if request.query_params.get("to_date"):
+            queryset = queryset.filter(date_joined__date__lte=request.query_params["to_date"])
+        return Response([self.summary(customer) for customer in queryset[:200]])
 
     def retrieve(self, request, *args, **kwargs):
         customer = self.get_queryset().get(pk=kwargs["pk"])
@@ -698,7 +711,11 @@ class QuotationViewSet(viewsets.ModelViewSet):
             "name": " ".join(filter(None, [customer.first_name, customer.last_name])).strip() or customer.username,
             "phone": customer.phone or customer.username,
             "email": customer.email,
-            "addresses": [{"id": address.id, "title": address.title, "address": address.address,
+            "is_active": customer.is_active,
+            "customer_since": customer.date_joined,
+            "addresses": [{"id": address.id, "title": address.title,
+                           "person_name": address.person_name, "phone": address.phone,
+                           "address": address.address,
                            "city": address.city, "pincode": address.pincode,
                            "is_primary": address.is_primary}
                           for address in customer.customeraddress_set.all()],
@@ -727,6 +744,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
             return Response({"message": "Customer and address are required."}, status=400)
         address = CustomerAddress.objects.create(
             customer_id=customer_id, title=request.data.get("title") or "Delivery Address",
+            person_name=request.data.get("person_name"), phone=request.data.get("phone"),
             address=str(request.data["address"]).strip(), city=request.data.get("city"),
             pincode=request.data.get("pincode"), is_primary=bool(request.data.get("is_primary")),
             created_by=request.user,
@@ -736,7 +754,9 @@ class QuotationViewSet(viewsets.ModelViewSet):
             cache.incr(version_key)
         except ValueError:
             cache.set(version_key, 2, None)
-        return Response({"id": address.id, "title": address.title, "address": address.address,
+        return Response({"id": address.id, "title": address.title,
+                         "person_name": address.person_name, "phone": address.phone,
+                         "address": address.address,
                          "city": address.city, "pincode": address.pincode,
                          "is_primary": address.is_primary}, status=201)
 
@@ -867,7 +887,10 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         create_serializer = QuotationSerializer(data=payload)
         create_serializer.is_valid(raise_exception=True)
         with transaction.atomic():
-            quotation = create_serializer.save(created_by=request.user)
+            customer = create_serializer.validated_data.get("customer")
+            if customer is None:
+                customer = find_existing_customer(create_serializer.validated_data.get("phone"))
+            quotation = create_serializer.save(created_by=request.user, customer=customer)
             confirm_serializer = QuotationSerializer(
                 quotation,
                 data={"status": "Advance Received", "advance_received": True, "advance_amount": str(advance_value)},
@@ -899,8 +922,6 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         )
         order.advance_paid += payment.amount
         order.save(update_fields=("advance_paid", "updated_on"))
-        order.quotation.advance_amount = order.advance_paid
-        order.quotation.save(update_fields=("advance_amount", "updated_on"))
         if hasattr(order, "invoice"):
             order.invoice.amount_paid = order.advance_paid
             order.invoice.balance_amount = order.balance_amount
@@ -1027,12 +1048,14 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             payment = serializer.save(quotation=invoice.order.quotation, collected_by=request.user)
             invoice.order.advance_paid += payment.amount
             invoice.order.save(update_fields=("advance_paid", "updated_on"))
-            invoice.order.quotation.advance_amount = invoice.order.advance_paid
-            invoice.order.quotation.save(update_fields=("advance_amount", "updated_on"))
             invoice.amount_paid = invoice.order.advance_paid
             invoice.balance_amount = invoice.order.balance_amount
-            invoice.save(update_fields=("amount_paid", "balance_amount", "updated_on"))
+            if invoice.balance_amount <= 0:
+                invoice.status = "Paid"
+            invoice.save(update_fields=("amount_paid", "balance_amount", "status", "updated_on"))
             QuotationActivity.objects.create(quotation=invoice.order.quotation, action="Invoice Payment Recorded", description=str(payment.amount), staff=request.user)
+            if invoice.status == "Paid":
+                QuotationActivity.objects.create(quotation=invoice.order.quotation, action="Payment Completed", description=invoice.invoice_no, staff=request.user)
         return Response(self.get_serializer(invoice).data, status=201)
 
     @action(detail=True, methods=["post"], url_path="payment-completed")
@@ -1113,8 +1136,8 @@ def _missing_delivery_fields(delivery):
 
 class CRMDeliveryViewSet(viewsets.ModelViewSet):
     serializer_class = CRMDeliverySerializer
-    queryset = CRMDelivery.objects.select_related("order", "order__quotation", "order__invoice", "delivery_person", "external_platform", "external_delivery_person").prefetch_related(
-        "order__items", "order__quotation__activities", "damage_images",
+    queryset = CRMDelivery.objects.select_related("order", "order__quotation", "order__invoice", "order__customer", "customer_address", "delivery_person", "external_platform", "external_delivery_person").prefetch_related(
+        "order__items", "order__quotation__activities", "order__customer__customeraddress_set", "damage_images",
     ).all()
 
     def get_queryset(self):

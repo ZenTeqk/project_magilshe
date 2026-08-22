@@ -73,9 +73,9 @@ export function RecordInvoicePaymentDialog({
           </Field>
           <Field label="Payment proof" className="sm:col-span-2">
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-border-strong p-3">
-              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={(e) => setProof(e.target.files?.[0] ?? null)} className="min-w-0 flex-1 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-primary" />
+              <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={(e) => setProof(e.target.files?.[0] ?? null)} className="min-w-0 flex-1 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-soft file:px-3 file:py-2 file:text-primary" />
               {proof && <Button type="button" size="sm" variant="ghost" onClick={() => setProof(null)}>Remove</Button>}
-              <p className="w-full text-xs text-muted-foreground">Supported: JPG, JPEG, PNG, WEBP, PDF.{proof ? ` Selected: ${proof.name}` : ""}</p>
+              <p className="w-full text-xs text-muted-foreground">Supported: JPG, JPEG, PNG, WEBP up to 10 MB.{proof ? ` Selected: ${proof.name}` : ""}</p>
               {proof?.type.startsWith("image/") && <img src={URL.createObjectURL(proof)} alt="Payment proof preview" className="mt-2 h-28 w-40 rounded-lg border object-cover" />}
             </div>
           </Field>

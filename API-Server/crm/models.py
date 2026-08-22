@@ -422,6 +422,10 @@ class CRMDelivery(models.Model):
     )
     delivery_no = models.CharField(max_length=30, unique=True, editable=False)
     order = models.OneToOneField(CRMOrder, on_delete=models.PROTECT, related_name="delivery")
+    customer_address = models.ForeignKey(
+        "customer.CustomerAddress", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="crm_deliveries",
+    )
     delivery_type = models.CharField(max_length=30, choices=DELIVERY_TYPE_CHOICES, default="Magilshe Delivery")
     recipient_name = models.CharField(max_length=300, null=True, blank=True)
     recipient_phone = models.CharField(max_length=15, null=True, blank=True)

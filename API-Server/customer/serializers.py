@@ -25,6 +25,8 @@ def customer_address_serializer(obj):
 
     res['id'] = obj.id
     res['title'] = obj.title
+    res['person_name'] = obj.person_name
+    res['phone'] = obj.phone
     res['address'] = obj.address
     res['city'] = obj.city
     res['pincode'] = obj.pincode

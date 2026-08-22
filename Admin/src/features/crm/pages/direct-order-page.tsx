@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, UserRoundCheck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Field } from "@/components/shared/field";
@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inr } from "@/lib/data";
-import { searchCrmCustomers, type CrmCustomerSearchResult } from "@/features/crm/hooks";
+import { type CrmCustomerSearchResult } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
+import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: 1, rate: 0, gst_percentage: 0 };
 const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank Transfer", "Other UPI", "Other"];
@@ -19,7 +20,6 @@ const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank 
 function DirectOrderPage() {
   const navigate = useNavigate();
   const createOrder = useCreateDirectOrder();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -38,22 +38,13 @@ function DirectOrderPage() {
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const onIdentityChange = (name: string, phoneValue: string) => {
-    clearTimeout(debounceRef.current);
-    const digits = phoneValue.replace(/\D/g, "");
-    const term = digits.length === 10 ? digits : name.length >= 3 ? name : "";
-    if (!term) { setMatched(null); return; }
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchCrmCustomers(term);
-      setMatched(results.length === 1 ? (results[0] ?? null) : (results.find((r) => r.phone.replace(/\D/g, "") === digits) ?? null));
-    }, 300);
-  };
-
-  const applyMatch = () => {
-    if (!matched) return;
-    setCustomerName(matched.name || customerName);
-    setEmail(matched.email || email);
-    setBillingAddress(matched.addresses?.[0]?.address || billingAddress);
+  const applyMatch = (customer: CrmCustomerSearchResult) => {
+    setMatched(customer);
+    setCustomerName(customer.name || customerName);
+    setPhone(customer.phone.slice(-10) || phone);
+    setEmail(customer.email || email);
+    const primary = customer.addresses.find((address) => address.is_primary) ?? customer.addresses[0];
+    setBillingAddress(primary ? [primary.address, primary.city, primary.pincode].filter(Boolean).join(", ") : billingAddress);
   };
 
   const subtotal = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.rate) || 0), 0);
@@ -77,6 +68,7 @@ function DirectOrderPage() {
 
     try {
       const result = await createOrder.mutateAsync({
+        customer: matched?.id,
         customer_name: customerName,
         phone,
         email: email || undefined,
@@ -118,19 +110,15 @@ function DirectOrderPage() {
       <SectionCard title="Customer">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer name" required error={errors["customer_name"]}>
-            <Input value={customerName} onChange={(e) => { setCustomerName(e.target.value); onIdentityChange(e.target.value, phone); }} />
+            <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
           </Field>
           <Field label="Phone" required error={errors["phone"]}>
-            <Input value={phone} maxLength={10} onChange={(e) => { const v = e.target.value.replace(/\D/g, ""); setPhone(v); onIdentityChange(customerName, v); }} />
+            <Input value={phone} maxLength={10} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} />
           </Field>
           <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
           <Field label="Billing address" className="sm:col-span-2 lg:col-span-3"><Textarea rows={2} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} /></Field>
         </div>
-        {matched && (
-          <button type="button" onClick={applyMatch} className="mt-3 flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-left text-xs text-primary hover:bg-primary-soft/70">
-            <UserRoundCheck className="size-3.5 shrink-0" /> Existing customer found — {matched.name} ({matched.phone}). Tap to use their details.
-          </button>
-        )}
+        <CustomerMatchPicker term={phone.length >= 3 ? phone : customerName} selected={matched} onSelect={applyMatch} onChange={() => setMatched(null)}/>
       </SectionCard>
 
       <SectionCard title="Order details">

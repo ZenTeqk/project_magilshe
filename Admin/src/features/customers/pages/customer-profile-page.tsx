@@ -220,7 +220,7 @@ function CustomerProfilePage() {
             </SectionCard>
 
             <SectionCard title="Saved addresses" className="lg:col-span-1">
-              {customer.addresses.length === 0 ? <p className="text-sm text-muted-foreground">No saved addresses.</p> : <ul className="space-y-3">{customer.addresses.map((address) => <li key={address.id} className="rounded-lg border border-border p-3 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium">{address.title || "Address"}</span>{address.is_primary && <span className="text-xs font-medium text-primary">Primary</span>}</div><p className="mt-1 text-muted-foreground">{[address.address, address.city, address.pincode].filter(Boolean).join(", ")}</p></li>)}</ul>}
+              {customer.addresses.length === 0 ? <p className="text-sm text-muted-foreground">No saved addresses.</p> : <ul className="space-y-3">{customer.addresses.map((address) => <li key={address.id} className="rounded-lg border border-border p-3 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium">{address.title || "Address"}</span>{address.is_primary && <span className="text-xs font-medium text-primary">Primary</span>}</div>{(address.person_name || address.phone) && <p className="mt-1">{[address.person_name, address.phone].filter(Boolean).join(" · ")}</p>}<p className="mt-1 text-muted-foreground">{[address.address, address.city, address.pincode].filter(Boolean).join(", ")}</p></li>)}</ul>}
             </SectionCard>
 
             <SectionCard title="Purchase behaviour" className="lg:col-span-1">

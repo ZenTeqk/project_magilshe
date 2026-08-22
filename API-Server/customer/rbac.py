@@ -41,7 +41,8 @@ def required_permission(request, view):
     method_action = {"GET": "view", "POST": "create", "PUT": "edit", "PATCH": "edit", "DELETE": "delete"}.get(request.method, "view")
     custom = {
         "workflow_action": "process", "convert": "process", "confirm_order": "process",
-        "generate_invoice": "process", "move_to_delivery": "process", "record_payment": "record_payment",
+        "generate_invoice": "process", "move_to_delivery": "process", "payment_completed": "process",
+        "record_payment": "record_payment",
         "import_file": "import", "cancel_order": "cancel", "partial_update": "edit", "update": "edit",
     }
     permission_action = custom.get(action, method_action)

@@ -25,6 +25,7 @@ import {
   Truck,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { Surface, SurfaceHeading as Heading } from "@/components/shared/command-surface";
 import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusChip } from "@/components/shared/status-chip";
@@ -35,38 +36,6 @@ import { lastNDays } from "@/features/reports/reports-hooks";
 import { useCrmAnalytics } from "@/features/dashboard/hooks";
 import { useCrmDashboard, useFollowUps, useLeads } from "@/features/crm/hooks";
 import { useAttentionCenter } from "@/features/attention/use-attention-center";
-
-function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <section
-      className={`overflow-hidden rounded-xl border border-border bg-card shadow-soft ${className}`}
-    >
-      {children}
-    </section>
-  );
-}
-function Heading({
-  eyebrow,
-  title,
-  detail,
-  action,
-}: {
-  eyebrow: string;
-  title: string;
-  detail?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-      <div>
-        <p className="text-[10px] font-bold tracking-[.16em] text-accent uppercase">{eyebrow}</p>
-        <h2 className="mt-1 text-sm font-semibold">{title}</h2>
-        {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
-      </div>
-      {action}
-    </header>
-  );
-}
 
 const stageColors = [
   "var(--accent)",
@@ -84,7 +53,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function CrmCommandCentrePage() {
-  const [range, setRange] = useState(lastNDays(30));
+  const [range, setRange] = useState(lastNDays(0));
   const crm = useCrmDashboard(range);
   const followUps = useFollowUps(range);
   const leads = useLeads(range);

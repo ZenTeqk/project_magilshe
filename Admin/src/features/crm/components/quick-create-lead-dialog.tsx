@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { UserRoundCheck } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -23,11 +22,12 @@ import { Field } from "@/components/shared/field";
 import {
   useCreateLead,
   useCrmOptions,
-  searchCrmCustomers,
   type CrmCustomerSearchResult,
 } from "@/features/crm/hooks";
+import { CustomerMatchPicker } from "./customer-match-picker";
 
 const emptyQuickLead = {
+  customer_id: null as number | null,
   customer_name: "",
   phone: "",
   occasion: "Birthday",
@@ -49,7 +49,6 @@ export function QuickCreateLeadDialog({
   const [form, setForm] = useState(emptyQuickLead);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const { data: occasions } = useCrmOptions("occasion");
   const { data: flavours } = useCrmOptions("cake_flavour");
@@ -63,34 +62,13 @@ export function QuickCreateLeadDialog({
     }
   }, [open]);
 
-  useEffect(() => {
-    clearTimeout(debounceRef.current);
-    const phoneDigits = form.phone.replace(/\D/g, "");
-    const term =
-      phoneDigits.length === 10
-        ? phoneDigits
-        : form.customer_name.length >= 3
-          ? form.customer_name
-          : "";
-    if (!term) {
-      setMatched(null);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchCrmCustomers(term);
-      const exact =
-        results.find((r) => r.phone.replace(/\D/g, "").endsWith(phoneDigits)) ?? results[0] ?? null;
-      setMatched(exact);
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [form.phone, form.customer_name]);
-
-  const applyMatch = () => {
-    if (!matched) return;
+  const applyMatch = (customer: CrmCustomerSearchResult) => {
+    setMatched(customer);
     setForm((f) => ({
       ...f,
-      customer_name: matched.name || f.customer_name,
-      phone: matched.phone.slice(-10) || f.phone,
+      customer_id: customer.id,
+      customer_name: customer.name || f.customer_name,
+      phone: customer.phone.slice(-10) || f.phone,
     }));
   };
 
@@ -157,17 +135,7 @@ export function QuickCreateLeadDialog({
                 }
               />
             </Field>
-            {matched && (
-              <button
-                type="button"
-                onClick={applyMatch}
-                className="flex w-full items-center gap-2 rounded-xl border border-primary/30 bg-primary-soft px-3 py-2 text-left text-xs text-primary transition-colors hover:bg-primary-soft/70"
-              >
-                <UserRoundCheck className="size-3.5 shrink-0" />
-                Existing customer found — {matched.name} ({matched.phone}). Tap to use their
-                details.
-              </button>
-            )}
+            <CustomerMatchPicker term={form.phone.length >= 3 ? form.phone : form.customer_name} selected={matched} onSelect={applyMatch} onChange={() => { setMatched(null); setForm((f) => ({ ...f, customer_id: null })); }}/>
           </div>
 
           <div className="space-y-3">

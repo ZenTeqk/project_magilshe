@@ -26,6 +26,7 @@ import {
   Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { Surface, SurfaceHeading as SurfaceTitle } from "@/components/shared/command-surface";
 import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusChip } from "@/components/shared/status-chip";
@@ -39,6 +40,7 @@ import { displayOrderStatus, useOrders } from "@/features/crm/orders-hooks";
 import { useInvoices } from "@/features/crm/invoices-hooks";
 import { useDeliveries } from "@/features/crm/deliveries-hooks";
 import { useUpcomingCustomerEvents } from "@/features/customers/hooks";
+import { useCurrentAccess } from "@/features/auth/rbac";
 import {
   useAttentionCenter,
   type AttentionBucket,
@@ -53,43 +55,9 @@ const palette = [
   "var(--chart-5)",
 ];
 
-function Surface({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <section
-      className={`overflow-hidden rounded-xl border border-border bg-card shadow-soft ${className}`}
-    >
-      {children}
-    </section>
-  );
-}
-
-function SurfaceTitle({
-  eyebrow,
-  title,
-  detail,
-  action,
-}: {
-  eyebrow: string;
-  title: string;
-  detail?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
-      <div>
-        <p className="text-[10px] font-bold tracking-[0.16em] text-muted-foreground uppercase">
-          {eyebrow}
-        </p>
-        <h2 className="mt-1 text-sm font-semibold tracking-tight">{title}</h2>
-        {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
-      </div>
-      {action}
-    </header>
-  );
-}
-
 function HomeCommandCentrePage() {
-  const [range, setRange] = useState(lastNDays(30));
+  const [range, setRange] = useState(lastNDays(0));
+  const access = useCurrentAccess();
   const home = useHomeDashboard();
   const analytics = useCrmAnalytics(range);
   const crm = useCrmDashboard();
@@ -175,11 +143,14 @@ function HomeCommandCentrePage() {
     { key: "today", label: "Today", tone: "text-warning" },
     { key: "upcoming", label: "Upcoming", tone: "text-info" },
   ];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const displayName = access.data?.name?.trim() || access.data?.username;
 
   return (
     <>
       <PageHeader
-        title="Business today"
+        title={<span className="block"><span className="mb-1 block text-sm font-medium tracking-normal text-muted-foreground">{greeting}{displayName ? `, ${displayName}` : ""} 👋</span><span className="block">Business today</span></span>}
         description="Revenue, sales flow, bakery operations and the actions that matter now."
         actions={
           <DateRangeToolbar
