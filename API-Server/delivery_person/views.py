@@ -57,6 +57,10 @@ from crm.models import CRMDelivery
 logger = logging.getLogger('cakery')
 
 
+def _phone_digits(value):
+    return "".join(character for character in str(value or "") if character.isdigit())
+
+
 class AddDeliveryPerson(APIView):
 
     def post(self, request):
@@ -121,6 +125,17 @@ def performance_payload(deliveries):
 class DeliveryStaffViewSet(viewsets.ModelViewSet):
     queryset = DeliveryPerson.objects.all().order_by("name")
     serializer_class = DeliveryStaffSerializer
+    def create(self, request, *args, **kwargs):
+        phone = str(request.data.get("phone") or "").strip()
+        name = str(request.data.get("name") or "").strip()
+        digits = _phone_digits(phone)
+        existing = next((person for person in DeliveryPerson.objects.exclude(phone__isnull=True)
+                         if _phone_digits(person.phone) == digits), None) if digits else None
+        if not existing and name:
+            existing = DeliveryPerson.objects.filter(name__iexact=name, phone__in=(phone, None, "")).first()
+        if existing:
+            return Response(self.get_serializer(existing).data)
+        return super().create(request, *args, **kwargs)
     def perform_create(self, serializer): serializer.save(created_by=self.request.user)
     def perform_update(self, serializer): serializer.save(updated_by=self.request.user)
     @action(detail=True, methods=["get"])
@@ -138,6 +153,18 @@ class DeliveryPlatformViewSet(viewsets.ModelViewSet):
 class ExternalDeliveryPersonViewSet(viewsets.ModelViewSet):
     queryset = ExternalDeliveryPerson.objects.select_related("platform").all().order_by("name")
     serializer_class = ExternalDeliveryPersonSerializer
+    def create(self, request, *args, **kwargs):
+        phone = str(request.data.get("phone") or "").strip()
+        name = str(request.data.get("name") or "").strip()
+        platform = request.data.get("platform")
+        digits = _phone_digits(phone)
+        existing = next((person for person in ExternalDeliveryPerson.objects.exclude(phone__isnull=True)
+                         if _phone_digits(person.phone) == digits), None) if digits else None
+        if not existing and name and platform:
+            existing = ExternalDeliveryPerson.objects.filter(platform_id=platform, name__iexact=name).first()
+        if existing:
+            return Response(self.get_serializer(existing).data)
+        return super().create(request, *args, **kwargs)
     def get_queryset(self):
         queryset = super().get_queryset(); platform = self.request.query_params.get("platform")
         return queryset.filter(platform_id=platform) if platform else queryset

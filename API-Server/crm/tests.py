@@ -8,9 +8,126 @@ from django.contrib.auth import get_user_model
 from customer.models import CustomerAddress
 from django.utils import timezone
 from rest_framework.test import APIClient
-from .models import CRMDelivery, CRMInvoice, CRMOrder, Lead, LeadReferenceImage, Quotation, QuotationPayment
-from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationSerializer
+from .models import CRMDelivery, CRMInvoice, CRMOrder, CustomerRecurringEvent, Lead, LeadReferenceImage, Quotation, QuotationPayment
+from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer
 from .uploads import validate_image_upload
+
+
+class QuotationAdvanceActionStateTests(TestCase):
+    def test_recorded_advance_is_persisted_and_cannot_be_recorded_twice(self):
+        user = get_user_model().objects.create_superuser(username="advance-state-admin", password="password")
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Advance Customer", phone="9876543299", cake_type="Cake",
+            quantity=1, rate="709.00", total_amount="709.00", status="Accepted",
+        )
+        payload = {
+            "amount": "400.00", "payment_date": timezone.localdate().isoformat(),
+            "payment_method": "Cash",
+        }
+        first = client.post(f"/crm/quotations/{quotation.id}/record-payment/", payload, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(str(first.data["advance_amount"]), "400.00")
+        self.assertEqual(str(first.data["balance_amount"]), "309.00")
+        self.assertEqual(first.data["status"], "Advance Received")
+        second = client.post(f"/crm/quotations/{quotation.id}/record-payment/", payload, format="json")
+        self.assertEqual(second.status_code, 400, second.data)
+        self.assertEqual(QuotationPayment.objects.filter(quotation=quotation).count(), 1)
+
+
+class DeliveryAssignmentSnapshotTests(TestCase):
+    def test_internal_and_porter_assignments_persist_master_references_and_snapshots(self):
+        from delivery_person.models import DeliveryPerson, DeliveryPlatform, ExternalDeliveryPerson
+        quotation = Quotation.objects.create(
+            customer_name="Delivery Customer", phone="9876543288", cake_type="Cake",
+            quantity=1, rate="500.00", total_amount="500.00",
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name,
+            phone=quotation.phone, total_amount="500.00",
+        )
+        delivery = CRMDelivery.objects.create(order=order)
+        staff = DeliveryPerson.objects.create(name="Internal Rider", phone="9000000101")
+        internal = CRMDeliverySerializer(delivery, data={
+            "delivery_type": "Magilshe Delivery", "delivery_person": staff.id,
+        }, partial=True)
+        self.assertTrue(internal.is_valid(), internal.errors)
+        internal.save(); delivery.refresh_from_db()
+        self.assertEqual(delivery.delivery_person_id, staff.id)
+        self.assertEqual(delivery.delivery_person_name_snapshot, "Internal Rider")
+        self.assertEqual(delivery.delivery_person_phone_snapshot, "9000000101")
+
+        platform = DeliveryPlatform.objects.create(name="Porter")
+        porter = ExternalDeliveryPerson.objects.create(
+            platform=platform, name="Porter Rider", phone="9000000102",
+        )
+        external = CRMDeliverySerializer(delivery, data={
+            "delivery_type": "Porter Delivery", "external_platform": platform.id,
+            "external_delivery_person": porter.id,
+        }, partial=True)
+        self.assertTrue(external.is_valid(), external.errors)
+        external.save(); delivery.refresh_from_db()
+        self.assertEqual(delivery.external_platform_id, platform.id)
+        self.assertEqual(delivery.external_delivery_person_id, porter.id)
+        self.assertEqual(delivery.external_person_name_snapshot, "Porter Rider")
+        self.assertEqual(delivery.external_person_phone_snapshot, "9000000102")
+
+
+class UpcomingCustomerEventsDashboardTests(TestCase):
+    def test_feed_returns_real_events_nearest_first_and_supports_empty_window(self):
+        user = get_user_model().objects.create_superuser(username="event-dashboard-admin", password="password")
+        customer = get_user_model().objects.create_user(
+            username="event-customer", first_name="Event", last_name="Customer", phone="9000000201",
+        )
+        today = timezone.localdate()
+        later, sooner = today + timedelta(days=5), today + timedelta(days=1)
+        CustomerRecurringEvent.objects.create(
+            customer=customer, event_type="Anniversary", event_month=later.month,
+            event_day=later.day, original_date=later, notes="Anniversary reminder",
+        )
+        nearest = CustomerRecurringEvent.objects.create(
+            customer=customer, event_type="Birthday", event_month=sooner.month,
+            event_day=sooner.day, original_date=sooner, notes="Birthday reminder",
+        )
+        client = APIClient(); client.force_authenticate(user)
+        response = client.get("/crm/customers/upcoming-events/", {"days": 30})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["id"], nearest.id)
+        self.assertEqual(response.data[0]["customer_id"], customer.id)
+        self.assertEqual(response.data[0]["customer_name"], "Event Customer")
+        self.assertEqual(response.data[0]["notes"], "Birthday reminder")
+        empty = client.get("/crm/customers/upcoming-events/", {"days": 0})
+        self.assertEqual(empty.status_code, 200, empty.data)
+        self.assertEqual(empty.data, [])
+
+
+class SaleUnitValidationTests(SimpleTestCase):
+    def item(self, unit_type, quantity):
+        return QuotationItemSerializer(data={
+            "item_name": "Cake", "quantity": quantity, "unit_type": unit_type,
+            "rate": "100.00", "gst_percentage": "0",
+        })
+
+    def test_kg_accepts_supported_decimal_quantities(self):
+        for quantity in ("0.500", "1.000", "1.500", "2.500"):
+            serializer = self.item("kg", quantity)
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_piece_requires_a_positive_whole_quantity(self):
+        serializer = self.item("piece", "0.500")
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("quantity", serializer.errors)
+
+    def test_piece_accepts_whole_quantities(self):
+        for quantity in ("1", "6"):
+            serializer = self.item("piece", quantity)
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_kg_rejects_less_than_half_a_kilo(self):
+        serializer = self.item("kg", "0.400")
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("quantity", serializer.errors)
 
 
 class ImageUploadValidationTests(SimpleTestCase):
@@ -321,6 +438,62 @@ class LeadCustomerLinkingTests(TestCase):
         self.assertEqual(item.quantity, 2)
         self.assertIn("supplied design", item.description)
 
+    def test_move_to_quotation_keeps_lead_status_and_customer_link(self):
+        Customer = get_user_model()
+        customer = Customer.objects.create_user(
+            username="9876543222", phone="9876543222", first_name="Open Lead Customer"
+        )
+        lead = Lead.objects.create(
+            customer=customer, customer_name="Open Lead Customer", phone=customer.phone,
+            occasion="Birthday", event_date=timezone.localdate() + timedelta(days=2),
+            cake_type="Theme Cake", quantity=1, status="Open",
+        )
+
+        first = self.client.post(
+            f"/crm/leads/{lead.id}/convert/", {"mark_won": False}, format="json"
+        )
+        second = self.client.post(
+            f"/crm/leads/{lead.id}/convert/", {"mark_won": False}, format="json"
+        )
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        lead.refresh_from_db()
+        quotation = Quotation.objects.get(lead=lead)
+        self.assertEqual(lead.status, "Open")
+        self.assertEqual(quotation.customer_id, customer.id)
+        self.assertEqual(Quotation.objects.filter(lead=lead).count(), 1)
+        self.assertEqual(second.data["data"]["id"], quotation.id)
+        self.assertEqual(self.client.get(f"/crm/quotations/{quotation.id}/").status_code, 200)
+
+    def test_won_and_generate_updates_status_and_reuses_existing_quotation(self):
+        lead = Lead.objects.create(
+            customer_name="Follow-up Customer", phone="9876543233", occasion="Birthday",
+            event_date=timezone.localdate() + timedelta(days=2), cake_type="Theme Cake",
+            quantity=1, status="Follow-up", follow_up_date=timezone.localdate() + timedelta(days=1),
+            follow_up_notes="Call tomorrow",
+        )
+        existing = Quotation.objects.create(lead=lead, customer_name=lead.customer_name, phone=lead.phone)
+
+        response = self.client.post(
+            f"/crm/leads/{lead.id}/convert/", {"mark_won": True}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, "Won")
+        self.assertEqual(response.data["lead"]["status"], "Won")
+        self.assertEqual(response.data["lead"]["quotation_id"], existing.id)
+        self.assertEqual(response.data["data"]["id"], existing.id)
+        self.assertEqual(Quotation.objects.filter(lead=lead).count(), 1)
+
+        repeated = self.client.post(
+            f"/crm/leads/{lead.id}/convert/", {"mark_won": True}, format="json"
+        )
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.assertEqual(repeated.data["data"]["id"], existing.id)
+        self.assertEqual(Quotation.objects.filter(lead=lead).count(), 1)
+
     def test_new_lead_links_one_exact_existing_customer(self):
         Customer = get_user_model()
         customer = Customer.objects.create_user(
@@ -500,6 +673,36 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertEqual(client.post(f"/crm/deliveries/{delivery.id}/workflow-action/", {"action": "deliver"}, format="json").status_code, 200)
         delivery.refresh_from_db()
         self.assertEqual(delivery.delivery_status, "Delivered Successfully")
+
+    def test_switching_delivery_type_clears_inactive_assignment_fields(self):
+        User = get_user_model()
+        from delivery_person.models import DeliveryPerson, DeliveryPlatform, ExternalDeliveryPerson
+        staff = User.objects.create_user(username="delivery-switch-staff", password="password")
+        internal = DeliveryPerson.objects.create(name="Ravi", phone="9000011112", status=True)
+        platform = DeliveryPlatform.objects.create(name="Porter", status=True)
+        external = ExternalDeliveryPerson.objects.create(platform=platform, name="Ramesh", phone="9000011113")
+        client = APIClient(); client.force_authenticate(staff)
+        delivery = self._make_delivery(client, phone="9876500012")
+        porter_payload = {
+            "delivery_type": "Porter Delivery", "external_platform": platform.id,
+            "external_delivery_person": external.id, "porter_location": "12 Test Street",
+            "porter_time": timezone.now().isoformat(),
+            "tracking_link": "https://porter.in/track/xxxxx",
+        }
+        self.assertEqual(client.patch(f"/crm/deliveries/{delivery.id}/", porter_payload, format="json").status_code, 200)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.tracking_link, "https://porter.in/track/xxxxx")
+        magilshe_payload = {
+            "delivery_type": "Magilshe Delivery", "delivery_person": internal.id,
+            "delivery_location": "12 Test Street", "delivery_time": timezone.now().isoformat(),
+        }
+        response = client.patch(f"/crm/deliveries/{delivery.id}/", magilshe_payload, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.delivery_person_id, internal.id)
+        self.assertIsNone(delivery.external_delivery_person_id)
+        self.assertIsNone(delivery.external_platform_id)
+        self.assertIsNone(delivery.porter_time)
 
     def test_porter_delivery_can_be_marked_damaged_with_description(self):
         User = get_user_model()

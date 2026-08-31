@@ -22,6 +22,26 @@ class CRMOptionSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+def validate_sale_quantity(unit_type, quantity):
+    """Validate the existing unit field against CRM quotation settings."""
+    unit_type = str(unit_type or "").strip()
+    if unit_type not in ("kg", "piece") and not CRMOption.objects.filter(
+        option_type="sale_unit", name=unit_type, is_active=True
+    ).exists():
+        raise serializers.ValidationError({"unit_type": "Select an active unit from Quotation Settings."})
+    if quantity is None:
+        return
+    if unit_type == "kg" and quantity < 0.5:
+        raise serializers.ValidationError({"quantity": "kg quantity must be at least 0.5."})
+    if unit_type == "piece":
+        if quantity < 1:
+            raise serializers.ValidationError({"quantity": "piece quantity must be at least 1."})
+        if quantity != quantity.to_integral_value():
+            raise serializers.ValidationError({"quantity": "piece quantity must be a whole number."})
+    if unit_type not in ("kg", "piece") and quantity <= 0:
+        raise serializers.ValidationError({"quantity": "Quantity must be greater than zero."})
+
+
 class CRMCustomerAddressUpdateSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
 
@@ -249,6 +269,9 @@ class LeadSerializer(serializers.ModelSerializer):
         return value.strip()
 
     def validate(self, attrs):
+        unit_type = attrs.get("unit_type", self.instance.unit_type if self.instance else "kg")
+        quantity = attrs.get("quantity", self.instance.quantity if self.instance else None)
+        validate_sale_quantity(unit_type, quantity)
         resulting_status = attrs.get("status", self.instance.status if self.instance else "Open")
         def resulting(name):
             return attrs.get(name, getattr(self.instance, name, None) if self.instance else None)
@@ -332,6 +355,12 @@ class QuotationItemSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ("quotation",)
 
+    def validate(self, attrs):
+        unit_type = attrs.get("unit_type", self.instance.unit_type if self.instance else "kg")
+        quantity = attrs.get("quantity", self.instance.quantity if self.instance else None)
+        validate_sale_quantity(unit_type, quantity)
+        return attrs
+
 
 class QuotationSerializer(serializers.ModelSerializer):
     lead_no = serializers.CharField(source="lead.lead_no", read_only=True, allow_null=True)
@@ -395,8 +424,6 @@ class QuotationSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         lead = attrs.get("lead", self.instance.lead if self.instance else None)
-        if lead and lead.status != "Won":
-            raise serializers.ValidationError({"lead": "Only Won leads can be quoted."})
         same_address = attrs.get(
             "shipping_same_as_billing",
             self.instance.shipping_same_as_billing if self.instance else True,
@@ -495,6 +522,12 @@ class CRMOrderItemSerializer(serializers.ModelSerializer):
         model = CRMOrderItem
         fields = "__all__"
 
+    def validate(self, attrs):
+        unit_type = attrs.get("unit_type", self.instance.unit_type if self.instance else "kg")
+        quantity = attrs.get("quantity", self.instance.quantity if self.instance else None)
+        validate_sale_quantity(unit_type, quantity)
+        return attrs
+
 
 class CRMOrderSerializer(serializers.ModelSerializer):
     balance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
@@ -562,7 +595,7 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
     phone = serializers.CharField(source="order.phone", read_only=True)
     cake_type = serializers.CharField(source="order.cake_type", read_only=True)
     flavour = serializers.CharField(source="order.flavour", read_only=True)
-    quantity = serializers.IntegerField(source="order.quantity", read_only=True)
+    quantity = serializers.DecimalField(source="order.quantity", max_digits=10, decimal_places=3, read_only=True)
     items = CRMOrderItemSerializer(source="order.items", many=True, read_only=True)
     total_amount = serializers.DecimalField(source="order.total_amount", max_digits=12, decimal_places=2, read_only=True)
     advance_paid = serializers.DecimalField(source="order.advance_paid", max_digits=12, decimal_places=2, read_only=True)
@@ -610,6 +643,38 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         delivery_type = validated_data.get("delivery_type", instance.delivery_type)
+        if delivery_type == "Customer Pickup":
+            validated_data.update({
+                "delivery_person": None, "delivery_time": None, "delivery_location": None,
+                "delivery_notes": None, "delivery_person_name_snapshot": None,
+                "delivery_person_phone_snapshot": None, "external_platform": None,
+                "external_delivery_person": None, "porter_id": None, "porter_name": None,
+                "porter_contact": None, "porter_location": None, "porter_time": None,
+                "porter_amount": None, "porter_notes": None,
+                "tracking_link": None,
+                "external_platform_name_snapshot": None, "external_person_name_snapshot": None,
+                "external_person_phone_snapshot": None,
+            })
+        elif delivery_type == "Magilshe Delivery":
+            validated_data.update({
+                "pickup_person_type": None, "pickup_person_relationship": None,
+                "pickup_person_name": None, "pickup_contact": None, "pickup_time": None,
+                "pickup_location": None, "pickup_notes": None, "external_platform": None,
+                "external_delivery_person": None, "porter_id": None, "porter_name": None,
+                "porter_contact": None, "porter_location": None, "porter_time": None,
+                "porter_amount": None, "porter_notes": None,
+                "tracking_link": None,
+                "external_platform_name_snapshot": None, "external_person_name_snapshot": None,
+                "external_person_phone_snapshot": None,
+            })
+        else:
+            validated_data.update({
+                "pickup_person_type": None, "pickup_person_relationship": None,
+                "pickup_person_name": None, "pickup_contact": None, "pickup_time": None,
+                "pickup_location": None, "pickup_notes": None, "delivery_person": None,
+                "delivery_time": None, "delivery_location": None, "delivery_notes": None,
+                "delivery_person_name_snapshot": None, "delivery_person_phone_snapshot": None,
+            })
         address = validated_data.get("customer_address")
         if address and address.pk != instance.customer_address_id:
             customer = instance.order.customer

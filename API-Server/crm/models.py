@@ -3,6 +3,8 @@ from django.db import models
 from decimal import Decimal, ROUND_HALF_UP
 from cake.models import Cake
 
+SALE_UNIT_CHOICES = (("kg", "kg"), ("piece", "piece"))
+
 
 class Lead(models.Model):
     STATUS_CHOICES = (
@@ -37,7 +39,8 @@ class Lead(models.Model):
     flavour = models.CharField(max_length=100, null=True, blank=True)
     shape = models.CharField(max_length=100, null=True, blank=True)
     weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
+    unit_type = models.CharField(max_length=30, default="kg")
     theme = models.CharField(max_length=250, null=True, blank=True)
     delivery_date = models.DateField(null=True, blank=True)
     delivery_time = models.TimeField(null=True, blank=True)
@@ -141,7 +144,7 @@ class Quotation(models.Model):
     cake = models.ForeignKey(Cake, null=True, blank=True, on_delete=models.SET_NULL)
     cake_type = models.CharField(max_length=150, null=True, blank=True)
     flavour = models.CharField(max_length=100, null=True, blank=True)
-    quantity = models.PositiveIntegerField(null=True, blank=True)
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     event_date = models.DateField(null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
     rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -227,7 +230,8 @@ class QuotationItem(models.Model):
     description = models.TextField(null=True, blank=True)
     flavour = models.CharField(max_length=100, null=True, blank=True)
     weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
+    unit_type = models.CharField(max_length=30, default="kg")
     rate = models.DecimalField(max_digits=12, decimal_places=2)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     sort_order = models.PositiveIntegerField(default=0)
@@ -304,7 +308,7 @@ class CRMOrder(models.Model):
     phone = models.CharField(max_length=15)
     cake_type = models.CharField(max_length=150, null=True, blank=True)
     flavour = models.CharField(max_length=100, null=True, blank=True)
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
     event_date = models.DateField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     advance_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -363,7 +367,8 @@ class CRMOrderItem(models.Model):
     description = models.TextField(null=True, blank=True)
     flavour = models.CharField(max_length=100, null=True, blank=True)
     weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
+    unit_type = models.CharField(max_length=30, default="kg")
     rate = models.DecimalField(max_digits=12, decimal_places=2)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -459,6 +464,7 @@ class CRMDelivery(models.Model):
     porter_time = models.DateTimeField(null=True, blank=True)
     porter_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     porter_notes = models.TextField(null=True, blank=True)
+    tracking_link = models.URLField(max_length=500, null=True, blank=True)
     external_platform = models.ForeignKey("delivery_person.DeliveryPlatform", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_deliveries")
     external_delivery_person = models.ForeignKey("delivery_person.ExternalDeliveryPerson", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_deliveries")
     external_platform_name_snapshot = models.CharField(max_length=150, null=True, blank=True)
@@ -543,6 +549,7 @@ class CRMOption(models.Model):
         ("payment_method", "Payment Method"),
         ("invoice_term", "Invoice Term"),
         ("tax_setting", "Tax Setting"),
+        ("sale_unit", "Unit"),
         ("order_cancellation_reason", "Order Cancellation Reason"),
     )
     option_type = models.CharField(max_length=30, choices=TYPE_CHOICES, db_index=True)

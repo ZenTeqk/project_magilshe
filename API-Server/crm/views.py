@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from cakery.common import aws_domain_name, get_s3_session
 from cakery.file_upload_to_aws import put_image_to_s3
+from customer.rbac import effective_permissions
 from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerCommunicationLog, CustomerRecurringEvent,
     Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment,
@@ -230,9 +231,22 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     @transaction.atomic
     def convert(self, request, pk=None):
-        lead = self.get_object()
-        if lead.status != "Won":
-            return Response({"message": "Only Won leads can be converted."}, status=status.HTTP_400_BAD_REQUEST)
+        lead = Lead.objects.select_for_update().get(pk=self.get_object().pk)
+        if "crm.quotations.create" not in effective_permissions(request.user):
+            return Response(
+                {"detail": "You do not have permission to create quotations."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        mark_won = request.data.get("mark_won") is True
+        if mark_won and lead.status != "Won":
+            previous_status = lead.status
+            lead.status = "Won"
+            lead.updated_by = request.user
+            lead.save(update_fields=("status", "updated_by", "updated_on"))
+            LeadActivity.objects.create(
+                lead=lead, action="Status Changed", staff=request.user,
+                description=f"{previous_status} to Won · Won & Generate Quotation",
+            )
         primary_address = None
         if lead.customer:
             primary_address = lead.customer.customeraddress_set.order_by("-is_primary", "id").first()
@@ -277,6 +291,7 @@ class LeadViewSet(viewsets.ModelViewSet):
                 flavour=lead.flavour,
                 weight=lead.weight,
                 quantity=lead.quantity or 1,
+                unit_type=lead.unit_type,
                 rate=lead.estimated_amount or lead.budget or lead.expected_price or 0,
                 gst_percentage=0,
             )
@@ -288,8 +303,11 @@ class LeadViewSet(viewsets.ModelViewSet):
                 lead=lead, action="Quotation Created", staff=request.user,
                 description=quotation.quotation_no,
             )
-        return Response({"message": "Quotation created." if created else "Quotation already exists.",
-                         "data": QuotationSerializer(quotation).data})
+        return Response({
+            "message": "Quotation created." if created else "Quotation already exists.",
+            "data": QuotationSerializer(quotation).data,
+            "lead": LeadSerializer(lead).data,
+        })
 
     @action(detail=True, methods=["post"], url_path="reference-images")
     def reference_images(self, request, pk=None):
@@ -639,6 +657,7 @@ def _confirm_quotation_order(quotation, user):
             CRMOrderItem(
                 order=order, item_name=item.item_name, description=item.description,
                 flavour=item.flavour, weight=item.weight, quantity=item.quantity,
+                unit_type=item.unit_type,
                 rate=item.rate, gst_percentage=item.gst_percentage,
                 amount=item.amount, sort_order=item.sort_order,
             ) for item in quotation.items.all()
@@ -654,9 +673,7 @@ def _confirm_quotation_order(quotation, user):
 
 class QuotationViewSet(viewsets.ModelViewSet):
     serializer_class = QuotationSerializer
-    queryset = Quotation.objects.select_related("lead", "customer", "cake").filter(
-        models.Q(lead__status="Won") | models.Q(lead__isnull=True)
-    )
+    queryset = Quotation.objects.select_related("lead", "customer", "cake").all()
 
     def get_serializer_class(self):
         return QuotationListSerializer if self.action == "list" else QuotationSerializer
@@ -791,31 +808,33 @@ class QuotationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
-        quotation = self.get_object()
-        if quotation.status not in {"Accepted", "Advance Received"}:
-            return Response(
-                {"message": "Accept the quotation before recording an advance."}, status=400
+        with transaction.atomic():
+            quotation = Quotation.objects.select_for_update().get(pk=self.get_object().pk)
+            if quotation.status != "Accepted":
+                message = "Advance has already been recorded." if quotation.advance_received or quotation.advance_amount > 0 else "Accept the quotation before recording an advance."
+                return Response({"message": message}, status=400)
+            paid = sum(quotation.payments.values_list("amount", flat=True))
+            if quotation.advance_received or quotation.advance_amount > 0 or paid > 0:
+                return Response({"message": "Advance has already been recorded."}, status=400)
+            serializer = QuotationPaymentSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            amount = serializer.validated_data["amount"]
+            if amount <= 0:
+                return Response({"amount": ["Amount must be greater than zero."]}, status=400)
+            if amount > quotation.total_amount:
+                return Response({"amount": ["Payment cannot exceed the remaining balance."]}, status=400)
+            payment = serializer.save(quotation=quotation, collected_by=request.user)
+            quotation.advance_received = True
+            quotation.advance_amount = payment.amount
+            quotation.payment_date = payment.payment_date
+            quotation.payment_method = payment.payment_method
+            quotation.transaction_reference = payment.transaction_reference
+            quotation.status = "Advance Received"
+            quotation.save()
+            QuotationActivity.objects.create(
+                quotation=quotation, action="Advance Payment Recorded",
+                staff=request.user, description=str(payment.amount),
             )
-        serializer = QuotationPaymentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        amount = serializer.validated_data["amount"]
-        if amount <= 0:
-            return Response({"amount": ["Amount must be greater than zero."]}, status=400)
-        paid = sum(quotation.payments.values_list("amount", flat=True))
-        if paid + amount > quotation.total_amount:
-            return Response({"amount": ["Payment cannot exceed the remaining balance."]}, status=400)
-        payment = serializer.save(quotation=quotation, collected_by=request.user)
-        quotation.advance_received = True
-        quotation.advance_amount = paid + payment.amount
-        quotation.payment_date = payment.payment_date
-        quotation.payment_method = payment.payment_method
-        quotation.transaction_reference = payment.transaction_reference
-        quotation.status = "Advance Received"
-        quotation.save()
-        QuotationActivity.objects.create(
-            quotation=quotation, action="Advance Payment Recorded",
-            staff=request.user, description=str(payment.amount),
-        )
         return Response(self.get_serializer(quotation).data, status=201)
 
     @action(detail=True, methods=["post"], url_path="confirm-order")
