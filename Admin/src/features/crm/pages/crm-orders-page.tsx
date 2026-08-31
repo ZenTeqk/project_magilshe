@@ -4,6 +4,7 @@ import { FileText, Plus } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusChip } from "@/components/shared/status-chip";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
 import { TableSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -66,7 +67,7 @@ function CrmOrdersPage() {
             { key: "cake", header: "Cake preparation", cell: (r) => <span className="text-muted-foreground">{r.cake_type} · {r.flavour ?? "—"} · {r.quantity}</span> },
             { key: "date", header: "Required date", sortValue: (r) => r.delivery_date ?? r.event_date ?? "", cell: (r) => <span className="tabular">{r.delivery_date ?? r.event_date ?? "—"}</span> },
             { key: "balance", header: "Balance", align: "right", cell: (r) => <span className="tabular font-medium">{inr(Number(r.balance_amount))}</span> },
-            { key: "advance", header: "Advance", align: "right", cell: (r) => <span className="tabular">{inr(Number(r.advance_paid))}</span> },
+            { key: "advance", header: "Advance", align: "right", cell: (r) => <span className={`tabular ${paymentSummaryStyles.inlineAdvance}`}>{inr(Number(r.advance_paid))}</span> },
             { key: "total", header: "Total", align: "right", cell: (r) => <span className="tabular">{inr(Number(r.total_amount))}</span> },
             { key: "status", header: "Stage", cell: (r) => <StatusChip status={displayOrderStatus(r.status)} /> },
           ]}

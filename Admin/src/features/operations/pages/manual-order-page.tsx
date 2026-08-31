@@ -296,9 +296,9 @@ function ManualOrderPage() {
             <Field label="Delivery date & time" required>
               <Input type="datetime-local" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} />
             </Field>
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-primary-soft px-3 py-2.5 text-sm font-semibold text-primary">
-              <span>Grand total</span>
-              <span className="tabular">{inr(grandTotal)}</span>
+            <div className="mt-4 flex items-baseline justify-between rounded-xl bg-primary-soft px-3 py-2.5 text-sm text-primary">
+              <span className="font-semibold">Grand total</span>
+              <span className="tabular text-lg font-semibold">{inr(grandTotal)}</span>
             </div>
             <div className="mt-4 flex justify-between gap-2">
               <Button variant="ghost" onClick={cancel}>Cancel</Button>

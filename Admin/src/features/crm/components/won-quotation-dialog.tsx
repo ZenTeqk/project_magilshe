@@ -28,7 +28,7 @@ export function WonQuotationDialog({
   const generate = async () => {
     if (!lead) return;
     try {
-      const result = await convertLead.mutateAsync(lead.id);
+      const result = await convertLead.mutateAsync({ id: lead.id });
       toast.success(result.message, { description: `Quotation ${result.data.quotation_no}` });
       onGenerated?.(result.data.id);
     } catch {

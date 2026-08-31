@@ -284,7 +284,7 @@ function PurchasePage() {
                 </Field>
                 <Field label="Amount tendered"><Input value={editor.detail.total_amount} onChange={(e) => setEditor({ ...editor, detail: { ...editor.detail, total_amount: e.target.value } })} /></Field>
                 <Field label="Comment"><Textarea rows={2} value={editor.detail.comment} onChange={(e) => setEditor({ ...editor, detail: { ...editor.detail, comment: e.target.value } })} /></Field>
-                <div className="rounded-xl bg-primary-soft px-3 py-2.5 text-sm font-semibold text-primary">Grand total: {inr(currentTotal)}</div>
+                <div className="flex items-baseline justify-between rounded-xl bg-primary-soft px-3 py-2.5 text-sm text-primary"><span className="font-semibold">Grand total</span><span className="tabular text-lg font-semibold">{inr(currentTotal)}</span></div>
               </div>
             </div>
           )}
@@ -332,7 +332,7 @@ function PurchasePage() {
                   <tfoot>
                     <tr className="border-t border-border font-semibold"><td colSpan={4} className="px-3 py-2 text-right">Subtotal</td><td className="px-3 py-2 text-right tabular">{inr(Number(bill.total_amount ?? 0))}</td></tr>
                     <tr className="font-semibold"><td colSpan={4} className="px-3 py-2 text-right">Tax</td><td className="px-3 py-2 text-right tabular">₹0</td></tr>
-                    <tr className="font-semibold"><td colSpan={4} className="px-3 py-2 text-right">Grand total</td><td className="px-3 py-2 text-right tabular">{inr(Number(bill.total_amount ?? 0))}</td></tr>
+                    <tr className="text-primary"><td colSpan={4} className="px-3 py-2 text-right font-semibold">Grand total</td><td className="px-3 py-2 text-right tabular text-lg font-semibold">{inr(Number(bill.total_amount ?? 0))}</td></tr>
                   </tfoot>
                 </table>
               </div>

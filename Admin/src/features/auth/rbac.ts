@@ -1,17 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import { apiClient } from "@/lib/api-client";
 import { endpoints } from "@/lib/endpoints";
 import { getTokens } from "@/lib/auth-storage";
 
 export type CurrentAccess = { id: number; email: string; username: string; name: string; role: string | null; is_super_admin: boolean; permissions: string[]; permission_details: Array<{ id:number; code:string; module:string; resource:string; action:string; name:string }> };
 
+const ACCESS_REQUEST_TIMEOUT_MS = 30_000;
+
 export function useCurrentAccess(enabled = true) {
   const sessionToken = getTokens()?.access ?? null;
   return useQuery({
     queryKey: ["rbac", "me", sessionToken],
-    queryFn: async () => (await apiClient.get<CurrentAccess>(endpoints.rbac.me)).data,
+    queryFn: async () => (
+      await apiClient.get<CurrentAccess>(endpoints.rbac.me, { timeout: ACCESS_REQUEST_TIMEOUT_MS })
+    ).data,
     enabled,
     staleTime: 60_000,
+    gcTime: 30 * 60_000,
+    retry: (failureCount, error) => {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      return status !== 401 && status !== 403 && failureCount < 2;
+    },
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 5_000),
   });
 }
 

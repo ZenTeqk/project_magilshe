@@ -30,6 +30,8 @@ import {
 import { WonQuotationDialog } from "@/features/crm/components/won-quotation-dialog";
 import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
+import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 
 const blank = {
   customer_id: null as number | null,
@@ -46,7 +48,8 @@ const blank = {
   flavour: "",
   shape: "",
   weight: "",
-  quantity: 1,
+  quantity: "" as number | string,
+  unit_type: "kg" as SaleUnit,
   theme: "",
   occasion: "Birthday",
   event_date: "",
@@ -77,6 +80,7 @@ const statusChoicesByOriginal: Record<string, LeadStatus[]> = {
 };
 
 function LeadFormPage() {
+  const { units: saleUnits } = useSaleUnits();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -89,6 +93,7 @@ function LeadFormPage() {
   const uploadImages = useUploadLeadReferenceImages();
   const deleteImage = useDeleteLeadReferenceImage();
   const convertLead = useConvertLead();
+  const access = useCurrentAccess();
 
   const [form, setForm] = useState<typeof blank>({ ...blank, ...(draft ?? {}) });
   const [originalStatus, setOriginalStatus] = useState<string>("Open");
@@ -130,10 +135,10 @@ function LeadFormPage() {
 
   const statusChoices = isEdit ? (statusChoicesByOriginal[originalStatus] ?? ["Open"]) : ["Open"];
 
-  const createQuotation = async () => {
+  const createQuotation = async (markWon: boolean) => {
     if (!existingLead) return;
     try {
-      const result = await convertLead.mutateAsync(existingLead.id);
+      const result = await convertLead.mutateAsync({ id: existingLead.id, markWon });
       toast.success(result.message, { description: `Quotation ${result.data.quotation_no}` });
       navigate(`/crm/quotations/${result.data.id}/edit`);
     } catch (err: unknown) {
@@ -142,6 +147,10 @@ function LeadFormPage() {
     }
   };
 
+  const canGenerateQuotation =
+    hasPermission(access.data, "crm.leads.process") &&
+    hasPermission(access.data, "crm.quotations.create");
+
   const submit = async () => {
     const phoneDigits = form.phone.replace(/\D/g, "");
     const clientErrors: Record<string, string> = {};
@@ -149,6 +158,7 @@ function LeadFormPage() {
       clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
     if (!form.event_date) clientErrors["event_date"] = "Event date is required.";
+    if (form.quantity === "") clientErrors["quantity"] = "Quantity is required.";
     if (form.status === "Follow-up" && !form.follow_up_date) clientErrors["follow_up_date"] = "Next follow-up date is required.";
     if (form.status === "Follow-up" && !form.follow_up_notes.trim()) clientErrors["follow_up_notes"] = "Follow-up notes are required.";
     if (form.status === "Won" && !form.winning_reason.trim()) clientErrors["winning_reason"] = "Reason for winning is required.";
@@ -211,13 +221,29 @@ function LeadFormPage() {
         }
         actions={
           <>
-            {existingLead?.status === "Won" && !existingLead.quotation_id && (
-              <Button onClick={createQuotation} disabled={convertLead.isPending}>
-                {convertLead.isPending ? "Creating…" : "Create Quotation"}
+            {existingLead && canGenerateQuotation && !existingLead.quotation_id && (
+              <Button
+                variant="outline"
+                onClick={() => createQuotation(false)}
+                disabled={convertLead.isPending}
+                title="Create or open a quotation without changing the Lead status"
+              >
+                Move to Quotation
               </Button>
             )}
-            {existingLead?.status === "Won" && existingLead.quotation_id && (
-              <Button variant="outline" asChild><Link to={`/crm/quotations/${existingLead.quotation_id}/edit`}>Open Quotation</Link></Button>
+            {existingLead?.quotation_id && (
+              <Button variant="outline" asChild>
+                <Link to={`/crm/quotations/${existingLead.quotation_id}/edit`}>View Quotation</Link>
+              </Button>
+            )}
+            {existingLead && existingLead.status !== "Won" && canGenerateQuotation && (
+              <Button
+                onClick={() => createQuotation(true)}
+                disabled={convertLead.isPending}
+                title="Mark the Lead Won, then create or open its quotation"
+              >
+                {convertLead.isPending ? "Processing…" : "Won & Generate Quotation"}
+              </Button>
             )}
             <Button onClick={submit} disabled={createLead.isPending || updateLead.isPending}>
               {isEdit ? "Save changes" : "Create lead"}
@@ -369,24 +395,20 @@ function LeadFormPage() {
           <Field label="Shape">
             <Input value={form.shape} onChange={(e) => set("shape", e.target.value)} />
           </Field>
-          <Field label="Weight (kg)">
-            <Input
-              type="number"
-              min={0}
-              step="0.1"
-              inputMode="decimal"
-              placeholder="e.g. 1.5"
-              value={form.weight}
-              onChange={(e) => set("weight", e.target.value)}
-            />
-          </Field>
           <Field label="Quantity" required>
             <Input
               type="number"
-              min={1}
+              min={quantityMin(form.unit_type)}
+              step={quantityStep(form.unit_type)}
               value={form.quantity}
-              onChange={(e) => set("quantity", Number(e.target.value) || 1)}
+              onChange={(e) => set("quantity", e.target.value)}
             />
+          </Field>
+          <Field label="Unit" required>
+            <Select value={form.unit_type} onValueChange={(v) => set("unit_type", v as SaleUnit)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
+            </Select>
           </Field>
           <Field label="Theme">
             <Input value={form.theme} onChange={(e) => set("theme", e.target.value)} />
@@ -480,13 +502,16 @@ function LeadFormPage() {
               onChange={(e) => set("budget", e.target.value)}
             />
           </Field>
-          <Field label="Estimated amount">
+          <Field label="Rate">
             <Input
               type="number"
               min={0}
               value={form.estimated_amount}
               onChange={(e) => set("estimated_amount", e.target.value)}
             />
+          </Field>
+          <Field label="Amount">
+            <Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} />
           </Field>
         </div>
       </SectionCard>

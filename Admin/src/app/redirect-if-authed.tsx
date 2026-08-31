@@ -5,7 +5,7 @@ import { hasAdminAccess, useCurrentAccess } from "@/features/auth/rbac";
 export function RedirectIfAuthed() {
   const hasToken = isAuthenticated();
   const access = useCurrentAccess(hasToken);
-  if (hasToken && (access.isPending || access.isFetching)) {
+  if (hasToken && !access.data && (access.isPending || access.isFetching)) {
     return <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Checking session…</div>;
   }
   if (hasToken && access.isSuccess && hasAdminAccess(access.data)) {

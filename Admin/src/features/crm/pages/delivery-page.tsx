@@ -4,6 +4,7 @@ import { FileText } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusChip } from "@/components/shared/status-chip";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
 import { TableSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -62,6 +63,7 @@ function CrmDeliveryPage() {
             ) },
             { key: "type", header: "Delivery type", cell: (r) => <span className="text-muted-foreground">{r.delivery_type}</span> },
             { key: "scheduled", header: "Scheduled", sortValue: (r) => r.scheduled_at ?? "", cell: (r) => <span className="tabular">{r.scheduled_at ? new Date(r.scheduled_at).toLocaleString("en-IN") : "—"}</span> },
+            { key: "advance", header: "Advance", align: "right", cell: (r) => <span className={`tabular ${paymentSummaryStyles.inlineAdvance}`}>{inr(Number(r.advance_paid))}</span> },
             { key: "payment", header: "Final payment", align: "right", cell: (r) => (
               <span className="min-w-0"><span className="block font-medium">{Number(r.balance_amount) === 0 ? "Paid" : "Balance due"}</span>
               <span className="block text-xs text-muted-foreground tabular">{inr(Number(r.balance_amount))}</span></span>

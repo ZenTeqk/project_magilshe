@@ -99,6 +99,7 @@ export function useOrder(id: string | number | undefined) {
 function invalidateOrder(queryClient: ReturnType<typeof useQueryClient>, id?: string | number) {
   queryClient.invalidateQueries({ queryKey: ["crm", "orders"] });
   queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "crm-analytics"] });
   if (id !== undefined) queryClient.invalidateQueries({ queryKey: orderKey(id) });
 }
 
@@ -142,7 +143,7 @@ export function useGenerateInvoice() {
   });
 }
 
-export type DirectOrderItem = { item_name: string; description?: string; flavour?: string; weight?: string; quantity: number; rate: number; gst_percentage: number };
+export type DirectOrderItem = { item_name: string; description?: string; flavour?: string; weight?: string; quantity: number | string; unit_type: import("@/features/crm/sale-units").SaleUnit; rate: number; gst_percentage: number };
 
 export type CreateDirectOrderInput = {
   customer?: number | undefined;

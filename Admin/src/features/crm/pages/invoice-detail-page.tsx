@@ -7,6 +7,7 @@ import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { CardSkeleton } from "@/components/shared/skeletons";
 import { StatusChip } from "@/components/shared/status-chip";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
 import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
 import {
@@ -15,6 +16,7 @@ import {
 import { useCompanyConfig } from "@/features/crm/quotations-hooks";
 import { RecordInvoicePaymentDialog } from "@/features/crm/components/record-invoice-payment-dialog";
 import { buildInvoicePdf } from "@/features/crm/lib/invoice-pdf";
+import { formatSaleQuantity } from "@/features/crm/sale-units";
 
 function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,8 +86,10 @@ function InvoiceDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <StatusChip status={invoice.status} />
-            <span className="text-sm text-muted-foreground">
-              Total {inr(Number(invoice.total_amount))} · Paid {inr(Number(invoice.amount_paid))} · Balance {inr(balance)}
+            <span className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+              <span className={paymentSummaryStyles.inlineTotal}>Total {inr(Number(invoice.total_amount))}</span><span>·</span>
+              <strong className={paymentSummaryStyles.inlineAdvance}>Paid {inr(Number(invoice.amount_paid))}</strong><span>·</span>
+              <span className={paymentSummaryStyles.inlineBalance}>Balance {inr(balance)}</span>
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -144,7 +148,7 @@ function InvoiceDetailPage() {
                 <tr key={i} className="border-t border-border">
                   <td className="px-5 py-3 font-medium">{item.item_name}</td>
                   <td className="px-5 py-3 text-muted-foreground">{item.description ?? "—"}</td>
-                  <td className="px-5 py-3 tabular">{item.quantity}</td>
+                  <td className="px-5 py-3 tabular">{formatSaleQuantity(item.quantity, item.unit_type)}</td>
                   <td className="px-5 py-3 tabular">{inr(Number(item.rate))}</td>
                   <td className="px-5 py-3 tabular">{item.gst_percentage}%</td>
                   <td className="px-5 py-3 text-right tabular font-medium">{inr(Number(item.amount))}</td>
@@ -159,9 +163,9 @@ function InvoiceDetailPage() {
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div><dt className="text-muted-foreground">Subtotal</dt><dd className="tabular font-medium">{inr(Number(invoice.subtotal))}</dd></div>
           <div><dt className="text-muted-foreground">GST</dt><dd className="tabular font-medium">{inr(Number(invoice.gst_amount))}</dd></div>
-          <div><dt className="text-muted-foreground">Invoice total</dt><dd className="tabular font-medium">{inr(Number(invoice.total_amount))}</dd></div>
-          <div><dt className="text-muted-foreground">Amount paid</dt><dd className="tabular font-medium">{inr(Number(invoice.amount_paid))}</dd></div>
-          <div><dt className="text-muted-foreground">Balance due</dt><dd className="tabular font-medium">{inr(balance)}</dd></div>
+          <div className="text-primary"><dt className="font-semibold">Invoice total</dt><dd className="tabular text-lg font-semibold">{inr(Number(invoice.total_amount))}</dd></div>
+          <div className={paymentSummaryStyles.advance}><dt className="font-semibold">Amount paid</dt><dd className="tabular font-semibold">{inr(Number(invoice.amount_paid))}</dd></div>
+          <div className={paymentSummaryStyles.balance}><dt>Balance due</dt><dd className="tabular">{inr(balance)}</dd></div>
         </dl>
       </SectionCard>
 

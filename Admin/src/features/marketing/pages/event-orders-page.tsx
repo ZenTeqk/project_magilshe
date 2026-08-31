@@ -145,8 +145,8 @@ function EventOrdersPage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-2 flex justify-end text-sm">
-                  Grand Total&nbsp;<strong className="tabular">{inr(orderDetails.total_amount)}</strong>
+                <div className="mt-2 flex items-baseline justify-end gap-1 text-sm text-primary">
+                  <span className="font-semibold">Grand Total</span><strong className="tabular text-lg">{inr(orderDetails.total_amount)}</strong>
                 </div>
               </div>
 

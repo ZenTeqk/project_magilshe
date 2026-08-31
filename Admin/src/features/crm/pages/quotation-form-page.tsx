@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { CardSkeleton } from "@/components/shared/skeletons";
 import { Field } from "@/components/shared/field";
 import { StatusChip } from "@/components/shared/status-chip";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,13 +52,15 @@ import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-q
 import { buildQuotationPdf } from "@/features/crm/lib/quotation-pdf";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 
 const emptyItem: QuotationItem = {
   item_name: "",
   description: "",
   flavour: "",
   weight: "",
-  quantity: 1,
+  quantity: "",
+  unit_type: "kg",
   rate: "",
   gst_percentage: 0,
 };
@@ -84,6 +87,7 @@ const blank = {
 };
 
 function QuotationFormPage() {
+  const { units: saleUnits } = useSaleUnits();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const leadId = searchParams.get("lead") ?? undefined;
@@ -159,6 +163,7 @@ function QuotationFormPage() {
           flavour: leadForPrefill.flavour ?? "",
           weight: leadForPrefill.weight ?? "",
           quantity: leadForPrefill.quantity ?? 1,
+          unit_type: leadForPrefill.unit_type ?? "kg",
           rate: leadForPrefill.estimated_amount ?? leadForPrefill.budget ?? "",
           gst_percentage: 0,
         },
@@ -207,6 +212,9 @@ function QuotationFormPage() {
   }, [form.items, form.discount_amount]);
 
   const advanceAmount = Number(existingQuotation?.advance_amount ?? 0);
+  const hasRecordedAdvance = Boolean(
+    existingQuotation?.advance_received || advanceAmount > 0 || existingQuotation?.payments?.length,
+  );
   const balance = Math.max(
     0,
     (existingQuotation ? Number(existingQuotation.total_amount) : totals.total) - advanceAmount,
@@ -261,6 +269,8 @@ function QuotationFormPage() {
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
     if (!form.items.some((it) => it.item_name.trim() && Number(it.rate) > 0))
       clientErrors["items"] = "Add at least one item with a name and rate.";
+    if (form.items.some((it) => it.item_name.trim() && it.quantity === ""))
+      clientErrors["items"] = "Quantity is required for every item.";
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
 
@@ -269,7 +279,7 @@ function QuotationFormPage() {
         await updateQuotation.mutateAsync({ id: id!, payload: buildPayload() });
         toast.success("Quotation updated");
       } else if (leadId) {
-        const result = await convertLead.mutateAsync(leadId);
+        const result = await convertLead.mutateAsync({ id: leadId });
         const created = result.data as unknown as { id: number };
         await updateQuotation.mutateAsync({ id: created.id, payload: buildPayload() });
         toast.success("Quotation created");
@@ -390,9 +400,10 @@ function QuotationFormPage() {
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-4">
             <div className="flex items-center gap-3">
               <StatusChip status={existingQuotation.status} />
-              <span className="text-sm text-muted-foreground">
-                Total {inr(Number(existingQuotation.total_amount))} · Advance {inr(advanceAmount)} ·
-                Balance {inr(balance)}
+              <span className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+                <span className={paymentSummaryStyles.inlineTotal}>Total {inr(Number(existingQuotation.total_amount))}</span><span>·</span>
+                <strong className={paymentSummaryStyles.inlineAdvance}>Advance {inr(advanceAmount)}</strong><span>·</span>
+                <span className={paymentSummaryStyles.inlineBalance}>Balance {inr(balance)}</span>
               </span>
             </div>
             <div className="flex min-h-8 flex-wrap items-center justify-end gap-2">
@@ -406,12 +417,17 @@ function QuotationFormPage() {
                   Accept
                 </Button>
               )}
-              {(status === "Accepted" || status === "Advance Received") && (
+              {status === "Accepted" && !hasRecordedAdvance && (
                 <Button size="sm" onClick={() => setPaymentOpen(true)}>
                   Record Advance
                 </Button>
               )}
-              {status === "Advance Received" && advanceAmount > 0 && (
+              {hasRecordedAdvance && !existingQuotation.order_id && (
+                <Button size="sm" variant="outline" disabled>
+                  Advance Recorded
+                </Button>
+              )}
+              {status === "Advance Received" && hasRecordedAdvance && (
                 <Button size="sm" onClick={runConfirmOrder} disabled={confirmOrder.isPending}>
                   {confirmOrder.isPending ? "Confirming…" : "Confirm Order"}
                 </Button>
@@ -574,8 +590,8 @@ function QuotationFormPage() {
                 <th className="py-2 pr-2">Cake / Product</th>
                 <th className="py-2 pr-2">Description</th>
                 <th className="py-2 pr-2">Flavour</th>
-                <th className="py-2 pr-2 w-24">Weight (kg)</th>
                 <th className="py-2 pr-2 w-20">Qty</th>
+                <th className="py-2 pr-2 w-28">Unit</th>
                 <th className="py-2 pr-2 w-28">Rate</th>
                 <th className="py-2 pr-2 w-24">GST%</th>
                 <th className="py-2 pr-2 w-28 text-right">Amount</th>
@@ -610,15 +626,19 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <Input type="number" min={0} step="0.01" placeholder="kg" value={item.weight ?? ""} onChange={(e) => setItem(i, { weight: e.target.value })} />
-                    </td>
-                    <td className="py-2 pr-2">
                       <Input
                         type="number"
-                        min={1}
+                        min={quantityMin(item.unit_type)}
+                        step={quantityStep(item.unit_type)}
                         value={item.quantity}
-                        onChange={(e) => setItem(i, { quantity: Number(e.target.value) || 1 })}
+                        onChange={(e) => setItem(i, { quantity: e.target.value })}
                       />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <Select value={item.unit_type} onValueChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
+                      </Select>
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -762,17 +782,17 @@ function QuotationFormPage() {
               <dt className="text-muted-foreground">GST</dt>
               <dd className="tabular font-medium">{inr(totals.gst)}</dd>
             </div>
-            <div className="flex justify-between border-t border-border pt-2 text-base">
+            <div className="flex items-baseline justify-between border-t border-border pt-2 text-sm text-primary">
               <dt className="font-semibold">Grand Total</dt>
-              <dd className="tabular font-semibold">
+              <dd className="tabular text-lg font-semibold">
                 {inr(existingQuotation ? Number(existingQuotation.total_amount) : totals.total)}
               </dd>
             </div>
             {isEdit && (
               <>
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Advance received</dt>
-                  <dd className="tabular font-medium text-success">{inr(advanceAmount)}</dd>
+                <div className={`flex justify-between ${paymentSummaryStyles.advance}`}>
+                  <dt className="font-semibold">Advance received</dt>
+                  <dd className="tabular font-semibold">{inr(advanceAmount)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Balance due</dt>

@@ -15,6 +15,8 @@ import {
 } from "@/features/crm/orders-hooks";
 import { CancelOrderDialog } from "@/features/crm/components/cancel-order-dialog";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
+import { formatSaleQuantity } from "@/features/crm/sale-units";
 
 const nonCancellable = new Set(["Delivery", "Out for Delivery", "Delivered", "Completed", "Closed", "Cancelled"]);
 
@@ -81,8 +83,10 @@ function OrderDetailPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-4">
           <div className="flex items-center gap-3">
             <StatusChip status={displayOrderStatus(status)} />
-            <span className="text-sm text-muted-foreground">
-              Total {inr(Number(order.total_amount))} · Advance {inr(Number(order.advance_paid))} · Balance {inr(balance)}
+            <span className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+              <span className={paymentSummaryStyles.inlineTotal}>Total {inr(Number(order.total_amount))}</span><span>·</span>
+              <strong className={paymentSummaryStyles.inlineAdvance}>Advance {inr(Number(order.advance_paid))}</strong><span>·</span>
+              <span className={paymentSummaryStyles.inlineBalance}>Balance {inr(balance)}</span>
             </span>
           </div>
           <div className="flex min-h-8 flex-wrap items-center justify-end gap-2">
@@ -135,7 +139,7 @@ function OrderDetailPage() {
                 <tr key={i} className="border-t border-border">
                   <td className="px-5 py-3 font-medium">{item.item_name}</td>
                   <td className="px-5 py-3 text-muted-foreground">{item.flavour ?? "—"}</td>
-                  <td className="px-5 py-3 tabular">{item.quantity}</td>
+                  <td className="px-5 py-3 tabular">{formatSaleQuantity(item.quantity, item.unit_type)}</td>
                   <td className="px-5 py-3 tabular">{inr(Number(item.rate))}</td>
                   <td className="px-5 py-3 tabular">{item.gst_percentage}%</td>
                   <td className="px-5 py-3 text-right tabular font-medium">{inr(Number(item.amount))}</td>

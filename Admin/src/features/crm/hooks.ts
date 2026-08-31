@@ -160,6 +160,7 @@ export type Lead = {
   shape: string | null;
   weight: string | null;
   quantity: number;
+  unit_type: import("@/features/crm/sale-units").SaleUnit;
   theme: string | null;
   delivery_date: string | null;
   delivery_time: string | null;
@@ -297,11 +298,12 @@ export function useDeleteLead() {
 export function useConvertLead() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string | number) => {
-      const { data } = await apiClient.post(endpoints.crm.leadConvert(id));
-      return data as { message: string; data: { quotation_no: string; id: number } };
+    mutationFn: async ({ id, markWon = false }: { id: string | number; markWon?: boolean }) => {
+      const { data } = await apiClient.post(endpoints.crm.leadConvert(id), { mark_won: markWon });
+      return data as { message: string; data: { quotation_no: string; id: number }; lead: Lead };
     },
-    onSuccess: (_result, id) => {
+    onSuccess: (result, { id }) => {
+      queryClient.setQueryData(leadKey(id), result.lead);
       queryClient.invalidateQueries({ queryKey: leadKey(id) });
       queryClient.invalidateQueries({ queryKey: ["crm", "leads"] });
       queryClient.invalidateQueries({ queryKey: ["crm", "quotations"] });

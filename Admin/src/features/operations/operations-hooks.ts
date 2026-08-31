@@ -347,7 +347,10 @@ export function useSaveDeliveryPerson() {
         : await apiClient.post<DeliveryPersonRecord>(endpoints.deliveryPerson.staff, requestBody);
       return { message: id ? "Delivery staff updated successfully" : "Delivery staff created successfully", data };
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["operations", "delivery-persons"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["operations", "delivery-persons"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery-persons"] });
+    },
   });
 }
 

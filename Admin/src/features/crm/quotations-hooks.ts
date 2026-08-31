@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 import { endpoints } from "@/lib/endpoints";
 import type { Lead } from "@/features/crm/hooks";
+import type { SaleUnit } from "@/features/crm/sale-units";
 
 function unwrapList<T>(data: unknown): T[] {
   if (Array.isArray(data)) return data as T[];
@@ -38,7 +39,8 @@ export type QuotationItem = {
   description: string | null;
   flavour: string | null;
   weight: string | null;
-  quantity: number;
+  quantity: number | string;
+  unit_type: SaleUnit;
   rate: string | number;
   gst_percentage: string | number;
   sort_order?: number;
@@ -155,6 +157,7 @@ function invalidateQuotation(queryClient: ReturnType<typeof useQueryClient>, id?
   queryClient.invalidateQueries({ queryKey: ["crm", "quotations"] });
   queryClient.invalidateQueries({ queryKey: ["crm", "quotations", "pending"] });
   queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "crm-analytics"] });
   if (id !== undefined) queryClient.invalidateQueries({ queryKey: quotationKey(id) });
 }
 
@@ -202,8 +205,8 @@ export function useQuotationWorkflowAction() {
       return data;
     },
     onSuccess: (data, { id }) => {
-      queryClient.setQueryData(quotationKey(id), data);
       invalidateQuotation(queryClient, id);
+      queryClient.setQueryData(quotationKey(id), data);
     },
   });
 }
@@ -234,8 +237,8 @@ export function useRecordQuotationPayment() {
       return data;
     },
     onSuccess: (data, { id }) => {
-      queryClient.setQueryData(quotationKey(id), data);
       invalidateQuotation(queryClient, id);
+      queryClient.setQueryData(quotationKey(id), data);
     },
   });
 }

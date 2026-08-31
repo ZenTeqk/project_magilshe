@@ -25,6 +25,7 @@ import {
   type CrmCustomerSearchResult,
 } from "@/features/crm/hooks";
 import { CustomerMatchPicker } from "./customer-match-picker";
+import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 
 const emptyQuickLead = {
   customer_id: null as number | null,
@@ -34,7 +35,9 @@ const emptyQuickLead = {
   cake_type: "Custom Cake",
   flavour: "",
   weight: "",
-  quantity: 1,
+  quantity: "" as number | string,
+  unit_type: "kg" as SaleUnit,
+  estimated_amount: "",
   event_date: "",
 };
 
@@ -45,6 +48,7 @@ export function QuickCreateLeadDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { units: saleUnits } = useSaleUnits();
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyQuickLead);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -79,6 +83,7 @@ export function QuickCreateLeadDialog({
       clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
     if (!form.event_date) clientErrors["event_date"] = "Event date is required.";
+    if (form.quantity === "") clientErrors["quantity"] = "Quantity is required.";
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
 
@@ -183,24 +188,22 @@ export function QuickCreateLeadDialog({
               <Field label="Quantity" required>
                 <Input
                   type="number"
-                  min={1}
+                  min={quantityMin(form.unit_type)}
+                  step={quantityStep(form.unit_type)}
                   value={form.quantity}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, quantity: Number(e.target.value) || 1 }))
+                    setForm((f) => ({ ...f, quantity: e.target.value }))
                   }
                 />
               </Field>
-              <Field label="Weight (kg)">
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.1"
-                  inputMode="decimal"
-                  placeholder="e.g. 1.5"
-                  value={form.weight}
-                  onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))}
-                />
+              <Field label="Unit" required>
+                <Select value={form.unit_type} onValueChange={(unit_type) => setForm((f) => ({ ...f, unit_type: unit_type as SaleUnit }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
+                </Select>
               </Field>
+              <Field label="Rate"><Input type="number" min={0} value={form.estimated_amount} onChange={(e) => setForm((f) => ({ ...f, estimated_amount: e.target.value }))} /></Field>
+              <Field label="Amount"><Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} /></Field>
               <Field label="Event date" required error={errors["event_date"]}>
                 <Input
                   type="date"

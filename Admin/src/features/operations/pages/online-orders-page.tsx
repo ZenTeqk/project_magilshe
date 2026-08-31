@@ -280,9 +280,9 @@ function OnlineOrdersPage() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-border font-semibold">
-                      <td colSpan={4} className="px-3 py-2 text-right">Grand total</td>
-                      <td className="px-3 py-2 text-right tabular">{inr(orderAmount(bill))}</td>
+                    <tr className="border-t border-border text-primary">
+                      <td colSpan={4} className="px-3 py-2 text-right font-semibold">Grand total</td>
+                      <td className="px-3 py-2 text-right tabular text-lg font-semibold">{inr(orderAmount(bill))}</td>
                     </tr>
                   </tfoot>
                 </table>

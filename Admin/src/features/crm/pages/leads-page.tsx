@@ -286,7 +286,7 @@ function LeadsPage() {
               key: "quantity",
               header: "Qty",
               align: "right",
-              cell: (r) => <span className="tabular">{r.quantity}</span>,
+              cell: (r) => <span className="tabular">{Number(r.quantity)} {r.unit_type === "piece" && Number(r.quantity) !== 1 ? "pieces" : r.unit_type}</span>,
             },
             {
               key: "event_date",

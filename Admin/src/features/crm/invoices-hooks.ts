@@ -77,6 +77,7 @@ export function useInvoice(id: string | number | undefined) {
 function invalidateInvoice(queryClient: ReturnType<typeof useQueryClient>, id?: string | number) {
   queryClient.invalidateQueries({ queryKey: ["crm", "invoices"] });
   queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "crm-analytics"] });
   if (id !== undefined) queryClient.invalidateQueries({ queryKey: invoiceKey(id) });
 }
 

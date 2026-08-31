@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusChip } from "@/components/shared/status-chip";
+import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
 import { TableSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import {
@@ -174,7 +175,7 @@ function QuotationsPage() {
               key: "advance",
               header: "Advance",
               align: "right",
-              cell: (r) => <span className="tabular">{inr(Number(r.advance_amount))}</span>,
+              cell: (r) => <span className={`tabular ${paymentSummaryStyles.inlineAdvance}`}>{inr(Number(r.advance_amount))}</span>,
             },
             {
               key: "balance",

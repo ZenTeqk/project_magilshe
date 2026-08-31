@@ -1,19 +1,83 @@
 import { jsPDF } from "jspdf";
 import type { CrmInvoice } from "@/features/crm/invoices-hooks";
 import type { CompanyConfig } from "@/features/crm/quotations-hooks";
-import { PDF, displayDate, drawFooter, drawHeader, drawTableHeader, loadBrandLogo, money } from "./pdf-brand";
+import {
+  PDF, displayDate, drawDocumentHeader, drawFooter, drawInfoBlock, drawSectionLabel,
+  drawTableHeader, drawTableRowBackground, drawTotalsPanel, loadBrandLogo, money,
+} from "./pdf-brand";
 
-export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConfig) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" }); drawHeader(doc, "INVOICE", "Invoice No", invoice.invoice_no, invoice.generated_on, company, await loadBrandLogo());
-  doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.setTextColor(130); doc.text("BILL TO", PDF.left, 48); doc.text("ORDER DETAILS", 112, 48); doc.setTextColor(46, 43, 41); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
-  doc.text(doc.splitTextToSize([invoice.customer_name, invoice.phone, invoice.address || invoice.delivery_address].filter(Boolean).join("\n"), 84).slice(0, 5), PDF.left, 54);
-  doc.text(doc.splitTextToSize([`Order: ${invoice.order_no || "-"}`, invoice.quotation_no && `Quotation: ${invoice.quotation_no}`, invoice.event_date && `Event: ${displayDate(invoice.event_date)}`, invoice.delivery_date && `Delivery: ${displayDate(invoice.delivery_date)}`].filter(Boolean).join("\n"), 84), 112, 54);
-  let y = 78; const headers = [{ text: "#", x: 17 }, { text: "PRODUCT / DESCRIPTION", x: 25 }, { text: "FLAVOUR", x: 104 }, { text: "QTY", x: 138, align: "right" as const }, { text: "RATE", x: 160, align: "right" as const }, { text: "GST", x: 174, align: "right" as const }, { text: "AMOUNT", x: 193, align: "right" as const }]; y = drawTableHeader(doc, y, headers);
-  (invoice.items || []).forEach((item, index) => { const desc = doc.splitTextToSize([item.item_name, item.weight, item.description].filter(Boolean).join(" - "), 73).slice(0, 4); const h = Math.max(10, desc.length * 4 + 3); if (y + h > 225) { doc.addPage(); y = drawTableHeader(doc, 17, headers); }
-    doc.setDrawColor(224); doc.rect(PDF.left, y, PDF.right - PDF.left, h); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(46, 43, 41); doc.text(String(index + 1), 17, y + 6); doc.text(desc, 25, y + 6); doc.text(String(item.flavour || "-"), 104, y + 6); doc.text(String(item.quantity || 0), 138, y + 6, { align: "right" }); doc.text(money(item.rate), 160, y + 6, { align: "right" }); doc.text(`${item.gst_percentage || 0}%`, 174, y + 6, { align: "right" }); doc.text(money(item.amount), 193, y + 6, { align: "right" }); y += h; });
-  if (y + 66 > PDF.bottom) { doc.addPage(); y = 20; } y += 8;
-  const totals: Array<[string, unknown, boolean?]> = [["Subtotal", invoice.subtotal], ["GST", invoice.gst_amount], ["TOTAL AMOUNT", invoice.total_amount, true], ["ADVANCE RECEIVED", invoice.amount_paid, true], ["BALANCE DUE", invoice.balance_amount, true]];
-  totals.forEach(([name, amount, bold]) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(bold ? 10 : 8); if (name === "ADVANCE RECEIVED") { doc.setFillColor(246, 237, 233); doc.rect(112, y - 5, 84, 7, "F"); } doc.text(name, 116, y); doc.text(money(amount), PDF.right, y, { align: "right" }); y += bold ? 8 : 6; });
-  if (invoice.payments?.length) { y += 3; doc.setFontSize(7); doc.setFont("helvetica", "bold"); doc.text("PAYMENT HISTORY", PDF.left, y); y += 5; doc.setFont("helvetica", "normal"); invoice.payments.slice(0, 5).forEach((payment) => { doc.text(`${displayDate(payment.payment_date)} | ${payment.payment_method || "Payment"} | ${money(payment.amount)}`, PDF.left, y); y += 4.5; }); }
-  doc.setDrawColor(120); doc.line(138, Math.min(y + 12, 274), PDF.right, Math.min(y + 12, 274)); doc.setFontSize(7); doc.text("Authorized Signature", 167, Math.min(y + 17, 279), { align: "center" }); drawFooter(doc, company); return doc;
+export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConfig, brandLogo?: string) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const logo = brandLogo ?? await loadBrandLogo();
+  const title = company?.gst_number ? "TAX INVOICE" : "INVOICE";
+  let y = drawDocumentHeader(doc, title, "Invoice No", invoice.invoice_no, invoice.generated_on, company, logo);
+
+  const customerBottom = drawInfoBlock(doc, "Customer details", [
+    ["Name", invoice.customer_name], ["Phone", invoice.phone],
+    ["Address", invoice.address || invoice.delivery_address],
+  ], PDF.left, y, 91);
+  const orderBottom = drawInfoBlock(doc, "Invoice details", [
+    ["Order", invoice.order_no], ["Quotation", invoice.quotation_no], ["Status", invoice.status],
+    ["Event date", invoice.event_date ? displayDate(invoice.event_date) : null],
+    ["Delivery", invoice.delivery_date ? displayDate(invoice.delivery_date) : null],
+  ], 109, y, 87);
+  y = Math.max(customerBottom, orderBottom) + 5;
+
+  const headers = [
+    { text: "#", x: 17 }, { text: "PRODUCT / DESCRIPTION", x: 23 }, { text: "FLAVOUR", x: 82 },
+    { text: "QTY", x: 116, align: "right" as const }, { text: "UNIT", x: 121 },
+    { text: "RATE", x: 153, align: "right" as const }, { text: "GST", x: 169, align: "right" as const },
+    { text: "AMOUNT", x: 193, align: "right" as const },
+  ];
+  y = drawTableHeader(doc, y, headers);
+
+  (invoice.items || []).forEach((item, index) => {
+    const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 55).slice(0, 5);
+    const flavourLines = doc.splitTextToSize(String(item.flavour || "-"), 25).slice(0, 4);
+    const rowHeight = Math.max(11, Math.max(productLines.length, flavourLines.length) * 4 + 4);
+    if (y + rowHeight > 267) {
+      doc.addPage();
+      y = drawDocumentHeader(doc, title, "Invoice No", invoice.invoice_no, invoice.generated_on, company, logo, true);
+      y = drawTableHeader(doc, y, headers);
+    }
+    const quantity = Number(item.quantity) || 0;
+    drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...PDF.ink);
+    doc.text(String(index + 1), 17, y + 6.5); doc.text(productLines, 23, y + 6.5); doc.text(flavourLines, 82, y + 6.5);
+    doc.text(String(quantity), 116, y + 6.5, { align: "right" }); doc.text(item.unit_type === "kg" ? "KG" : item.unit_type === "piece" ? "Piece" : item.unit_type, 121, y + 6.5);
+    doc.text(money(item.rate), 153, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "right" });
+    doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 193, y + 6.5, { align: "right" });
+    y += rowHeight;
+  });
+
+  const paymentLines = Math.min(invoice.payments?.length || 0, 6);
+  const requiredHeight = Math.max(49, paymentLines ? 17 + paymentLines * 5 : 0);
+  if (y + requiredHeight > 267) {
+    doc.addPage();
+    y = drawDocumentHeader(doc, title, "Invoice No", invoice.invoice_no, invoice.generated_on, company, logo, true);
+  } else y += 7;
+
+  if (invoice.payments?.length) {
+    drawSectionLabel(doc, "Payment information", PDF.left, y + 2);
+    let paymentY = y + 9;
+    invoice.payments.slice(0, 6).forEach((payment) => {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.3); doc.setTextColor(...PDF.ink);
+      doc.text(`${displayDate(payment.payment_date)}  |  ${payment.payment_method || "Payment"}`, PDF.left, paymentY);
+      doc.setFont("helvetica", "bold"); doc.text(money(payment.amount), 94, paymentY, { align: "right" });
+      paymentY += 5;
+    });
+  }
+
+  drawTotalsPanel(doc, y, [
+    { label: "Subtotal", value: invoice.subtotal },
+    { label: "GST", value: invoice.gst_amount },
+    { label: "Grand Total", value: invoice.total_amount, kind: "grand" },
+    { label: "Advance Received", value: invoice.amount_paid },
+    { label: "Balance Due", value: invoice.balance_amount, kind: "balance" },
+  ]);
+
+  doc.setFont("helvetica", "italic"); doc.setFontSize(7.2); doc.setTextColor(...PDF.muted);
+  doc.text(Number(invoice.balance_amount) === 0 ? "Payment received in full." : "Please quote the invoice number when making payment.", PDF.left, 279);
+  drawFooter(doc, company);
+  return doc;
 }

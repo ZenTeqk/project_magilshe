@@ -34,7 +34,7 @@ import { CardSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
 import { lastNDays } from "@/features/reports/reports-hooks";
-import { useCrmAnalytics, useHomeDashboard } from "@/features/dashboard/hooks";
+import { useCrmAnalytics } from "@/features/dashboard/hooks";
 import { useCrmDashboard } from "@/features/crm/hooks";
 import { displayOrderStatus, useOrders } from "@/features/crm/orders-hooks";
 import { useInvoices } from "@/features/crm/invoices-hooks";
@@ -58,7 +58,6 @@ const palette = [
 function HomeCommandCentrePage() {
   const [range, setRange] = useState(lastNDays(0));
   const access = useCurrentAccess();
-  const home = useHomeDashboard();
   const analytics = useCrmAnalytics(range);
   const crm = useCrmDashboard();
   const orders = useOrders();
@@ -174,9 +173,9 @@ function HomeCommandCentrePage() {
           },
           {
             label: "Orders today",
-            value: String(home.data?.count.today_order ?? 0),
-            detail: `${home.data?.count.total_order ?? 0} total`,
-            to: "/orders",
+            value: String(analytics.data?.current.today_orders ?? 0),
+            detail: `${orders.data?.length ?? 0} total`,
+            to: "/crm/orders",
             icon: ShoppingBag,
             tone: "text-success",
           },
@@ -191,7 +190,7 @@ function HomeCommandCentrePage() {
           {
             label: "Payments pending",
             value: String(pendingInvoices.length),
-            detail: inr(analytics.data?.revenue.outstanding ?? 0),
+            detail: inr(analytics.data?.current.balance_pending ?? 0),
             to: "/crm/invoices",
             icon: ReceiptText,
             tone: "text-warning",
@@ -590,12 +589,12 @@ function HomeCommandCentrePage() {
       <div className="grid items-start gap-4 lg:grid-cols-2 [&>section]:self-start">
         <Surface>
           <SurfaceTitle
-            eyebrow="Customer opportunities"
-            title="Upcoming celebrations"
-            detail={`${analytics.data?.totals.new_customers ?? 0} new customers in this period`}
+            eyebrow="Customer reminders"
+            title="Upcoming events & reminders"
+            detail={`${events.data?.length ?? 0} upcoming ${events.data?.length === 1 ? "event" : "events"}`}
             action={
               <Button variant="ghost" size="sm" asChild>
-                <Link to="/crm/customers">Customer dashboard</Link>
+                <Link to="/crm/customers">View all reminders <ArrowUpRight className="size-3.5" /></Link>
               </Button>
             }
           />
@@ -604,25 +603,32 @@ function HomeCommandCentrePage() {
               <CardSkeleton />
             </div>
           ) : !events.data?.length ? (
-            <EmptyState title="No events in the next 30 days" />
+            <EmptyState title="No upcoming events" description="You're all caught up." />
           ) : (
-            <div className="flex flex-wrap gap-px border-t border-border bg-border">
+            <div className="grid border-t border-border sm:grid-cols-2">
               {events.data.slice(0, 6).map((event) => (
                 <Link
                   key={event.id}
                   to={`/crm/customers/${event.customer_id}`}
-                  className="min-w-40 flex-1 bg-card p-4 hover:bg-surface-muted"
+                  className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 border-b border-border p-4 transition-colors hover:bg-surface-muted sm:odd:border-r"
                 >
-                  <span className="text-[10px] font-bold text-warning uppercase">
-                    {new Date(event.next_occurrence).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                    })}
+                  <span className="flex h-12 flex-col items-center justify-center rounded-lg bg-warning-soft text-warning">
+                    <strong className="text-base leading-none tabular">
+                      {new Date(event.next_occurrence).toLocaleDateString("en-IN", { day: "2-digit" })}
+                    </strong>
+                    <span className="mt-1 text-[9px] font-bold uppercase">
+                      {new Date(event.next_occurrence).toLocaleDateString("en-IN", { month: "short" })}
+                    </span>
                   </span>
-                  <Gift className="mt-4 size-4 text-warning" />
-                  <strong className="mt-2 block truncate text-sm">{event.event_type}</strong>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {event.customer_name}
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-warning">
+                      <Gift className="size-3.5 shrink-0" /> {event.event_type}
+                    </span>
+                    <strong className="mt-1 block truncate text-sm">{event.customer_name}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {event.notes || `${event.event_type} reminder`}
+                    </span>
+                    <span className="mt-1 block text-[10px] font-medium text-info">{event.status}</span>
                   </span>
                 </Link>
               ))}

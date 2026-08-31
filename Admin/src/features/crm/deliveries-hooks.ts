@@ -90,6 +90,7 @@ export type CrmDelivery = {
   porter_time: string | null;
   porter_amount: string | number | null;
   porter_notes: string | null;
+  tracking_link: string | null;
   external_platform: number | null;
   external_platform_name: string | null;
   external_delivery_person: number | null;
@@ -141,6 +142,7 @@ export function useDeliveryPersons() {
 function invalidateDelivery(queryClient: ReturnType<typeof useQueryClient>, id?: string | number) {
   queryClient.invalidateQueries({ queryKey: ["crm", "deliveries"] });
   queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "crm-analytics"] });
   if (id !== undefined) queryClient.invalidateQueries({ queryKey: deliveryKey(id) });
 }
 
@@ -165,6 +167,7 @@ export type DeliveryPatchInput = {
   porter_time?: string | null;
   porter_amount?: string | number | null;
   porter_notes?: string | null;
+  tracking_link?: string | null;
   delivery_person?: number | string | null;
   external_platform?: number | string | null;
   external_delivery_person?: number | string | null;

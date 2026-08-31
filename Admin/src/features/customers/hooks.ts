@@ -268,6 +268,7 @@ export function useSaveCustomerEvent() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["crm", "customer", variables.customer] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers", "upcoming-events"] });
     },
   });
 }
@@ -281,6 +282,7 @@ export function useDeleteCustomerEvent() {
     },
     onSuccess: (variables) => {
       queryClient.invalidateQueries({ queryKey: ["crm", "customer", variables.customer] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers", "upcoming-events"] });
     },
   });
 }
@@ -294,6 +296,7 @@ export function useCompleteCustomerEvent() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["crm", "customer", variables.customer] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers", "upcoming-events"] });
     },
   });
 }

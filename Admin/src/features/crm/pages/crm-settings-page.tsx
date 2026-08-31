@@ -43,6 +43,8 @@ const moduleGroups = [
       { type: "quotation_status", label: "Quotation Statuses", description: "Statuses used in the quotation workflow." },
       { type: "payment_term", label: "Payment Terms", description: "Reusable commercial payment terms." },
       { type: "quotation_validity", label: "Validity Options", description: "Standard quotation validity periods." },
+      { type: "sale_unit", label: "Units", description: "Units available for product quantities. kg and piece are provided by default." },
+      { type: "product_rate", label: "Rates", description: "Standard product and cake rate references for staff." },
       { type: "tax_setting", label: "GST Rates", description: "Editable GST percentages used by quotation items, such as 0% and 18%." },
     ],
   },

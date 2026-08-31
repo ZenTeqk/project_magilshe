@@ -13,11 +13,13 @@ import { inr } from "@/lib/data";
 import { type CrmCustomerSearchResult } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 
-const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: 1, rate: 0, gst_percentage: 0 };
+const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: 0, gst_percentage: 0 };
 const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank Transfer", "Other UPI", "Other"];
 
 function DirectOrderPage() {
+  const { units: saleUnits } = useSaleUnits();
   const navigate = useNavigate();
   const createOrder = useCreateDirectOrder();
 
@@ -61,6 +63,7 @@ function DirectOrderPage() {
     if (!/^[6-9]\d{9}$/.test(phoneDigits)) clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!customerName.trim()) clientErrors["customer_name"] = "Customer name is required.";
     if (!items.some((it) => it.item_name.trim() && it.rate > 0)) clientErrors["items"] = "Add at least one item with a name and rate.";
+    if (items.some((it) => it.item_name.trim() && it.quantity === "")) clientErrors["items"] = "Quantity is required for every item.";
     const advance = Number(advanceAmount);
     if (!advance || advance <= 0) clientErrors["advance_amount"] = "Collect the advance payment before confirming this order.";
     setErrors(clientErrors);
@@ -133,7 +136,7 @@ function DirectOrderPage() {
         <div className="scroll-slim overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr><th className="py-2 pr-2">Item</th><th className="py-2 pr-2">Flavour</th><th className="py-2 pr-2 w-20">Qty</th><th className="py-2 pr-2 w-28">Rate</th><th className="py-2 pr-2 w-24">GST%</th><th className="py-2 pr-2 w-28 text-right">Amount</th><th className="w-10" /></tr>
+              <tr><th className="py-2 pr-2">Item</th><th className="py-2 pr-2">Flavour</th><th className="py-2 pr-2 w-20">Qty</th><th className="py-2 pr-2 w-28">Unit</th><th className="py-2 pr-2 w-28">Rate</th><th className="py-2 pr-2 w-24">GST%</th><th className="py-2 pr-2 w-28 text-right">Amount</th><th className="w-10" /></tr>
             </thead>
             <tbody>
               {items.map((item, i) => {
@@ -142,7 +145,8 @@ function DirectOrderPage() {
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2"><Input value={item.item_name} onChange={(e) => setItem(i, { item_name: e.target.value })} /></td>
                     <td className="py-2 pr-2"><Input value={item.flavour ?? ""} onChange={(e) => setItem(i, { flavour: e.target.value })} /></td>
-                    <td className="py-2 pr-2"><Input type="number" min={1} value={item.quantity} onChange={(e) => setItem(i, { quantity: Number(e.target.value) || 1 })} /></td>
+                    <td className="py-2 pr-2"><Input type="number" min={quantityMin(item.unit_type)} step={quantityStep(item.unit_type)} value={item.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></td>
+                    <td className="py-2 pr-2"><Select value={item.unit_type} onValueChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent></Select></td>
                     <td className="py-2 pr-2"><Input type="number" min={0} value={item.rate} onChange={(e) => setItem(i, { rate: Number(e.target.value) || 0 })} /></td>
                     <td className="py-2 pr-2"><Input type="number" min={0} max={100} value={item.gst_percentage} onChange={(e) => setItem(i, { gst_percentage: Number(e.target.value) || 0 })} /></td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
@@ -162,7 +166,7 @@ function DirectOrderPage() {
             <div className="flex justify-between"><dt className="text-muted-foreground">Subtotal</dt><dd className="tabular font-medium">{inr(subtotal)}</dd></div>
             <div className="flex items-center justify-between"><dt className="text-muted-foreground">Discount</dt><Input type="number" min={0} className="h-8 w-32 text-right" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} /></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">GST</dt><dd className="tabular font-medium">{inr(gst)}</dd></div>
-            <div className="flex justify-between border-t border-border pt-2 text-base"><dt className="font-semibold">Grand Total</dt><dd className="tabular font-semibold">{inr(total)}</dd></div>
+            <div className="flex items-baseline justify-between border-t border-border pt-2 text-primary"><dt className="font-semibold">Grand Total</dt><dd className="tabular text-lg font-semibold">{inr(total)}</dd></div>
           </dl>
         </SectionCard>
 
