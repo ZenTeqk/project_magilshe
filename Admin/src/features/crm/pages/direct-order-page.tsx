@@ -13,7 +13,7 @@ import { inr } from "@/lib/data";
 import { type CrmCustomerSearchResult } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
-import { quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: 0, gst_percentage: 0 };
 const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank Transfer", "Other UPI", "Other"];
@@ -49,8 +49,8 @@ function DirectOrderPage() {
     setBillingAddress(primary ? [primary.address, primary.city, primary.pincode].filter(Boolean).join(", ") : billingAddress);
   };
 
-  const subtotal = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.rate) || 0), 0);
-  const gst = items.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.rate) || 0) * (Number(it.gst_percentage) || 0) / 100, 0);
+  const subtotal = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate).baseAmount, 0);
+  const gst = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage).gstAmount, 0);
   const total = Math.max(0, subtotal + gst - (Number(discountAmount) || 0));
 
   const setItem = (i: number, patch: Partial<DirectOrderItem>) => setItems((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -140,7 +140,7 @@ function DirectOrderPage() {
             </thead>
             <tbody>
               {items.map((item, i) => {
-                const amount = (Number(item.quantity) || 0) * (Number(item.rate) || 0) * (1 + (Number(item.gst_percentage) || 0) / 100);
+                const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2"><Input value={item.item_name} onChange={(e) => setItem(i, { item_name: e.target.value })} /></td>

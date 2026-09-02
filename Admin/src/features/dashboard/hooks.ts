@@ -33,7 +33,11 @@ export function useHomeDashboard() {
 
 export type CrmAnalyticsResponse = {
   range: { from_date: string; to_date: string };
-  current: { today_orders: number; balance_pending: number };
+  current: {
+    today_orders: number;
+    payments_pending: { count: number; amount: number };
+    balance_pending: number;
+  };
   overview: Record<string, Record<string, number>>;
   totals: {
     leads: number;

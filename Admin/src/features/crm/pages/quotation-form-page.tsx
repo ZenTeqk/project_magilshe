@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Download, Eye, Plus, Settings2, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Eye, Plus, Settings2, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -42,6 +42,7 @@ import {
   useQuotation,
   useCreateQuotation,
   useUpdateQuotation,
+  useGenerateQuotationVersion,
   useQuotationWorkflowAction,
   useConfirmQuotationOrder,
   useCompanyConfig,
@@ -52,7 +53,7 @@ import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-q
 import { buildQuotationPdf } from "@/features/crm/lib/quotation-pdf";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
-import { quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 
 const emptyItem: QuotationItem = {
   item_name: "",
@@ -103,6 +104,7 @@ function QuotationFormPage() {
 
   const createQuotation = useCreateQuotation();
   const updateQuotation = useUpdateQuotation();
+  const generateQuotationVersion = useGenerateQuotationVersion();
   const convertLead = useConvertLead();
   const workflowAction = useQuotationWorkflowAction();
   const confirmOrder = useConfirmQuotationOrder();
@@ -195,17 +197,8 @@ function QuotationFormPage() {
   };
 
   const totals = useMemo(() => {
-    const subtotal = form.items.reduce(
-      (sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.rate) || 0),
-      0,
-    );
-    const gst = form.items.reduce(
-      (sum, it) =>
-        sum +
-        ((Number(it.quantity) || 0) * (Number(it.rate) || 0) * (Number(it.gst_percentage) || 0)) /
-          100,
-      0,
-    );
+    const subtotal = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate).baseAmount, 0);
+    const gst = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage).gstAmount, 0);
     const discount = Number(form.discount_amount) || 0;
     const total = Math.max(0, subtotal + gst - discount);
     return { subtotal, gst, total };
@@ -217,7 +210,7 @@ function QuotationFormPage() {
   );
   const balance = Math.max(
     0,
-    (existingQuotation ? Number(existingQuotation.total_amount) : totals.total) - advanceAmount,
+    totals.total - advanceAmount,
   );
 
   const setItem = (index: number, patch: Partial<QuotationItem>) => {
@@ -262,6 +255,48 @@ function QuotationFormPage() {
       })),
   });
 
+  const normalizedDocumentData = (source: ReturnType<typeof buildPayload>) => ({
+    customer: source.customer ?? null,
+    customer_name: source.customer_name.trim(),
+    phone: source.phone.trim(),
+    email: source.email ?? null,
+    billing_address: source.billing_address ?? null,
+    shipping_same_as_billing: source.shipping_same_as_billing,
+    address: source.address ?? null,
+    occasion: source.occasion ?? null,
+    event_date: source.event_date ?? null,
+    valid_until: source.valid_until ?? null,
+    delivery_type: source.delivery_type ?? null,
+    delivery_date: source.delivery_date ?? null,
+    delivery_time: source.delivery_time ?? null,
+    special_instructions: source.special_instructions ?? null,
+    payment_terms: source.payment_terms ?? null,
+    notes: source.notes ?? null,
+    discount_amount: Number(source.discount_amount ?? 0),
+    items: source.items.map((item) => ({
+      item_name: item.item_name.trim(),
+      description: item.description?.trim() || null,
+      flavour: item.flavour?.trim() || null,
+      weight: item.weight === "" || item.weight == null ? null : Number(item.weight),
+      quantity: Number(item.quantity),
+      unit_type: item.unit_type,
+      rate: Number(item.rate),
+      gst_percentage: Number(item.gst_percentage),
+      sort_order: item.sort_order ?? 0,
+    })),
+  });
+
+  const generatedData = existingQuotation?.current_version?.snapshot;
+  const hasDocumentChanges = useMemo(() => {
+    if (!generatedData) return false;
+    const snapshotPayload = {
+      ...generatedData,
+      items: generatedData.items ?? [],
+    } as unknown as ReturnType<typeof buildPayload>;
+    return JSON.stringify(normalizedDocumentData(buildPayload())) !==
+      JSON.stringify(normalizedDocumentData(snapshotPayload));
+  }, [form, generatedData]);
+
   const save = async () => {
     const clientErrors: Record<string, string> = {};
     const phoneDigits = form.phone.replace(/\D/g, "");
@@ -277,11 +312,11 @@ function QuotationFormPage() {
     try {
       if (isEdit) {
         await updateQuotation.mutateAsync({ id: id!, payload: buildPayload() });
-        toast.success("Quotation updated");
+        toast.success("Changes saved", { description: "Create a new quotation version when the document is ready." });
       } else if (leadId) {
         const result = await convertLead.mutateAsync({ id: leadId });
         const created = result.data as unknown as { id: number };
-        await updateQuotation.mutateAsync({ id: created.id, payload: buildPayload() });
+        await generateQuotationVersion.mutateAsync({ id: created.id, payload: buildPayload() });
         toast.success("Quotation created");
         navigate(`/crm/quotations/${created.id}/edit`);
       } else {
@@ -297,6 +332,17 @@ function QuotationFormPage() {
           fieldErrors[key] = Array.isArray(value) ? String(value[0]) : String(value);
       setErrors(fieldErrors);
       toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? "Unable to save quotation.");
+    }
+  };
+
+  const generateVersion = async () => {
+    if (!id || !hasDocumentChanges) return;
+    try {
+      await generateQuotationVersion.mutateAsync({ id, payload: buildPayload() });
+      toast.success("Quotation updated", { description: "A new fixed PDF snapshot has been created." });
+    } catch (err: unknown) {
+      const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      toast.error(response ? Object.values(response).flat().join(" ") : "Unable to create quotation version.");
     }
   };
 
@@ -331,14 +377,19 @@ function QuotationFormPage() {
   };
 
   const previewPdf = async () => {
-    if (!existingQuotation) return;
-    const doc = await buildQuotationPdf(existingQuotation, company);
+    if (!generatedData) return;
+    const doc = await buildQuotationPdf(generatedData, company);
     window.open(doc.output("bloburl") as unknown as string, "_blank");
   };
   const downloadPdf = async () => {
-    if (!existingQuotation) return;
-    const doc = await buildQuotationPdf(existingQuotation, company);
+    if (!existingQuotation || !generatedData) return;
+    const doc = await buildQuotationPdf(generatedData, company);
     doc.save(`${existingQuotation.quotation_no.replaceAll("/", "-")}.pdf`);
+  };
+  const previewVersion = async (snapshot: typeof generatedData) => {
+    if (!snapshot) return;
+    const doc = await buildQuotationPdf(snapshot, company);
+    window.open(doc.output("bloburl") as unknown as string, "_blank");
   };
 
   if (isEdit && isLoading) {
@@ -379,7 +430,13 @@ function QuotationFormPage() {
                 </Button>
               </>
             )}
+            {isEdit && hasDocumentChanges && (
+              <Button onClick={generateVersion} disabled={generateQuotationVersion.isPending}>
+                {generateQuotationVersion.isPending ? "Creating…" : "Create New Quotation"}
+              </Button>
+            )}
             <Button
+              variant={isEdit ? "outline" : "default"}
               onClick={save}
               disabled={
                 createQuotation.isPending || updateQuotation.isPending || convertLead.isPending
@@ -393,6 +450,18 @@ function QuotationFormPage() {
 
       {isEdit && existingQuotation && (
         <SectionCard>
+          <div className={`mb-4 flex items-start gap-3 rounded-lg border p-3 ${hasDocumentChanges ? "border-warning/40 bg-warning/5" : "border-success/30 bg-success/5"}`}>
+            {hasDocumentChanges ? <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /> : <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" />}
+            <div className="flex-1">
+              <p className="font-semibold">{hasDocumentChanges ? "Changes detected" : "Quotation Created ✓"}</p>
+              <p className="text-sm text-muted-foreground">
+                {hasDocumentChanges
+                  ? "The quotation details differ from the generated document. The existing PDF remains unchanged until you create a new quotation."
+                  : `Version ${existingQuotation.current_version?.version_number ?? 1} is up to date.`}
+              </p>
+            </div>
+            {hasDocumentChanges && <Button size="sm" onClick={generateVersion} disabled={generateQuotationVersion.isPending}>Create New Quotation</Button>}
+          </div>
           <WorkflowTracker
             stages={["Quotation", "Sent", "Accepted", "Advance Received", "Order Confirmed"]}
             currentIndex={existingQuotation.order_id ? 4 : status === "Advance Received" ? 3 : status === "Accepted" ? 2 : status === "Sent" ? 1 : 0}
@@ -408,7 +477,7 @@ function QuotationFormPage() {
             </div>
             <div className="flex min-h-8 flex-wrap items-center justify-end gap-2">
               {status === "Draft" && (
-                <Button size="sm" onClick={() => runWorkflow("send")}>
+                <Button size="sm" onClick={() => runWorkflow("send")} disabled={hasDocumentChanges} title={hasDocumentChanges ? "Create a new quotation before sending" : undefined}>
                   Send
                 </Button>
               )}
@@ -600,10 +669,7 @@ function QuotationFormPage() {
             </thead>
             <tbody>
               {form.items.map((item, i) => {
-                const amount =
-                  (Number(item.quantity) || 0) *
-                  (Number(item.rate) || 0) *
-                  (1 + (Number(item.gst_percentage) || 0) / 100);
+                const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2">
@@ -785,7 +851,7 @@ function QuotationFormPage() {
             <div className="flex items-baseline justify-between border-t border-border pt-2 text-sm text-primary">
               <dt className="font-semibold">Grand Total</dt>
               <dd className="tabular text-lg font-semibold">
-                {inr(existingQuotation ? Number(existingQuotation.total_amount) : totals.total)}
+                {inr(totals.total)}
               </dd>
             </div>
             {isEdit && (
@@ -806,6 +872,19 @@ function QuotationFormPage() {
 
       {isEdit && existingQuotation && (
         <SectionCard title="History">
+          <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {existingQuotation.quotation_versions.map((version, index) => (
+              <div key={version.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div>
+                  <p className="text-sm font-semibold">Version {version.version_number}{index === 0 ? " · Current ✓" : ""}</p>
+                  <p className="text-xs text-muted-foreground">{new Date(version.generated_on).toLocaleString("en-IN")} · {inr(Number(version.total_amount))}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => previewVersion(version.snapshot)}>
+                  <Eye className="size-4" /> Preview
+                </Button>
+              </div>
+            ))}
+          </div>
           {existingQuotation.quotation_activities?.length ? (
             <ol className="relative space-y-4 border-l border-border pl-5">
               {existingQuotation.quotation_activities.map((a) => (

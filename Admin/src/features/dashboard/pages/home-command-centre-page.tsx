@@ -37,7 +37,6 @@ import { lastNDays } from "@/features/reports/reports-hooks";
 import { useCrmAnalytics } from "@/features/dashboard/hooks";
 import { useCrmDashboard } from "@/features/crm/hooks";
 import { displayOrderStatus, useOrders } from "@/features/crm/orders-hooks";
-import { useInvoices } from "@/features/crm/invoices-hooks";
 import { useDeliveries } from "@/features/crm/deliveries-hooks";
 import { useUpcomingCustomerEvents } from "@/features/customers/hooks";
 import { useCurrentAccess } from "@/features/auth/rbac";
@@ -61,14 +60,10 @@ function HomeCommandCentrePage() {
   const analytics = useCrmAnalytics(range);
   const crm = useCrmDashboard();
   const orders = useOrders();
-  const invoices = useInvoices();
   const deliveries = useDeliveries();
   const events = useUpcomingCustomerEvents(30);
   const attention = useAttentionCenter();
 
-  const pendingInvoices = (invoices.data ?? []).filter(
-    (invoice) => Number(invoice.balance_amount) > 0,
-  );
   const pendingDeliveries = (deliveries.data ?? []).filter((delivery) =>
     ["Pending", "Out for Delivery"].includes(delivery.delivery_status),
   );
@@ -189,8 +184,8 @@ function HomeCommandCentrePage() {
           },
           {
             label: "Payments pending",
-            value: String(pendingInvoices.length),
-            detail: inr(analytics.data?.current.balance_pending ?? 0),
+            value: String(analytics.data?.current.payments_pending.count ?? 0),
+            detail: inr(analytics.data?.current.payments_pending.amount ?? 0),
             to: "/crm/invoices",
             icon: ReceiptText,
             tone: "text-warning",
@@ -521,7 +516,7 @@ function HomeCommandCentrePage() {
           <div className="mt-5 grid grid-cols-2 border-t border-border">
             <Link to="/crm/invoices" className="p-4 hover:bg-surface-muted">
               <ReceiptText className="size-4 text-warning" />
-              <strong className="mt-2 block text-xl tabular">{pendingInvoices.length}</strong>
+              <strong className="mt-2 block text-xl tabular">{analytics.data?.current.payments_pending.count ?? 0}</strong>
               <span className="text-[10px] text-muted-foreground">Payments pending</span>
             </Link>
             <Link to="/crm/delivery" className="border-l border-border p-4 hover:bg-surface-muted">

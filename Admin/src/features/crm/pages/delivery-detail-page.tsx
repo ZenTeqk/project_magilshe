@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/shared/field";
 import { cn } from "@/lib/utils";
 import { inr } from "@/lib/data";
@@ -23,10 +22,7 @@ import {
 } from "@/features/crm/deliveries-hooks";
 import { MarkDamagedDialog } from "@/features/crm/components/mark-damaged-dialog";
 import { MarkFailedDialog } from "@/features/crm/components/mark-failed-dialog";
-import {
-  useDeliveryPersons, useDeliveryPlatforms, useExternalDeliveryPersons,
-  useSaveDeliveryPerson, useSaveExternalDeliveryPerson,
-} from "@/features/operations/operations-hooks";
+import { useDeliveryPersons, useDeliveryPlatforms } from "@/features/operations/operations-hooks";
 
 const deliveryTypeHints: Record<DeliveryType, string> = {
   "Customer Pickup": "Someone visits the bakery and collects the order.",
@@ -65,7 +61,6 @@ type FormState = {
   pickup_notes: string;
   delivery_person: string;
   external_platform: string;
-  external_delivery_person: string;
   delivery_location: string;
   delivery_notes: string;
   porter_id: string;
@@ -94,12 +89,11 @@ function toForm(d: CrmDelivery): FormState {
     pickup_notes: d.pickup_notes ?? "",
     delivery_person: d.delivery_person !== null ? String(d.delivery_person) : "",
     external_platform: d.external_platform !== null ? String(d.external_platform) : "",
-    external_delivery_person: d.external_delivery_person !== null ? String(d.external_delivery_person) : "",
     delivery_location: d.delivery_location ?? "",
     delivery_notes: d.delivery_notes ?? "",
     porter_id: d.porter_id ?? "",
-    porter_name: d.porter_name ?? "",
-    porter_contact: d.porter_contact ?? "",
+    porter_name: d.porter_name ?? d.external_person_name_snapshot ?? d.external_delivery_person_name ?? "",
+    porter_contact: d.porter_contact ?? d.external_person_phone_snapshot ?? "",
     porter_location: d.porter_location ?? "",
     porter_amount: d.porter_amount !== null && d.porter_amount !== undefined ? String(d.porter_amount) : "",
     porter_notes: d.porter_notes ?? "",
@@ -131,7 +125,6 @@ function toPatchPayload(id: string | number, form: FormState): DeliveryPatchInpu
     return {
       ...base,
       external_platform: form.external_platform || null,
-      external_delivery_person: form.external_delivery_person || null,
       porter_id: form.porter_id || null,
       porter_name: form.porter_name || null,
       porter_contact: form.porter_contact || null,
@@ -155,25 +148,21 @@ function DeliveryDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: delivery, isLoading } = useDelivery(id);
-  const { data: deliveryPersons } = useDeliveryPersons();
+  const {
+    data: deliveryPersons,
+    isLoading: deliveryPersonsLoading,
+    isError: deliveryPersonsError,
+    refetch: refetchDeliveryPersons,
+  } = useDeliveryPersons();
   const { data: deliveryPlatforms } = useDeliveryPlatforms();
-  const { data: externalDeliveryPersons } = useExternalDeliveryPersons();
 
   const updateDelivery = useUpdateDelivery();
-  const saveDeliveryPerson = useSaveDeliveryPerson();
-  const saveExternalDeliveryPerson = useSaveExternalDeliveryPerson();
   const workflowAction = useDeliveryWorkflowAction();
   const uploadDamageImages = useUploadDamageImages();
 
   const [form, setForm] = useState<FormState | null>(null);
   const [damageOpen, setDamageOpen] = useState(false);
   const [failedOpen, setFailedOpen] = useState(false);
-  const [staffSearch, setStaffSearch] = useState("");
-  const [porterSearch, setPorterSearch] = useState("");
-  const [newStaffOpen, setNewStaffOpen] = useState(false);
-  const [newPorterOpen, setNewPorterOpen] = useState(false);
-  const [newStaff, setNewStaff] = useState({ name: "", phone: "", email: "", address: "", service_area: "", notes: "" });
-  const [newPorter, setNewPorter] = useState({ name: "", phone: "", alternate_phone: "", vehicle_type: "", vehicle_number: "", service_area: "", notes: "" });
 
   useEffect(() => { if (delivery) setForm(toForm(delivery)); }, [delivery]);
 
@@ -184,7 +173,7 @@ function DeliveryDetailPage() {
   const startLabel = isPickup ? "Mark Picked Up" : "Start Delivery";
   const deliverLabel = isPickup ? "Mark Handed Over" : "Mark Delivered";
 
-  const busy = updateDelivery.isPending || workflowAction.isPending || uploadDamageImages.isPending || saveDeliveryPerson.isPending || saveExternalDeliveryPerson.isPending;
+  const busy = updateDelivery.isPending || workflowAction.isPending || uploadDamageImages.isPending;
 
   const change = (key: keyof FormState, value: string) => setForm((f) => (f ? { ...f, [key]: value } : f));
 
@@ -211,7 +200,6 @@ function DeliveryDetailPage() {
       return {
         ...current,
         delivery_type: deliveryType,
-        delivery_person: "",
         delivery_location: customerLocation,
       };
     }
@@ -220,11 +208,6 @@ function DeliveryDetailPage() {
       return {
         ...current,
         delivery_type: deliveryType,
-        external_platform: "",
-        external_delivery_person: "",
-        porter_id: "",
-        porter_name: "",
-        porter_contact: "",
         porter_location: customerLocation,
       };
     }
@@ -244,64 +227,18 @@ function DeliveryDetailPage() {
 
   const typeLocked = delivery.delivery_status !== "Pending";
 
-  const staffTerm = staffSearch.trim().toLocaleLowerCase();
-  const visibleStaff = (deliveryPersons ?? []).filter((person) =>
-    !staffTerm || `${person.name} ${person.phone ?? ""}`.toLocaleLowerCase().includes(staffTerm)
-  );
-  const porterTerm = porterSearch.trim().toLocaleLowerCase();
-  const visiblePorters = (externalDeliveryPersons ?? []).filter((person) =>
-    String(person.platform) === form.external_platform &&
-    (person.status || String(person.id) === form.external_delivery_person) &&
-    (!porterTerm || `${person.name} ${person.phone} ${person.partner_id}`.toLocaleLowerCase().includes(porterTerm))
+  const visibleStaff = (deliveryPersons ?? []).filter(
+    (person) => person.status || String(person.id) === form.delivery_person,
   );
   const selectedStaff = (deliveryPersons ?? []).find((person) => String(person.id) === form.delivery_person);
-  const selectedPorter = (externalDeliveryPersons ?? []).find((person) => String(person.id) === form.external_delivery_person);
 
   const save = () => updateDelivery.mutateAsync(toPatchPayload(delivery.id, form));
 
-  const commitNewStaff = async () => {
-    if (!newStaff.name.trim() || !newStaff.phone.trim()) {
-      toast.warning("Name and phone are required"); return;
-    }
-    const phone = newStaff.phone.replace(/\D/g, "");
-    const existing = (deliveryPersons ?? []).find((person) =>
-      person.phone?.replace(/\D/g, "") === phone ||
-      (person.name.trim().toLocaleLowerCase() === newStaff.name.trim().toLocaleLowerCase() && person.phone === newStaff.phone)
-    );
-    try {
-      const person = existing ?? (await saveDeliveryPerson.mutateAsync({ ...newStaff, status: true })).data;
-      const next = { ...form, delivery_person: String(person.id) };
-      setForm(next);
-      await updateDelivery.mutateAsync(toPatchPayload(delivery.id, next));
-      setNewStaffOpen(false);
-      setNewStaff({ name: "", phone: "", email: "", address: "", service_area: "", notes: "" });
-      toast.success(existing ? "Existing delivery person selected" : "Delivery person created and assigned");
-    } catch { toast.error("Delivery person could not be saved"); }
-  };
-
-  const commitNewPorter = async () => {
-    if (!form.external_platform || !newPorter.name.trim() || !newPorter.phone.trim()) {
-      toast.warning("Platform, name and phone are required"); return;
-    }
-    const phone = newPorter.phone.replace(/\D/g, "");
-    const existing = (externalDeliveryPersons ?? []).find((person) =>
-      person.phone.replace(/\D/g, "") === phone ||
-      (String(person.platform) === form.external_platform && person.name.trim().toLocaleLowerCase() === newPorter.name.trim().toLocaleLowerCase())
-    );
-    try {
-      const person = existing ?? await saveExternalDeliveryPerson.mutateAsync({
-        ...newPorter, platform: Number(form.external_platform), status: true,
-      });
-      const next = { ...form, external_delivery_person: String(person.id) };
-      setForm(next);
-      await updateDelivery.mutateAsync(toPatchPayload(delivery.id, next));
-      setNewPorterOpen(false);
-      setNewPorter({ name: "", phone: "", alternate_phone: "", vehicle_type: "", vehicle_number: "", service_area: "", notes: "" });
-      toast.success(existing ? "Existing porter selected" : "Porter created and assigned");
-    } catch { toast.error("Porter could not be saved"); }
-  };
-
   const saveOnly = async () => {
+    if (form.tracking_link) {
+      try { new URL(form.tracking_link); }
+      catch { toast.error("Enter a valid tracking URL, including https://"); return; }
+    }
     try { await save(); toast.success("Delivery details saved"); }
     catch (err: unknown) {
       const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
@@ -470,16 +407,26 @@ function DeliveryDetailPage() {
 
         {isMagilshe && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Field label="Search delivery people"><Input value={staffSearch} onChange={(event) => setStaffSearch(event.target.value)} placeholder="Search by name or phone" /></Field>
             <Field label="Delivery Person" required>
               <Select value={form.delivery_person} onValueChange={(v) => change("delivery_person", v)}>
-                <SelectTrigger><SelectValue placeholder="Select delivery staff" /></SelectTrigger>
-                <SelectContent>{visibleStaff.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.phone ? ` · ${p.phone}` : ""}</SelectItem>)}</SelectContent>
+                <SelectTrigger disabled={deliveryPersonsLoading || deliveryPersonsError}>
+                  <SelectValue placeholder={deliveryPersonsLoading ? "Loading delivery staff…" : "Select delivery staff"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {visibleStaff.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.phone ? ` · ${p.phone}` : ""}</SelectItem>)}
+                  {!deliveryPersonsLoading && !deliveryPersonsError && visibleStaff.length === 0 && (
+                    <div className="px-2 py-3 text-center text-sm text-muted-foreground">No delivery staff available</div>
+                  )}
+                </SelectContent>
               </Select>
+              {deliveryPersonsError && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-danger">
+                  <span>Delivery staff could not be loaded.</span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => refetchDeliveryPersons()}>Retry</Button>
+                </div>
+              )}
             </Field>
-            <Field label="Delivery Person Name"><Input readOnly value={selectedStaff?.name ?? delivery.delivery_person_name_snapshot ?? ""} /></Field>
-            <Field label="Delivery Person Contact Number"><Input readOnly value={selectedStaff?.phone ?? delivery.delivery_person_phone_snapshot ?? ""} /></Field>
-            <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => setNewStaffOpen(true)}><Plus className="size-4" /> Add new delivery person</Button></div>
+            <Field label="Contact Number"><Input readOnly value={selectedStaff?.phone ?? delivery.delivery_person_phone_snapshot ?? ""} /></Field>
             <Field label="Delivery location" required className="sm:col-span-2"><Input value={form.delivery_location} onChange={(e) => change("delivery_location", e.target.value)} /></Field>
             <Field label="Notes" className="sm:col-span-2"><Textarea rows={3} value={form.delivery_notes} onChange={(e) => change("delivery_notes", e.target.value)} /></Field>
           </div>
@@ -487,12 +434,9 @@ function DeliveryDetailPage() {
 
         {isPorter && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Field label="Platform" required><Select value={form.external_platform} onValueChange={(v) => { change("external_platform", v); change("external_delivery_person", ""); }}><SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger><SelectContent>{(deliveryPlatforms ?? []).filter((p) => p.status || String(p.id) === form.external_platform).map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Search porters"><Input value={porterSearch} onChange={(event) => setPorterSearch(event.target.value)} placeholder="Search by name, phone or Porter ID" /></Field>
-            <Field label="Delivery Person" required><Select value={form.external_delivery_person} onValueChange={(v) => change("external_delivery_person", v)}><SelectTrigger><SelectValue placeholder="Select delivery person" /></SelectTrigger><SelectContent>{visiblePorters.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name} · {p.phone} · {p.partner_id}</SelectItem>)}</SelectContent></Select></Field>
-            <Field label="Delivery Person Name"><Input readOnly value={selectedPorter?.name ?? delivery.external_person_name_snapshot ?? ""} /></Field>
-            <Field label="Delivery Person Contact Number"><Input readOnly value={selectedPorter?.phone ?? delivery.external_person_phone_snapshot ?? ""} /></Field>
-            <div className="sm:col-span-2"><Button type="button" variant="outline" size="sm" onClick={() => setNewPorterOpen(true)} disabled={!form.external_platform}><Plus className="size-4" /> Add new porter</Button></div>
+            <Field label="Platform" required><Select value={form.external_platform} onValueChange={(v) => change("external_platform", v)}><SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger><SelectContent>{(deliveryPlatforms ?? []).filter((p) => p.status || String(p.id) === form.external_platform).map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent></Select></Field>
+            <Field label="Delivery Person Name" required><Input placeholder="Enter name" value={form.porter_name} onChange={(e) => change("porter_name", e.target.value)} /></Field>
+            <Field label="Delivery Person Contact Number" required><Input inputMode="tel" placeholder="Enter contact number" value={form.porter_contact} onChange={(e) => change("porter_contact", e.target.value.replace(/\D/g, ""))} maxLength={15} /></Field>
             <Field label="Delivery location" required><Input value={form.porter_location} onChange={(e) => change("porter_location", e.target.value)} /></Field>
             <Field label="Delivery charge"><Input type="number" min={0} step={0.01} value={form.porter_amount} onChange={(e) => change("porter_amount", e.target.value)} /></Field>
             <Field label="Tracking link" className="sm:col-span-2"><Input type="url" placeholder="https://porter.in/track/xxxxx" value={form.tracking_link} onChange={(e) => change("tracking_link", e.target.value)} />{form.tracking_link && <a href={form.tracking_link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-medium text-primary hover:underline">Open tracking ↗</a>}</Field>
@@ -547,38 +491,6 @@ function DeliveryDetailPage() {
           <EmptyState title="No activity yet" description="Assignment, start, completion and workflow closure events will appear here." />
         )}
       </SectionCard>
-
-      <Dialog open={newStaffOpen} onOpenChange={setNewStaffOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader><DialogTitle>Add delivery person</DialogTitle></DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Name" required><Input value={newStaff.name} onChange={(event) => setNewStaff({ ...newStaff, name: event.target.value })} /></Field>
-            <Field label="Phone" required><Input value={newStaff.phone} onChange={(event) => setNewStaff({ ...newStaff, phone: event.target.value.replace(/\D/g, "") })} maxLength={15} /></Field>
-            <Field label="Email"><Input type="email" value={newStaff.email} onChange={(event) => setNewStaff({ ...newStaff, email: event.target.value })} /></Field>
-            <Field label="Service area"><Input value={newStaff.service_area} onChange={(event) => setNewStaff({ ...newStaff, service_area: event.target.value })} /></Field>
-            <Field label="Address" className="sm:col-span-2"><Textarea value={newStaff.address} onChange={(event) => setNewStaff({ ...newStaff, address: event.target.value })} /></Field>
-            <Field label="Notes" className="sm:col-span-2"><Textarea value={newStaff.notes} onChange={(event) => setNewStaff({ ...newStaff, notes: event.target.value })} /></Field>
-          </div>
-          <DialogFooter><Button onClick={commitNewStaff} disabled={busy}>Save and assign</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={newPorterOpen} onOpenChange={setNewPorterOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader><DialogTitle>Add porter</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">The selected platform will be linked to this reusable porter record.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Porter name" required><Input value={newPorter.name} onChange={(event) => setNewPorter({ ...newPorter, name: event.target.value })} /></Field>
-            <Field label="Phone" required><Input value={newPorter.phone} onChange={(event) => setNewPorter({ ...newPorter, phone: event.target.value.replace(/\D/g, "") })} maxLength={15} /></Field>
-            <Field label="Alternate phone"><Input value={newPorter.alternate_phone} onChange={(event) => setNewPorter({ ...newPorter, alternate_phone: event.target.value.replace(/\D/g, "") })} maxLength={15} /></Field>
-            <Field label="Vehicle type"><Input value={newPorter.vehicle_type} onChange={(event) => setNewPorter({ ...newPorter, vehicle_type: event.target.value })} /></Field>
-            <Field label="Vehicle number"><Input value={newPorter.vehicle_number} onChange={(event) => setNewPorter({ ...newPorter, vehicle_number: event.target.value })} /></Field>
-            <Field label="Service area"><Input value={newPorter.service_area} onChange={(event) => setNewPorter({ ...newPorter, service_area: event.target.value })} /></Field>
-            <Field label="Notes" className="sm:col-span-2"><Textarea value={newPorter.notes} onChange={(event) => setNewPorter({ ...newPorter, notes: event.target.value })} /></Field>
-          </div>
-          <DialogFooter><Button onClick={commitNewPorter} disabled={busy}>Save and assign</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <MarkDamagedDialog open={damageOpen} onOpenChange={setDamageOpen} busy={busy} onSubmit={submitDamage} />
       <MarkFailedDialog open={failedOpen} onOpenChange={setFailedOpen} busy={busy} onSubmit={submitFailure} />

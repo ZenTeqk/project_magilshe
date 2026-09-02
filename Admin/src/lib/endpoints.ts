@@ -43,6 +43,7 @@ export const endpoints = {
     quotationCustomerSearch: "crm/quotations/customer-search/",
     quotationSaveCustomerAddress: "crm/quotations/save-customer-address/",
     quotation: (id: string | number) => `crm/quotations/${id}/`,
+    quotationGenerateVersion: (id: string | number) => `crm/quotations/${id}/generate-version/`,
     quotationWorkflowAction: (id: string | number) => `crm/quotations/${id}/workflow-action/`,
     quotationRecordPayment: (id: string | number) => `crm/quotations/${id}/record-payment/`,
     quotationConfirmOrder: (id: string | number) => `crm/quotations/${id}/confirm-order/`,

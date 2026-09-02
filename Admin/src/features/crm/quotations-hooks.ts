@@ -44,6 +44,9 @@ export type QuotationItem = {
   rate: string | number;
   gst_percentage: string | number;
   sort_order?: number;
+  subtotal?: string | number;
+  gst_amount?: string | number;
+  amount?: string | number;
 };
 
 export type QuotationPayment = {
@@ -118,6 +121,16 @@ export type Quotation = QuotationListItem & {
   quotation_activities: QuotationActivity[];
   lead_details: Lead | null;
   order_id: number | null;
+  current_version: QuotationVersion | null;
+  quotation_versions: QuotationVersion[];
+};
+
+export type QuotationVersion = {
+  id: number;
+  version_number: number;
+  snapshot: Quotation;
+  total_amount: string | number;
+  generated_on: string;
 };
 
 export type QuotationListParams = { search?: string; status?: string };
@@ -186,6 +199,20 @@ export function useUpdateQuotation() {
       return data;
     },
     onSuccess: (data) => invalidateQuotation(queryClient, data.id),
+  });
+}
+
+export function useGenerateQuotationVersion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: string | number; payload: Record<string, unknown> }) => {
+      const { data } = await apiClient.post<Quotation>(endpoints.crm.quotationGenerateVersion(id), payload);
+      return data;
+    },
+    onSuccess: (data) => {
+      invalidateQuotation(queryClient, data.id);
+      queryClient.setQueryData(quotationKey(data.id), data);
+    },
   });
 }
 

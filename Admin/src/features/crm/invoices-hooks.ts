@@ -36,12 +36,14 @@ export type CrmInvoice = {
   customer: number | null;
   customer_name: string;
   phone: string;
+  email: string | null;
   address: string | null;
   delivery_address: string | null;
   delivery_date: string | null;
   event_date: string | null;
   subtotal: string | number;
   gst_amount: string | number;
+  discount_amount: string | number;
   total_amount: string | number;
   amount_paid: string | number;
   balance_amount: string | number;

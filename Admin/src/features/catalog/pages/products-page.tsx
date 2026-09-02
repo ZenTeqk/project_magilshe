@@ -135,6 +135,18 @@ function ProductsPage() {
     }
   };
 
+  const catalogUnitName = (name: string) => {
+    const normalized = name.trim().toLowerCase();
+    // Preserve existing catalog foreign keys while presenting the only supported
+    // weight choice with its canonical user-facing label.
+    if (["kg", "kilogram", "kilograms", "weight", "gram", "grams", "g"].includes(normalized)) return "kg";
+    if (["piece", "pieces", "pc", "pcs"].includes(normalized)) return "piece";
+    return null;
+  };
+  const supportedUnits = (["kg", "piece"] as const).flatMap((name) => {
+    const unit = (units ?? []).find((candidate) => catalogUnitName(candidate.name) === name);
+    return unit ? [{ unit, label: name }] : [];
+  });
   const availableSubUnits = (subUnits ?? []).filter((u) => editor?.unit && u.unit && String(u.unit.id) === editor.unit);
 
   return (
@@ -189,7 +201,7 @@ function ProductsPage() {
               <Field label="Unit">
                 <Select value={editor.unit} onValueChange={(v) => setEditor({ ...editor, unit: v })}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{(units ?? []).map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{supportedUnits.map(({ unit, label }) => <SelectItem key={unit.id} value={String(unit.id)}>{label}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label="SEO text"><Input value={editor.seo_text} onChange={(e) => setEditor({ ...editor, seo_text: e.target.value })} /></Field>

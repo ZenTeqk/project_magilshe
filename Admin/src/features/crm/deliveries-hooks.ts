@@ -170,7 +170,6 @@ export type DeliveryPatchInput = {
   tracking_link?: string | null;
   delivery_person?: number | string | null;
   external_platform?: number | string | null;
-  external_delivery_person?: number | string | null;
   delivery_time?: string | null;
   delivery_location?: string | null;
   delivery_notes?: string | null;
