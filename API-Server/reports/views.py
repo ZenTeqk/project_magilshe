@@ -58,6 +58,7 @@ from occasion.models import Occasion
 from occasion.serializers import occasion_serializer
 from crm.models import CRMDelivery, CRMInvoice, CRMOrder, CRMOrderItem, Lead, LeadActivity, Quotation, QuotationActivity, QuotationPayment
 from customer.models import Customer
+from customer.rbac import HasRBACPermission
 
 
 def _crm_report_dates(request):
@@ -77,7 +78,11 @@ def _crm_status_counts(queryset, field="status"):
 class CRMAnalyticsReport(APIView):
     """Read-only management snapshot assembled from existing CRM documents."""
 
-    permission_classes = [IsAuthenticated]
+    # Explicit, not inherited from DRF defaults: RBACJWTAuthentication no longer
+    # enforces permissions itself (that moved to HasRBACPermission below), so a
+    # bare IsAuthenticated override here would let any logged-in customer read
+    # CRM leads/quotations/revenue/PII. Must include HasRBACPermission.
+    permission_classes = [IsAuthenticated, HasRBACPermission]
 
     def get(self, request):
         start, end = _crm_report_dates(request)
@@ -116,8 +121,21 @@ class CRMAnalyticsReport(APIView):
         collected = payments.aggregate(value=Sum("amount"))["value"] or Decimal("0")
         advance = payments.filter(Q(quotation__crm_order__isnull=True) | Q(created_on__lte=F("quotation__crm_order__confirmed_on"))).aggregate(value=Sum("amount"))["value"] or Decimal("0")
         outstanding = invoices.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
-        today_orders = CRMOrder.objects.filter(confirmed_on__date=timezone.localdate()).count()
-        balance_pending = CRMInvoice.objects.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
+        # These are current operational metrics, deliberately independent of
+        # the selected reporting range. CRMOrder is the financial source of
+        # truth before and after an invoice exists; payment endpoints keep
+        # advance_paid synchronized as payments are recorded.
+        today_orders = CRMOrder.objects.filter(
+            confirmed_on__date=timezone.localdate()
+        ).count()
+        pending_orders = CRMOrder.objects.exclude(status="Cancelled").annotate(
+            balance_due=F("total_amount") - F("advance_paid")
+        ).filter(balance_due__gt=0)
+        payments_pending_amount = pending_orders.aggregate(value=Sum("balance_due"))["value"] or Decimal("0")
+        payments_pending = {
+            "count": pending_orders.count(),
+            "amount": Decimal(payments_pending_amount).quantize(Decimal("0.01")),
+        }
         revenue_trend = list(payments.annotate(day=TruncDate("payment_date")).values("day").annotate(value=Sum("amount")).order_by("day"))
         customer_rows = list(orders.values("phone", "customer_name").annotate(total_orders=Count("id"), total_spend=Sum("total_amount"), last_order=Max("confirmed_on")).order_by("-total_spend")[:25])
         product_rows = list(CRMOrderItem.objects.filter(order__in=orders).values("item_name", "flavour", "weight").annotate(quantity=Sum("quantity"), revenue=Sum("amount"), orders=Count("order", distinct=True)).order_by("-quantity")[:20])
@@ -141,7 +159,12 @@ class CRMAnalyticsReport(APIView):
 
         return Response({
             "range": {"from_date": start, "to_date": end},
-            "current": {"today_orders": today_orders, "balance_pending": balance_pending},
+            "current": {
+                "today_orders": today_orders,
+                "payments_pending": payments_pending,
+                # Backward-compatible alias for older analytics consumers.
+                "balance_pending": payments_pending["amount"],
+            },
             "overview": {"leads": _crm_status_counts(leads), "quotations": _crm_status_counts(quotations), "orders": _crm_status_counts(orders), "invoices": _crm_status_counts(invoices), "deliveries": _crm_status_counts(deliveries, field="delivery_status")},
             "totals": {"leads": leads.count(), "quotations": quotations.count(), "orders": orders.count(), "invoices": invoices.count(), "deliveries": deliveries.count(), "new_customers": Customer.objects.filter(date_joined__date__range=(start, end)).count()},
             "revenue": {"collected": collected, "outstanding": outstanding, "advance_collected": advance, "balance_collected": max(collected - advance, Decimal("0")), "average_order": orders.aggregate(value=Avg("total_amount"))["value"] or 0, "trend": revenue_trend},

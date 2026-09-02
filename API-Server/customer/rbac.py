@@ -25,10 +25,21 @@ def all_permission_codes():
     return [f"{resource}.{action}" for resource, (_, _, actions) in PERMISSION_DEFINITIONS.items() for action in actions]
 
 
+def is_super_admin(user):
+    """Single source of truth for unrestricted administrative access."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return bool(
+        user.role_id and user.role.is_active and user.role.is_super_admin
+    )
+
+
 def effective_permissions(user):
     if not user or not user.is_authenticated:
         return set()
-    if user.is_superuser or (user.role_id and user.role.is_active and user.role.is_super_admin):
+    if is_super_admin(user):
         return set(all_permission_codes())
     if not user.is_staff or not user.role_id or not user.role.is_active:
         return set()
@@ -37,6 +48,10 @@ def effective_permissions(user):
 
 def required_permission(request, view):
     path = request.path.strip("/")
+    # CRM option values populate operational form dropdowns. Reading them must
+    # not require access to the Settings page; mutations remain configure-only.
+    if path.startswith("crm/options") and request.method == "GET":
+        return None
     action = getattr(view, "action", None)
     method_action = {"GET": "view", "POST": "create", "PUT": "edit", "PATCH": "edit", "DELETE": "delete"}.get(request.method, "view")
     custom = {
@@ -75,6 +90,8 @@ class HasRBACPermission(BasePermission):
     message = "You do not have permission to perform this action."
 
     def has_permission(self, request, view):
+        if is_super_admin(request.user):
+            return True
         code = required_permission(request, view)
         if code is None:
             return True

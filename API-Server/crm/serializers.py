@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 import uuid
 
 from rest_framework import serializers
@@ -10,7 +11,7 @@ from cakery.file_upload_to_aws import put_image_to_s3
 from customer.models import Customer, CustomerAddress
 from .models import (
     CRMOption, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation,
-    CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment,
+    CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment, QuotationVersion,
 )
 from .recurring_events import recurring_event_status
 from .uploads import validate_image_upload
@@ -23,12 +24,14 @@ class CRMOptionSerializer(serializers.ModelSerializer):
 
 
 def validate_sale_quantity(unit_type, quantity):
-    """Validate the existing unit field against CRM quotation settings."""
+    """Defaults are kg/piece; active CRM settings may add more sale units."""
     unit_type = str(unit_type or "").strip()
-    if unit_type not in ("kg", "piece") and not CRMOption.objects.filter(
-        option_type="sale_unit", name=unit_type, is_active=True
-    ).exists():
-        raise serializers.ValidationError({"unit_type": "Select an active unit from Quotation Settings."})
+    blocked_aliases = {"gram", "grams", "g"}
+    configured = CRMOption.objects.filter(
+        option_type="sale_unit", name__iexact=unit_type, is_active=True
+    ).exists()
+    if unit_type.casefold() in blocked_aliases or (unit_type not in ("kg", "piece") and not configured):
+        raise serializers.ValidationError({"unit_type": "Select kg, piece, or an active unit from CRM Settings."})
     if quantity is None:
         return
     if unit_type == "kg" and quantity < 0.5:
@@ -370,6 +373,8 @@ class QuotationSerializer(serializers.ModelSerializer):
     quotation_activities = QuotationActivitySerializer(source="activities", many=True, read_only=True)
     items = QuotationItemSerializer(many=True, required=False)
     order_id = serializers.IntegerField(source="crm_order.id", read_only=True, allow_null=True)
+    current_version = serializers.SerializerMethodField()
+    quotation_versions = serializers.SerializerMethodField()
 
     class Meta:
         model = Quotation
@@ -384,6 +389,7 @@ class QuotationSerializer(serializers.ModelSerializer):
             "updated_on", "payments", "quotation_activities", "items", "customer_type",
             "selected_address", "occasion", "delivery_date", "delivery_time",
             "delivery_type", "special_instructions", "discount_amount", "sales_staff", "order_id",
+            "current_version", "quotation_versions",
         )
         read_only_fields = (
             "quotation_no", "lead", "subtotal", "gst_amount",
@@ -413,6 +419,23 @@ class QuotationSerializer(serializers.ModelSerializer):
         if not data.get("billing_address"):
             data["billing_address"] = data.get("address")
         return data
+
+    def get_current_version(self, instance):
+        version = instance.versions.first()
+        if not version:
+            return None
+        return {
+            "id": version.id, "version_number": version.version_number,
+            "snapshot": version.snapshot, "total_amount": str(version.total_amount),
+            "generated_on": version.generated_on,
+        }
+
+    def get_quotation_versions(self, instance):
+        return [{
+            "id": version.id, "version_number": version.version_number,
+            "snapshot": version.snapshot, "total_amount": str(version.total_amount),
+            "generated_on": version.generated_on,
+        } for version in instance.versions.all()]
 
     def validate_phone(self, value):
         if value in (None, ""):
@@ -504,6 +527,22 @@ class QuotationSerializer(serializers.ModelSerializer):
         return instance
 
 
+def create_quotation_version(quotation, user=None):
+    """Persist the exact API representation used by the quotation PDF."""
+    quotation.refresh_from_db()
+    snapshot = dict(QuotationSerializer(quotation).data)
+    snapshot.pop("current_version", None)
+    snapshot.pop("quotation_versions", None)
+    latest = quotation.versions.order_by("-version_number").first()
+    return QuotationVersion.objects.create(
+        quotation=quotation,
+        version_number=(latest.version_number + 1) if latest else 1,
+        snapshot=snapshot,
+        total_amount=quotation.total_amount,
+        generated_by=user,
+    )
+
+
 class QuotationListSerializer(serializers.ModelSerializer):
     """Compact serializer for fast quotation tables; detail APIs stay unchanged."""
     lead_no = serializers.CharField(source="lead.lead_no", read_only=True, allow_null=True)
@@ -518,9 +557,14 @@ class QuotationListSerializer(serializers.ModelSerializer):
         )
 
 class CRMOrderItemSerializer(serializers.ModelSerializer):
+    amount = serializers.SerializerMethodField()
+
     class Meta:
         model = CRMOrderItem
         fields = "__all__"
+
+    def get_amount(self, obj):
+        return (Decimal(obj.quantity) * Decimal(obj.rate)).quantize(Decimal("0.01"))
 
     def validate(self, attrs):
         unit_type = attrs.get("unit_type", self.instance.unit_type if self.instance else "kg")
@@ -572,6 +616,11 @@ class CRMInvoiceSerializer(serializers.ModelSerializer):
     delivery_date = serializers.DateField(source="order.delivery_date", read_only=True)
     payments = QuotationPaymentSerializer(source="order.quotation.payments", many=True, read_only=True)
     timeline = QuotationActivitySerializer(source="order.quotation.activities", many=True, read_only=True)
+    email = serializers.EmailField(source="customer.email", read_only=True, allow_null=True)
+    discount_amount = serializers.DecimalField(
+        source="order.quotation.discount_amount", max_digits=12, decimal_places=2,
+        read_only=True,
+    )
 
     class Meta:
         model = CRMInvoice
@@ -641,40 +690,62 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Select an address saved for this delivery's customer.")
         return address
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Only enforce type-specific requirements when this request is actually
+        # confirming a delivery_type or touching that type's assignment fields --
+        # not on unrelated partial updates (e.g. selecting a customer_address)
+        # against a record whose persisted delivery_type happens to need them.
+        magilshe_fields = ("delivery_person",)
+        porter_fields = ("external_delivery_person", "external_platform", "porter_name", "porter_contact")
+        touches_assignment = "delivery_type" in attrs or any(
+            field in attrs for field in magilshe_fields + porter_fields
+        )
+        if not touches_assignment:
+            return attrs
+        delivery_type = attrs.get(
+            "delivery_type", self.instance.delivery_type if self.instance else None
+        )
+        if delivery_type == "Magilshe Delivery":
+            person = attrs.get(
+                "delivery_person", self.instance.delivery_person if self.instance else None
+            )
+            if not person:
+                raise serializers.ValidationError(
+                    {"delivery_person": "Select an existing Magilshe delivery staff member."}
+                )
+            if not person.status and (
+                not self.instance or person.pk != self.instance.delivery_person_id
+            ):
+                raise serializers.ValidationError(
+                    {"delivery_person": "Select an active Magilshe delivery staff member."}
+                )
+        elif delivery_type == "Porter Delivery":
+            if attrs.get("external_delivery_person") is not None:
+                raise serializers.ValidationError({
+                    "external_delivery_person": (
+                        "Enter this delivery person's name and contact directly; "
+                        "do not select a permanent delivery-person record."
+                    )
+                })
+            required = {
+                "external_platform": "Select a delivery platform.",
+                "porter_name": "Enter the delivery person's name.",
+                "porter_contact": "Enter the delivery person's contact number.",
+            }
+            errors = {}
+            for field, message in required.items():
+                value = attrs.get(field, getattr(self.instance, field, None) if self.instance else None)
+                if not value or (isinstance(value, str) and not value.strip()):
+                    errors[field] = message
+            if errors:
+                raise serializers.ValidationError(errors)
+        return attrs
+
     def update(self, instance, validated_data):
         delivery_type = validated_data.get("delivery_type", instance.delivery_type)
-        if delivery_type == "Customer Pickup":
-            validated_data.update({
-                "delivery_person": None, "delivery_time": None, "delivery_location": None,
-                "delivery_notes": None, "delivery_person_name_snapshot": None,
-                "delivery_person_phone_snapshot": None, "external_platform": None,
-                "external_delivery_person": None, "porter_id": None, "porter_name": None,
-                "porter_contact": None, "porter_location": None, "porter_time": None,
-                "porter_amount": None, "porter_notes": None,
-                "tracking_link": None,
-                "external_platform_name_snapshot": None, "external_person_name_snapshot": None,
-                "external_person_phone_snapshot": None,
-            })
-        elif delivery_type == "Magilshe Delivery":
-            validated_data.update({
-                "pickup_person_type": None, "pickup_person_relationship": None,
-                "pickup_person_name": None, "pickup_contact": None, "pickup_time": None,
-                "pickup_location": None, "pickup_notes": None, "external_platform": None,
-                "external_delivery_person": None, "porter_id": None, "porter_name": None,
-                "porter_contact": None, "porter_location": None, "porter_time": None,
-                "porter_amount": None, "porter_notes": None,
-                "tracking_link": None,
-                "external_platform_name_snapshot": None, "external_person_name_snapshot": None,
-                "external_person_phone_snapshot": None,
-            })
-        else:
-            validated_data.update({
-                "pickup_person_type": None, "pickup_person_relationship": None,
-                "pickup_person_name": None, "pickup_contact": None, "pickup_time": None,
-                "pickup_location": None, "pickup_notes": None, "delivery_person": None,
-                "delivery_time": None, "delivery_location": None, "delivery_notes": None,
-                "delivery_person_name_snapshot": None, "delivery_person_phone_snapshot": None,
-            })
+        # Delivery types have separate field sets. Keep inactive values so a
+        # temporary type switch cannot destroy an existing valid assignment.
         address = validated_data.get("customer_address")
         if address and address.pk != instance.customer_address_id:
             customer = instance.order.customer
@@ -687,19 +758,15 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
             elif delivery_type == "Magilshe Delivery":
                 validated_data["delivery_location"] = location
         person = validated_data.get("delivery_person")
-        external_person = validated_data.get("external_delivery_person")
-        platform = validated_data.get("external_platform") or (external_person.platform if external_person else None)
+        platform = validated_data.get("external_platform")
         if delivery_type == "Magilshe Delivery" and person:
             validated_data["delivery_person_name_snapshot"] = person.name
             validated_data["delivery_person_phone_snapshot"] = person.phone
-        if delivery_type == "Porter Delivery" and external_person:
-            validated_data.update({
-                "external_platform": platform,
-                "external_platform_name_snapshot": platform.name if platform else None,
-                "external_person_name_snapshot": external_person.name,
-                "external_person_phone_snapshot": external_person.phone,
-                "porter_id": external_person.partner_id,
-                "porter_name": external_person.name,
-                "porter_contact": external_person.phone,
-            })
+        if delivery_type == "Porter Delivery":
+            if platform:
+                validated_data["external_platform_name_snapshot"] = platform.name
+            if "porter_name" in validated_data:
+                validated_data["external_person_name_snapshot"] = validated_data["porter_name"]
+            if "porter_contact" in validated_data:
+                validated_data["external_person_phone_snapshot"] = validated_data["porter_contact"]
         return super().update(instance, validated_data)

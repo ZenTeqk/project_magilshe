@@ -241,15 +241,41 @@ class QuotationItem(models.Model):
 
     @property
     def subtotal(self):
-        return (Decimal(self.quantity) * self.rate).quantize(Decimal("0.01"))
+        return (Decimal(self.quantity) * Decimal(self.rate)).quantize(Decimal("0.01"))
 
     @property
     def gst_amount(self):
-        return (self.subtotal * self.gst_percentage / Decimal("100")).quantize(Decimal("0.01"))
+        return (self.subtotal * Decimal(self.gst_percentage) / Decimal("100")).quantize(Decimal("0.01"))
 
     @property
     def amount(self):
-        return self.subtotal + self.gst_amount
+        # Line amount is unit-independent quantity × rate. GST is exposed
+        # separately and included only when calculating document totals.
+        return self.subtotal
+
+
+class QuotationVersion(models.Model):
+    """Immutable commercial document snapshot created only on explicit generation."""
+    quotation = models.ForeignKey(
+        Quotation, on_delete=models.PROTECT, related_name="versions"
+    )
+    version_number = models.PositiveIntegerField()
+    snapshot = models.JSONField()
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="generated_crm_quotation_versions",
+    )
+    generated_on = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-version_number",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("quotation", "version_number"),
+                name="unique_crm_quotation_version",
+            )
+        ]
 
 
 class QuotationSequence(models.Model):

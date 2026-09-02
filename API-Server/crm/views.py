@@ -26,6 +26,7 @@ from .serializers import (
     CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer,
     CustomerRecurringEventSerializer, LeadReferenceImageSerializer, LeadSerializer,
     QuotationListSerializer, QuotationPaymentSerializer, QuotationSerializer, CRMCustomerUpdateSerializer,
+    create_quotation_version,
 )
 
 
@@ -303,6 +304,9 @@ class LeadViewSet(viewsets.ModelViewSet):
                 lead=lead, action="Quotation Created", staff=request.user,
                 description=quotation.quotation_no,
             )
+            quotation.calculate_totals()
+            quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
+            create_quotation_version(quotation, request.user)
         return Response({
             "message": "Quotation created." if created else "Quotation already exists.",
             "data": QuotationSerializer(quotation).data,
@@ -673,7 +677,7 @@ def _confirm_quotation_order(quotation, user):
 
 class QuotationViewSet(viewsets.ModelViewSet):
     serializer_class = QuotationSerializer
-    queryset = Quotation.objects.select_related("lead", "customer", "cake").all()
+    queryset = Quotation.objects.select_related("lead", "customer", "cake").prefetch_related("versions").all()
 
     def get_serializer_class(self):
         return QuotationListSerializer if self.action == "list" else QuotationSerializer
@@ -688,6 +692,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
             quotation=quotation, action="Quotation Created",
             description="Manual quotation", staff=self.request.user,
         )
+        create_quotation_version(quotation, self.request.user)
 
     def perform_update(self, serializer):
         previous = serializer.instance.status
@@ -702,6 +707,21 @@ class QuotationViewSet(viewsets.ModelViewSet):
                 quotation=quotation, action=f"Quotation {quotation.status}",
                 staff=self.request.user,
             )
+
+    @action(detail=True, methods=["post"], url_path="generate-version")
+    def generate_version(self, request, pk=None):
+        """Validate/save the edited quotation and explicitly freeze a new document version."""
+        with transaction.atomic():
+            quotation = Quotation.objects.select_for_update().get(pk=self.get_object().pk)
+            serializer = self.get_serializer(quotation, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            quotation = serializer.save()
+            version = create_quotation_version(quotation, request.user)
+            QuotationActivity.objects.create(
+                quotation=quotation, action="Quotation Generated",
+                description=f"Version {version.version_number}", staff=request.user,
+            )
+        return Response(self.get_serializer(quotation).data)
 
     @action(detail=False, methods=["get"])
     def pending(self, request):
@@ -1138,7 +1158,7 @@ def _missing_delivery_fields(delivery):
             checks.append(("pickup_person_relationship", delivery.pickup_person_relationship))
     elif delivery.delivery_type == "Porter Delivery":
         checks = [
-            ("porter_id", delivery.porter_id),
+            ("external_platform", delivery.external_platform_id),
             ("porter_name", delivery.porter_name),
             ("porter_contact", delivery.porter_contact),
             ("porter_location", delivery.porter_location),

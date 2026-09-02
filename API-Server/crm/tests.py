@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
 from django.test import SimpleTestCase, TestCase
@@ -8,9 +9,53 @@ from django.contrib.auth import get_user_model
 from customer.models import CustomerAddress
 from django.utils import timezone
 from rest_framework.test import APIClient
-from .models import CRMDelivery, CRMInvoice, CRMOrder, CustomerRecurringEvent, Lead, LeadReferenceImage, Quotation, QuotationPayment
-from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer
+from .models import CRMDelivery, CRMInvoice, CRMOption, CRMOrder, CustomerRecurringEvent, Lead, LeadReferenceImage, Quotation, QuotationItem, QuotationPayment, QuotationVersion
+from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer, create_quotation_version
 from .uploads import validate_image_upload
+
+
+class QuotationVersionSnapshotTests(TestCase):
+    def test_edit_preserves_generated_snapshot_until_explicit_regeneration(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-version-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Snapshot Customer", phone="9876543210",
+            cake_type="Custom Cake", quantity=2, rate="500.00",
+        )
+        QuotationItem.objects.create(
+            quotation=quotation, item_name="Custom Cake", quantity=2,
+            unit_type="piece", rate="500.00", gst_percentage=0,
+        )
+        quotation.calculate_totals()
+        quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
+        version_one = create_quotation_version(quotation, user)
+
+        edit = client.patch(
+            f"/crm/quotations/{quotation.id}/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 5,
+                        "unit_type": "piece", "rate": 500, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(edit.status_code, 200)
+        self.assertEqual(edit.data["total_amount"], "2500.00")
+        version_one.refresh_from_db()
+        self.assertEqual(version_one.snapshot["total_amount"], "1000.00")
+        self.assertEqual(version_one.snapshot["items"][0]["quantity"], "2.000")
+        self.assertEqual(version_one.snapshot["items"][0]["amount"], "1000.00")
+        self.assertEqual(QuotationVersion.objects.filter(quotation=quotation).count(), 1)
+
+        regenerate = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 5,
+                        "unit_type": "piece", "rate": 500, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(regenerate.status_code, 200)
+        self.assertEqual(regenerate.data["current_version"]["version_number"], 2)
+        self.assertEqual(regenerate.data["current_version"]["snapshot"]["total_amount"], "2500.00")
+        self.assertEqual(QuotationVersion.objects.filter(quotation=quotation).count(), 2)
 
 
 class QuotationAdvanceActionStateTests(TestCase):
@@ -36,7 +81,7 @@ class QuotationAdvanceActionStateTests(TestCase):
 
 
 class DeliveryAssignmentSnapshotTests(TestCase):
-    def test_internal_and_porter_assignments_persist_master_references_and_snapshots(self):
+    def test_internal_staff_reference_and_manual_porter_details_persist(self):
         from delivery_person.models import DeliveryPerson, DeliveryPlatform, ExternalDeliveryPerson
         quotation = Quotation.objects.create(
             customer_name="Delivery Customer", phone="9876543288", cake_type="Cake",
@@ -58,19 +103,20 @@ class DeliveryAssignmentSnapshotTests(TestCase):
         self.assertEqual(delivery.delivery_person_phone_snapshot, "9000000101")
 
         platform = DeliveryPlatform.objects.create(name="Porter")
-        porter = ExternalDeliveryPerson.objects.create(
-            platform=platform, name="Porter Rider", phone="9000000102",
-        )
+        existing_external_count = ExternalDeliveryPerson.objects.count()
         external = CRMDeliverySerializer(delivery, data={
             "delivery_type": "Porter Delivery", "external_platform": platform.id,
-            "external_delivery_person": porter.id,
+            "porter_name": "Porter Rider", "porter_contact": "9000000102",
+            "tracking_link": "https://porter.in/track/test",
         }, partial=True)
         self.assertTrue(external.is_valid(), external.errors)
         external.save(); delivery.refresh_from_db()
         self.assertEqual(delivery.external_platform_id, platform.id)
-        self.assertEqual(delivery.external_delivery_person_id, porter.id)
+        self.assertIsNone(delivery.external_delivery_person_id)
+        self.assertEqual(ExternalDeliveryPerson.objects.count(), existing_external_count)
         self.assertEqual(delivery.external_person_name_snapshot, "Porter Rider")
         self.assertEqual(delivery.external_person_phone_snapshot, "9000000102")
+        self.assertEqual(delivery.tracking_link, "https://porter.in/track/test")
 
 
 class UpcomingCustomerEventsDashboardTests(TestCase):
@@ -102,7 +148,7 @@ class UpcomingCustomerEventsDashboardTests(TestCase):
         self.assertEqual(empty.data, [])
 
 
-class SaleUnitValidationTests(SimpleTestCase):
+class SaleUnitValidationTests(TestCase):
     def item(self, unit_type, quantity):
         return QuotationItemSerializer(data={
             "item_name": "Cake", "quantity": quantity, "unit_type": unit_type,
@@ -129,6 +175,42 @@ class SaleUnitValidationTests(SimpleTestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("quantity", serializer.errors)
 
+    def test_gram_and_other_units_are_not_accepted(self):
+        for unit in ("Gram", "gram", "g", "grams", "box"):
+            serializer = self.item(unit, "1")
+            self.assertFalse(serializer.is_valid(), unit)
+            self.assertIn("unit_type", serializer.errors)
+
+    def test_active_setting_adds_a_sale_unit(self):
+        CRMOption.objects.create(option_type="sale_unit", name="box", is_active=True)
+        serializer = self.item("box", "3")
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+
+class SaleUnitAmountCalculationTests(TestCase):
+    def quotation_total(self, unit_type, quantity, rate):
+        quotation = Quotation.objects.create(
+            customer_name="Unit Customer", phone="9000000099", cake_type="Cake",
+            quantity=quantity, rate=rate, total_amount="0",
+        )
+        item = QuotationItem.objects.create(
+            quotation=quotation, item_name="Cake", quantity=quantity,
+            unit_type=unit_type, rate=rate, gst_percentage="0",
+        )
+        quotation.calculate_totals()
+        return item, quotation
+
+    def test_kg_quantity_two_at_500_totals_1000(self):
+        item, quotation = self.quotation_total("kg", "2", "500.00")
+        self.assertEqual(item.amount, Decimal("1000.00"))
+        self.assertEqual(quotation.subtotal, Decimal("1000.00"))
+        self.assertEqual(quotation.total_amount, Decimal("1000.00"))
+
+    def test_piece_quantity_25_at_234_totals_5850(self):
+        item, quotation = self.quotation_total("piece", "25", "234.00")
+        self.assertEqual(item.amount, Decimal("5850.00"))
+        self.assertEqual(quotation.subtotal, Decimal("5850.00"))
+        self.assertEqual(quotation.total_amount, Decimal("5850.00"))
 
 class ImageUploadValidationTests(SimpleTestCase):
     def test_accepts_a_real_supported_image(self):
@@ -674,18 +756,18 @@ class PhaseThreeWorkflowTests(TestCase):
         delivery.refresh_from_db()
         self.assertEqual(delivery.delivery_status, "Delivered Successfully")
 
-    def test_switching_delivery_type_clears_inactive_assignment_fields(self):
+    def test_switching_delivery_type_preserves_inactive_assignment_fields(self):
         User = get_user_model()
-        from delivery_person.models import DeliveryPerson, DeliveryPlatform, ExternalDeliveryPerson
+        from delivery_person.models import DeliveryPerson, DeliveryPlatform
         staff = User.objects.create_user(username="delivery-switch-staff", password="password")
         internal = DeliveryPerson.objects.create(name="Ravi", phone="9000011112", status=True)
         platform = DeliveryPlatform.objects.create(name="Porter", status=True)
-        external = ExternalDeliveryPerson.objects.create(platform=platform, name="Ramesh", phone="9000011113")
         client = APIClient(); client.force_authenticate(staff)
         delivery = self._make_delivery(client, phone="9876500012")
         porter_payload = {
             "delivery_type": "Porter Delivery", "external_platform": platform.id,
-            "external_delivery_person": external.id, "porter_location": "12 Test Street",
+            "porter_name": "Ramesh", "porter_contact": "9000011113",
+            "porter_location": "12 Test Street",
             "porter_time": timezone.now().isoformat(),
             "tracking_link": "https://porter.in/track/xxxxx",
         }
@@ -701,17 +783,20 @@ class PhaseThreeWorkflowTests(TestCase):
         delivery.refresh_from_db()
         self.assertEqual(delivery.delivery_person_id, internal.id)
         self.assertIsNone(delivery.external_delivery_person_id)
-        self.assertIsNone(delivery.external_platform_id)
-        self.assertIsNone(delivery.porter_time)
+        self.assertEqual(delivery.external_platform_id, platform.id)
+        self.assertIsNotNone(delivery.porter_time)
 
     def test_porter_delivery_can_be_marked_damaged_with_description(self):
         User = get_user_model()
+        from delivery_person.models import DeliveryPlatform
         staff = User.objects.create_user(username="porter-damage-staff", password="password")
+        platform = DeliveryPlatform.objects.create(name="Rapido", status=True)
         client = APIClient()
         client.force_authenticate(staff)
         delivery = self._make_delivery(client, phone="9876500003")
         payload = {
-            "delivery_type": "Porter Delivery", "porter_id": "PORTER-1", "porter_name": "Rapido Runner",
+            "delivery_type": "Porter Delivery", "external_platform": platform.id,
+            "porter_id": "PORTER-1", "porter_name": "Rapido Runner",
             "porter_contact": "9000022222", "porter_location": "12 Test Street",
             "porter_time": timezone.now().isoformat(),
         }

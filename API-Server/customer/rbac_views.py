@@ -3,7 +3,7 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import AccessPermission, AccessRole, Customer
-from .rbac import effective_permissions
+from .rbac import effective_permissions, is_super_admin
 from .rbac_serializers import PermissionSerializer, RoleSerializer, StaffUserSerializer
 
 logger = logging.getLogger("cakery")
@@ -49,4 +49,4 @@ def current_access(request):
     user = request.user
     codes = sorted(effective_permissions(user))
     details = PermissionSerializer(AccessPermission.objects.filter(code__in=codes), many=True).data
-    return Response({"id": user.id, "email": user.email, "username": user.username, "name": user.get_full_name() or user.username, "role": user.role.name if user.role_id else None, "is_super_admin": bool(user.is_superuser or (user.role_id and user.role.is_super_admin)), "permissions": codes, "permission_details": details})
+    return Response({"id": user.id, "email": user.email, "username": user.username, "name": user.get_full_name() or user.username, "role": user.role.name if user.role_id else None, "is_super_admin": is_super_admin(user), "permissions": codes, "permission_details": details})

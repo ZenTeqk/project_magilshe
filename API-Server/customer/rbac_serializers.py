@@ -2,7 +2,7 @@ from django.contrib.auth import password_validation
 from django.db import transaction
 from rest_framework import serializers
 from .models import AccessPermission, AccessRole, Customer
-from .rbac import effective_permissions
+from .rbac import effective_permissions, is_super_admin
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -25,7 +25,7 @@ class RoleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"is_active": "The Super Admin role cannot be deactivated."})
         actor = self.context["request"].user
         requested = attrs.get("permissions")
-        if requested is not None and not (actor.is_superuser or (actor.role_id and actor.role.is_super_admin)):
+        if requested is not None and not is_super_admin(actor):
             actor_codes = effective_permissions(actor)
             unauthorized = [permission.code for permission in requested if permission.code not in actor_codes]
             if unauthorized:
@@ -49,7 +49,7 @@ class StaffUserSerializer(serializers.ModelSerializer):
 
     def validate_role(self, role):
         actor = self.context["request"].user
-        if role.is_super_admin and not (actor.is_superuser or (actor.role_id and actor.role.is_super_admin)):
+        if role.is_super_admin and not is_super_admin(actor):
             raise serializers.ValidationError("Only a Super Admin can assign the Super Admin role.")
         return role
 

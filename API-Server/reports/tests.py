@@ -8,7 +8,7 @@ from customer.models import Customer
 
 class CRMAnalyticsReportTests(TestCase):
     def setUp(self):
-        self.user = Customer.objects.create_user(username="report-manager", password="test-pass")
+        self.user = Customer.objects.create_superuser(username="report-manager", password="test-pass")
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.lead = Lead.objects.create(customer_name="Analytics Customer", phone="9000000001", status="Open")
@@ -40,5 +40,33 @@ class CRMAnalyticsReportTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["current"]["today_orders"], 1)
+        self.assertEqual(response.data["current"]["payments_pending"]["count"], 1)
+        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "600.00")
         self.assertEqual(str(response.data["current"]["balance_pending"]), "600.00")
         self.assertEqual(order.confirmed_on.date(), timezone.localdate())
+
+    def test_pending_payments_use_order_totals_and_received_amounts(self):
+        def make_order(suffix, total, paid, status="Confirmed"):
+            quotation = Quotation.objects.create(
+                customer_name=f"Customer {suffix}", phone=f"90000000{suffix}",
+                cake_type="Cake", quantity=1, rate=total, total_amount=total,
+            )
+            return CRMOrder.objects.create(
+                quotation=quotation, customer_name=quotation.customer_name,
+                phone=quotation.phone, total_amount=total,
+                advance_paid=paid, status=status,
+            )
+
+        make_order("11", "1000.00", "1000.00")
+        make_order("12", "1500.00", "500.00")
+        make_order("13", "2000.00", "1000.00")
+        make_order("14", "5000.00", "0.00", status="Cancelled")
+
+        response = self.client.get("/reports/crm-analytics", {
+            "from_date": "2000-01-01", "to_date": "2000-01-02",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current"]["today_orders"], 4)
+        self.assertEqual(response.data["current"]["payments_pending"]["count"], 2)
+        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "2000.00")
