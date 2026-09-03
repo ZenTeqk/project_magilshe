@@ -107,7 +107,8 @@ function LeadsPage() {
     isError,
     refetch,
   } = useLeads({
-    status,
+    status: status === "action" ? "" : status,
+    action_required: status === "action",
     occasion,
     cake_type: cakeType,
     event_date: eventDate,
@@ -140,6 +141,7 @@ function LeadsPage() {
     const leadsBlock = dashboard?.leads;
     return [
       { key: "", label: "All leads", value: leadsBlock?.total ?? 0 },
+      { key: "action", label: "Action required", value: dashboard?.actionable.leads ?? 0 },
       { key: "Open", label: "Open", value: leadsBlock?.["Open"] ?? 0 },
       { key: "Follow-up", label: "Follow-up", value: leadsBlock?.["Follow-up"] ?? 0 },
       { key: "Won", label: "Won", value: leadsBlock?.["Won"] ?? 0 },
@@ -178,7 +180,7 @@ function LeadsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {statTiles.map((t) => (
           <button
             key={t.label}

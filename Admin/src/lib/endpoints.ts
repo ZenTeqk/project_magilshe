@@ -60,10 +60,12 @@ export const endpoints = {
     invoiceRecordPayment: (id: string | number) => `crm/invoices/${id}/record-payment/`,
     invoicePaymentCompleted: (id: string | number) => `crm/invoices/${id}/payment-completed/`,
     invoiceMoveToDelivery: (id: string | number) => `crm/invoices/${id}/move-to-delivery/`,
+    invoiceCancel: (id: string | number) => `crm/invoices/${id}/cancel/`,
 
     deliveries: "crm/deliveries/",
     delivery: (id: string | number) => `crm/deliveries/${id}/`,
     deliveryWorkflowAction: (id: string | number) => `crm/deliveries/${id}/workflow-action/`,
+    deliveryCancel: (id: string | number) => `crm/deliveries/${id}/cancel/`,
     deliveryDamageImages: (id: string | number) => `crm/deliveries/${id}/damage-images/`,
 
     customers: "crm/customers/",

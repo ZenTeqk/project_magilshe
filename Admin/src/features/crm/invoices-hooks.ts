@@ -15,7 +15,7 @@ function unwrapList<T>(data: unknown): T[] {
 const invoiceKey = (id: string | number) => ["crm", "invoice", String(id)] as const;
 
 /** Matches API-Server/crm/models.py CRMInvoice.STATUS_CHOICES exactly. */
-export const INVOICE_STATUSES = ["Generated", "Issued", "Paid", "Closed"] as const;
+export const INVOICE_STATUSES = ["Generated", "Issued", "Paid", "Closed", "Cancelled"] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
 export type InvoicePayment = {
@@ -133,5 +133,13 @@ export function useMoveToDelivery() {
       return data as { message: string; data: { id: number; delivery_no: string } };
     },
     onSuccess: (_data, id) => invalidateInvoice(queryClient, id),
+  });
+}
+
+export function useCancelInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => (await apiClient.post<CrmInvoice>(endpoints.crm.invoiceCancel(id))).data,
+    onSuccess: (data, id) => { queryClient.setQueryData(invoiceKey(id), data); invalidateInvoice(queryClient, id); },
   });
 }

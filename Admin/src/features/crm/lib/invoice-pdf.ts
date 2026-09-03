@@ -23,18 +23,18 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     ["Address", invoice.address || invoice.delivery_address],
   ];
   const cardHeight = Math.max(
-    measureInfoBlockHeight(doc, detailRows, 91),
-    measureInfoBlockHeight(doc, customerRows, 95),
+    measureInfoBlockHeight(doc, detailRows, 84),
+    measureInfoBlockHeight(doc, customerRows, 84),
   );
-  const orderBottom = drawInfoBlock(doc, "Invoice details", detailRows, PDF.left, y, 91, cardHeight);
-  const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 105, y, 95, cardHeight);
+  const orderBottom = drawInfoBlock(doc, "Invoice details", detailRows, PDF.left, y, 84, cardHeight);
+  const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 110, y, 84, cardHeight);
   y = Math.max(customerBottom, orderBottom) + 5;
 
   const headers = [
-    { text: "#", x: 17 }, { text: "PRODUCT / DESCRIPTION", x: 23 }, { text: "FLAVOUR", x: 82 },
-    { text: "QTY", x: 116, align: "right" as const }, { text: "UNIT", x: 121 },
-    { text: "RATE", x: 153, align: "right" as const }, { text: "GST", x: 169, align: "right" as const },
-    { text: "AMOUNT", x: 193, align: "right" as const },
+    { text: "#", x: 24, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 31 }, { text: "FLAVOUR", x: 86 },
+    { text: "QTY", x: 118, align: "center" as const }, { text: "UNIT", x: 132, align: "center" as const },
+    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 169, align: "center" as const },
+    { text: "AMOUNT", x: 190, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
 
@@ -50,10 +50,10 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     const quantity = Number(item.quantity) || 0;
     drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.3); doc.setTextColor(...PDF.ink);
-    doc.text(String(index + 1), 17, y + 6.5); doc.text(productLines, 23, y + 6.5); doc.text(flavourLines, 82, y + 6.5);
-    doc.text(String(quantity), 116, y + 6.5, { align: "right" }); doc.text(displayUnit(item.unit_type), 121, y + 6.5);
-    doc.text(money(item.rate), 153, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "right" });
-    doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 193, y + 6.5, { align: "right" });
+    doc.text(String(index + 1), 24, y + 6.5, { align: "center" }); doc.text(productLines, 31, y + 6.5); doc.text(flavourLines, 86, y + 6.5);
+    doc.text(String(quantity), 118, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6.5, { align: "center" });
+    doc.text(money(item.rate), 158, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 190, y + 6.5, { align: "right" });
     y += rowHeight;
   });
 

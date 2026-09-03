@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
 import {
   useInvoice, useRecordInvoicePayment, usePaymentCompleted, useMoveToDelivery,
+  useCancelInvoice,
 } from "@/features/crm/invoices-hooks";
 import { useCompanyConfig } from "@/features/crm/quotations-hooks";
 import { RecordInvoicePaymentDialog } from "@/features/crm/components/record-invoice-payment-dialog";
-import { buildInvoicePdf } from "@/features/crm/lib/invoice-pdf";
+import { buildInvoicePdf } from "@/features/crm/lib/pdf-template";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
 
 function InvoiceDetailPage() {
@@ -27,6 +28,7 @@ function InvoiceDetailPage() {
   const paymentCompleted = usePaymentCompleted();
   const moveToDelivery = useMoveToDelivery();
   const recordPayment = useRecordInvoicePayment();
+  const cancelInvoice = useCancelInvoice();
 
   const [paymentOpen, setPaymentOpen] = useState(false);
 
@@ -36,7 +38,7 @@ function InvoiceDetailPage() {
   /** Mirrors Admin/src/components/crm/invoice/InvoiceDetails.jsx availableActions exactly. */
   const nextAction = useMemo(() => {
     if (!invoice) return null;
-    if (invoice.status === "Closed") return null;
+    if (["Closed", "Cancelled"].includes(invoice.status)) return null;
     if (balance > 0) return "record_payment" as const;
     if (!paid) return "payment_completed" as const;
     return "move_to_delivery" as const;
@@ -64,6 +66,11 @@ function InvoiceDetailPage() {
       const response = (err as { response?: { data?: { message?: string } } })?.response?.data;
       toast.error(response?.message || "Cannot move to Delivery");
     }
+  };
+  const cancel = async () => {
+    if (!window.confirm("Cancel this invoice? The record will remain available for audit history.")) return;
+    try { await cancelInvoice.mutateAsync(invoice.id); toast.success("Invoice cancelled"); }
+    catch (err: unknown) { const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message; toast.error(message || "Invoice cannot be cancelled"); }
   };
 
   const previewPdf = async () => window.open((await buildInvoicePdf(invoice, company)).output("bloburl") as unknown as string, "_blank");
@@ -96,6 +103,7 @@ function InvoiceDetailPage() {
             <Button size="sm" variant="outline" onClick={previewPdf}>Preview</Button>
             <Button size="sm" variant="outline" onClick={downloadPdf}>Download PDF</Button>
             <Button size="sm" variant="outline" onClick={() => window.print()}>Print</Button>
+            {["Generated", "Issued"].includes(invoice.status) && <Button size="sm" variant="ghost" className="text-danger" onClick={cancel} disabled={cancelInvoice.isPending}>Cancel</Button>}
             {nextAction === "record_payment" && (
               <Button size="sm" onClick={() => setPaymentOpen(true)} disabled={recordPayment.isPending}>Collect Balance</Button>
             )}

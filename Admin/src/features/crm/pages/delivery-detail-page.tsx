@@ -18,6 +18,7 @@ import { inr } from "@/lib/data";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
 import {
   useDelivery, useUpdateDelivery, useDeliveryWorkflowAction, useUploadDamageImages,
+  useCancelDelivery,
   DELIVERY_TYPES, type CrmDelivery, type DeliveryPatchInput, type DeliveryType,
 } from "@/features/crm/deliveries-hooks";
 import { MarkDamagedDialog } from "@/features/crm/components/mark-damaged-dialog";
@@ -159,6 +160,7 @@ function DeliveryDetailPage() {
   const updateDelivery = useUpdateDelivery();
   const workflowAction = useDeliveryWorkflowAction();
   const uploadDamageImages = useUploadDamageImages();
+  const cancelDelivery = useCancelDelivery();
 
   const [form, setForm] = useState<FormState | null>(null);
   const [damageOpen, setDamageOpen] = useState(false);
@@ -269,6 +271,11 @@ function DeliveryDetailPage() {
     await workflowAction.mutateAsync({ id: delivery.id, action: "mark_failed", failure_reason: reason });
     toast.success("Delivery marked as failed");
   };
+  const cancel = async () => {
+    if (!window.confirm("Cancel this delivery? The record will remain available in delivery history.")) return;
+    try { await cancelDelivery.mutateAsync(delivery.id); toast.success("Delivery cancelled"); }
+    catch (err: unknown) { const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message; toast.error(message || "Delivery cannot be cancelled"); }
+  };
 
   return (
     <>
@@ -295,6 +302,7 @@ function DeliveryDetailPage() {
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
+            {delivery.delivery_status === "Pending" && <Button size="sm" variant="ghost" className="text-danger" onClick={cancel} disabled={busy || cancelDelivery.isPending}>Cancel</Button>}
             {delivery.delivery_status === "Pending" && (
               <Button size="sm" onClick={() => runAction("start")} disabled={busy}>{startLabel}</Button>
             )}

@@ -50,7 +50,7 @@ import {
 } from "@/features/crm/quotations-hooks";
 import { GstRateDialog } from "@/features/crm/components/gst-rate-dialog";
 import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-quotation-payment-dialog";
-import { buildQuotationPdf } from "@/features/crm/lib/quotation-pdf";
+import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";

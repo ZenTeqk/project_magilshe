@@ -2,7 +2,7 @@ import type { jsPDF } from "jspdf";
 import type { CompanyConfig } from "@/features/crm/quotations-hooks";
 
 export const PDF = {
-  left: 10, right: 200, bottom: 267,
+  left: 20, right: 194, bottom: 267,
   wine: [145, 8, 48] as const, magenta: [188, 20, 70] as const,
   rose: [226, 64, 111] as const, blush: [253, 240, 244] as const,
   pale: [255, 249, 251] as const, ink: [35, 31, 33] as const,
@@ -48,36 +48,35 @@ function drawCake(doc: jsPDF, x: number, y: number, scale = 1) {
 }
 
 export function drawDocumentHeader(doc: jsPDF, title: string, numberLabel: string, number: string, date: string, company?: CompanyConfig, logoData?: string, continuation = false) {
-  doc.setDrawColor(...PDF.wine); doc.setLineWidth(.45); doc.rect(1.2, 1.2, 207.6, 294.6); doc.setFillColor(...PDF.wine); doc.rect(0, 0, 210, 2.4, "F");
+  doc.setFillColor(...PDF.pale); doc.rect(0, 0, 210, 297, "F");
+  doc.setFillColor(255, 255, 255); doc.roundedRect(7, 7, 196, 283, 4, 4, "F");
+  doc.setFillColor(...PDF.wine); doc.roundedRect(7, 7, 196, 4, 4, 4, "F");
   if (continuation) {
-    doc.setFillColor(...PDF.blush); doc.rect(2, 2.5, 206, 25, "F");
-    if (logoData) try { doc.addImage(logoData, "PNG", PDF.left, 5, 27, 18, undefined, "FAST"); } catch { /* text fallback */ }
-    doc.setFont("times", "bolditalic"); doc.setFontSize(14); doc.setTextColor(...PDF.wine); doc.text(company?.name || "MagliShe", 43, 12);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(title, PDF.right, 11, { align: "right" }); doc.setFontSize(7.5); doc.setTextColor(...PDF.ink); doc.text(`${numberLabel}: ${safeText(number)}  |  Continued`, PDF.right, 18, { align: "right" });
-    doc.setDrawColor(...PDF.rose); doc.line(PDF.left, 28, PDF.right, 28); return 33;
+    if (logoData) try { doc.addImage(logoData, "PNG", 20, 10, 35, 24, undefined, "FAST"); } catch { /* text fallback */ }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(...PDF.wine); doc.text(`${title} · CONTINUED`, 194, 18, { align: "right" });
+    doc.setFontSize(8); doc.setTextColor(...PDF.muted); doc.text(`${numberLabel} ${safeText(number)}`, 194, 25, { align: "right" });
+    doc.setDrawColor(...PDF.rule); doc.line(20, 38, 194, 38); return 44;
   }
-  doc.setFillColor(...PDF.pale); doc.rect(2, 2.5, 206, 65.5, "F"); drawCake(doc, 11, 17, 1.18);
-  if (logoData) try { doc.addImage(logoData, "PNG", 75, 2.5, 60, 42, undefined, "FAST"); } catch { /* text fallback */ }
-  else { doc.setFont("times", "bolditalic"); doc.setFontSize(33); doc.setTextColor(...PDF.wine); doc.text(company?.name || "MagliShe", 105, 25, { align: "center" }); }
-  doc.setFont("helvetica", "bold"); doc.setCharSpace(.8); doc.setFontSize(9.2); doc.setTextColor(...PDF.wine); doc.text("CAKES & MORE", 105, 49, { align: "center" }); doc.setCharSpace(0);
-  // Reference-style flourishes sit beside the tagline, never between the
-  // tagline and the address or through the letterforms.
-  doc.setDrawColor(...PDF.rose); doc.setLineWidth(.35); doc.line(66, 47.2, 82, 47.2); doc.line(128, 47.2, 144, 47.2);
-  doc.setFont("times", "bolditalic"); doc.setFontSize(10); doc.text("Made with love,", 193, 20, { align: "right" }); doc.setTextColor(...PDF.rose); doc.text("just for you!", 193, 27, { align: "right" }); heart(doc, 190, 33, 1.25);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8.2); doc.setTextColor(...PDF.ink);
+  if (logoData) try { doc.addImage(logoData, "PNG", 20, 10, 51, 35, undefined, "FAST"); } catch { /* text fallback */ }
+  else { doc.setFont("times", "bolditalic"); doc.setFontSize(25); doc.setTextColor(...PDF.wine); doc.text(company?.name || "MagliShe", 20, 27); }
+  doc.setFillColor(...PDF.blush); doc.roundedRect(126, 13, 68, 31, 3, 3, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(...PDF.wine); doc.text(title, 188, 24, { align: "right" });
+  doc.setFontSize(8); doc.setTextColor(...PDF.muted); doc.text(`${numberLabel} ${safeText(number)}`, 188, 32, { align: "right" });
+  doc.text(displayDate(date), 188, 38, { align: "right" });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.4); doc.setTextColor(...PDF.muted);
   const address = safeText(company?.company_address, "").replace(/\s+/g, " ").trim();
-  if (address) doc.text(doc.splitTextToSize(address, 170).slice(0, 1), 105, 57, { align: "center" });
+  if (address) doc.text(doc.splitTextToSize(address, 98).slice(0, 2), 20, 49);
   const contact = [company?.mobile, company?.website || company?.url].filter(Boolean).join("   |   ");
-  if (contact) doc.text(contact, 105, 62, { align: "center" });
-  if (company?.gst_number) { doc.setFont("helvetica", "bold"); doc.text(`GSTIN: ${company.gst_number}`, 105, 66.5, { align: "center" }); }
-  const bannerX = 12, bannerWidth = 186;
-  doc.setFillColor(...PDF.wine); doc.roundedRect(bannerX, 71, bannerWidth, 13, 2.5, 2.5, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text(title, bannerX + 7, 79.5);
-  doc.setFontSize(7.8); doc.text(`${numberLabel}: ${safeText(number)}`, bannerX + bannerWidth - 7, 76.5, { align: "right" }); doc.setFont("helvetica", "normal"); doc.text(`Date: ${displayDate(date)}`, bannerX + bannerWidth - 7, 81, { align: "right" }); return 89;
+  if (contact) doc.text(contact, 20, 59);
+  if (company?.gst_number) { doc.setFont("helvetica", "bold"); doc.text(`GSTIN  ${company.gst_number}`, 20, 65); }
+  doc.setDrawColor(...PDF.rule); doc.setLineWidth(.3); doc.line(20, 70, 194, 70);
+  heart(doc, 188, 59, 1); doc.setFont("times", "bolditalic"); doc.setFontSize(9); doc.setTextColor(...PDF.rose); doc.text("Made with love, just for you", 184, 60, { align: "right" });
+  return 77;
 }
 
 export function drawSectionLabel(doc: jsPDF, text: string, x: number, y: number) {
-  const width = Math.max(40, text.length * 2.45 + 13); doc.setFillColor(...PDF.magenta); doc.roundedRect(x, y - 6, width, 9, 1, 1, "F"); doc.setFillColor(...PDF.wine); doc.triangle(x, y - 6, x - 3, y - 1.5, x, y + 3, "F");
-  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.text(text.toUpperCase(), x + 5, y);
+  doc.setFillColor(...PDF.rose); doc.circle(x + 1.5, y - 1.5, 1.5, "F");
+  doc.setTextColor(...PDF.wine); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.text(text.toUpperCase(), x + 6, y);
 }
 export function measureInfoBlockHeight(doc: jsPDF, rows: Array<[string, unknown]>, width: number) {
   const visible = rows.filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "");
@@ -87,23 +86,22 @@ export function measureInfoBlockHeight(doc: jsPDF, rows: Array<[string, unknown]
 export function drawInfoBlock(doc: jsPDF, title: string, rows: Array<[string, unknown]>, x: number, y: number, width: number, fixedHeight?: number) {
   const visible = rows.filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "");
   const height = Math.max(measureInfoBlockHeight(doc, rows, width), fixedHeight ?? 0);
-  doc.setFillColor(255, 255, 255); doc.setDrawColor(...PDF.rule); doc.setLineDashPattern([1.2, 1.4], 0); doc.roundedRect(x, y, width, height, 3, 3, "FD"); doc.setLineDashPattern([], 0);
-  // A clean backing strip prevents the dashed card border from showing
-  // through or touching the section ribbon.
-  doc.setFillColor(255, 255, 255); doc.rect(x + 2, y - .7, Math.min(width - 4, Math.max(45, title.length * 2.6 + 17)), 4, "F");
+  doc.setFillColor(...PDF.pale); doc.roundedRect(x, y, width, height, 3, 3, "F");
+  doc.setFillColor(...PDF.wine); doc.roundedRect(x, y, width, 2.2, 3, 3, "F");
   drawSectionLabel(doc, title, x + 4, y + 5.5);
   let rowY = y + 16; visible.forEach(([label, value]) => { const lines = doc.splitTextToSize(String(value), width - 35).slice(0, 3); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...PDF.ink); doc.text(label, x + 5, rowY); doc.setTextColor(...PDF.rose); doc.text(":", x + 29, rowY); doc.setFont("helvetica", "normal"); doc.setFontSize(8.4); doc.setTextColor(...PDF.ink); doc.text(lines, x + 33, rowY); rowY += Math.max(6, lines.length * 4.4); }); return y + height;
 }
 export function drawTableHeader(doc: jsPDF, y: number, labels: PdfColumn[]) {
-  doc.setFillColor(...PDF.wine); doc.roundedRect(PDF.left, y, PDF.right - PDF.left, 12.5, 2.3, 2.3, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(8); labels.forEach(({ text, x, align }) => doc.text(text, x, y + 8, align ? { align } : undefined)); return y + 12.5;
+  doc.setFillColor(...PDF.wine); doc.rect(PDF.left, y, PDF.right - PDF.left, 11, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); labels.forEach(({ text, x, align }) => doc.text(text, x, y + 7, align ? { align } : undefined)); return y + 11;
 }
 export function drawTableRowBackground(doc: jsPDF, y: number, height: number, alternate: boolean) {
-  if (alternate) { doc.setFillColor(...PDF.pale); doc.rect(PDF.left, y, PDF.right - PDF.left, height, "F"); } doc.setDrawColor(...PDF.rule); doc.setLineDashPattern([1, .8], 0); doc.line(PDF.left, y + height, PDF.right, y + height); doc.setLineDashPattern([], 0);
+  if (alternate) { doc.setFillColor(...PDF.pale); doc.rect(PDF.left, y, PDF.right - PDF.left, height, "F"); } doc.setDrawColor(...PDF.rule); doc.setLineWidth(.2); doc.line(PDF.left, y + height, PDF.right, y + height);
 }
 export function drawTotalsPanel(doc: jsPDF, y: number, rows: TotalRow[]) {
-  const x = 103, width = PDF.right - x; const height = rows.reduce((sum, row) => sum + (row.kind === "grand" ? 13 : row.kind === "balance" ? 8 : 6.5), 0) + 5; let rowY = y + 6;
-  rows.forEach((row) => { if (row.kind === "grand") { doc.setFillColor(...PDF.blush); doc.setDrawColor(...PDF.rose); doc.setLineDashPattern([1.2, 1], 0); doc.roundedRect(x, rowY - 5, width, 11, 2, 2, "FD"); doc.setLineDashPattern([], 0); }
-    doc.setFont("helvetica", row.kind ? "bold" : "normal"); doc.setFontSize(row.kind === "grand" ? 12 : row.kind === "balance" ? 9.5 : 8.5); const color: readonly [number, number, number] = row.kind === "advance" ? PDF.green : row.kind === "balance" ? PDF.orange : row.kind === "discount" ? PDF.rose : row.kind === "grand" ? PDF.wine : PDF.ink; doc.setTextColor(color[0], color[1], color[2]); doc.text(row.label.toUpperCase(), x + 5, rowY); doc.text(money(row.value), PDF.right - 5, rowY, { align: "right" }); rowY += row.kind === "grand" ? 13 : row.kind === "balance" ? 8 : 6.5; }); return y + height;
+  const x = 103, width = PDF.right - x; const height = rows.reduce((sum, row) => sum + (row.kind === "grand" ? 14 : row.kind === "balance" ? 8 : 6.5), 0) + 5; let rowY = y + 6;
+  doc.setFillColor(...PDF.pale); doc.roundedRect(x, y, width, height, 3, 3, "F");
+  rows.forEach((row) => { if (row.kind === "grand") { doc.setFillColor(...PDF.wine); doc.roundedRect(x + 3, rowY - 5, width - 6, 11, 2, 2, "F"); }
+    doc.setFont("helvetica", row.kind ? "bold" : "normal"); doc.setFontSize(row.kind === "grand" ? 12 : row.kind === "balance" ? 9.5 : 8.5); const color: readonly [number, number, number] = row.kind === "advance" ? PDF.green : row.kind === "balance" ? PDF.orange : row.kind === "discount" ? PDF.rose : row.kind === "grand" ? [255, 255, 255] : PDF.ink; doc.setTextColor(color[0], color[1], color[2]); doc.text(row.label.toUpperCase(), x + 5, rowY); doc.text(money(row.value), PDF.right - 5, rowY, { align: "right" }); rowY += row.kind === "grand" ? 14 : row.kind === "balance" ? 8 : 6.5; }); return y + height;
 }
 export function drawBakeryMessage(doc: jsPDF, y: number) {
   drawSectionLabel(doc, "A sweet note", PDF.left + 3, y + 5.5);
@@ -115,6 +113,6 @@ export function drawBakeryMessage(doc: jsPDF, y: number) {
 }
 export function drawFooter(doc: jsPDF, company?: CompanyConfig) {
   const pageCount = doc.getNumberOfPages(); for (let page = 1; page <= pageCount; page += 1) { doc.setPage(page);
-    if (page === pageCount) { doc.setDrawColor(...PDF.rule); doc.setLineDashPattern([1.4, 1], 0); doc.line(PDF.left + 4, 268, PDF.right - 4, 268); doc.setLineDashPattern([], 0); drawCake(doc, 19, 273, .62); doc.setFont("times", "bolditalic"); doc.setFontSize(10); doc.setTextColor(...PDF.wine); doc.text("Thank you for choosing MagliShe!", 53, 276); doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(...PDF.ink); const social = [company?.website || company?.url, company?.mobile, company?.email].filter(Boolean).join("  |  "); if (social) doc.text(doc.splitTextToSize(social, 68)[0], 53, 282); doc.setFillColor(...PDF.blush); doc.setDrawColor(...PDF.rule); doc.roundedRect(128, 272, 67, 14, 2, 2, "FD"); heart(doc, 132, 275, .8); doc.setFont("times", "bolditalic"); doc.setFontSize(9); doc.setTextColor(...PDF.wine); doc.text("We hope to serve you again!", 161.5, 278, { align: "center" }); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text("VISIT AGAIN!", 161.5, 283, { align: "center" }); }
-    doc.setFillColor(...PDF.blush); doc.rect(1.5, 289, 207, 6, "F"); doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...PDF.wine); doc.text("This is a system generated document. No signature required.", 105, 293, { align: "center" }); doc.setFontSize(5.8); doc.text(`Page ${page} of ${pageCount}`, 196, 293, { align: "right" }); }
+    if (page === pageCount) { doc.setDrawColor(...PDF.rule); doc.setLineWidth(.3); doc.line(20, 269, 194, 269); drawCake(doc, 21, 274, .55); doc.setFont("times", "bolditalic"); doc.setFontSize(11); doc.setTextColor(...PDF.wine); doc.text("Thank you for choosing MagliShe.", 52, 278); doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(...PDF.muted); const social = [company?.website || company?.url, company?.mobile, company?.email].filter(Boolean).join("  ·  "); if (social) doc.text(doc.splitTextToSize(social, 85)[0], 52, 284); }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.3); doc.setTextColor(...PDF.muted); doc.text("System generated document · No signature required", 20, 293); doc.text(`${page} / ${pageCount}`, 194, 293, { align: "right" }); }
 }

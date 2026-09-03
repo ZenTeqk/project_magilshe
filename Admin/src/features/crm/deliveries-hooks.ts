@@ -16,7 +16,7 @@ const deliveryKey = (id: string | number) => ["crm", "delivery", String(id)] as 
 
 /** Matches API-Server/crm/models.py CRMDelivery.DELIVERY_STATUS_CHOICES exactly. */
 export const DELIVERY_STATUSES = [
-  "Pending", "Out for Delivery", "Delivered Successfully", "Damaged During Delivery", "Delivery Failed",
+  "Pending", "Out for Delivery", "Delivered Successfully", "Damaged During Delivery", "Delivery Failed", "Cancelled",
 ] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
@@ -200,6 +200,14 @@ export function useDeliveryWorkflowAction() {
       queryClient.setQueryData(deliveryKey(id), data);
       invalidateDelivery(queryClient, id);
     },
+  });
+}
+
+export function useCancelDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => (await apiClient.post<CrmDelivery>(endpoints.crm.deliveryCancel(id))).data,
+    onSuccess: (data, id) => { queryClient.setQueryData(deliveryKey(id), data); invalidateDelivery(queryClient, id); },
   });
 }
 

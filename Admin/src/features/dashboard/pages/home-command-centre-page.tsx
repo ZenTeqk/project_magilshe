@@ -71,6 +71,7 @@ function HomeCommandCentrePage() {
   const todayDeliveries = (deliveries.data ?? [])
     .filter(
       (delivery) =>
+        ["Pending", "Out for Delivery"].includes(delivery.delivery_status) &&
         delivery.scheduled_at && new Date(delivery.scheduled_at).toDateString() === today,
     )
     .sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at)))
@@ -192,7 +193,7 @@ function HomeCommandCentrePage() {
           },
           {
             label: "Active deliveries",
-            value: String(pendingDeliveries.length),
+            value: String(crm.data?.actionable.deliveries ?? 0),
             detail: `${todayDeliveries.length} today`,
             to: "/crm/delivery",
             icon: Truck,

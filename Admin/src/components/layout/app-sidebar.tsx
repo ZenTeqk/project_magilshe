@@ -4,8 +4,9 @@ import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { flatNav, navigation, isGroup, type NavEntry } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAttentionCenter, type AttentionModule } from "@/features/attention/use-attention-center";
+import type { AttentionModule } from "@/features/attention/use-attention-center";
 import { hasPermission, permissionForRoute, useCurrentAccess } from "@/features/auth/rbac";
+import { useCrmDashboard } from "@/features/crm/hooks";
 
 const attentionModuleByRoute: Record<string, AttentionModule> = {
   "/crm/leads": "leads",
@@ -26,7 +27,16 @@ export function SidebarNav({
   onToggleCollapse?: () => void;
 }) {
   const pathname = useLocation().pathname;
-  const { counts } = useAttentionCenter();
+  const { data: dashboard } = useCrmDashboard();
+  const counts: Record<AttentionModule, number> = {
+    leads: dashboard?.actionable.leads ?? 0,
+    followUps: dashboard?.actionable.follow_ups ?? 0,
+    quotations: dashboard?.actionable.quotations ?? 0,
+    orders: dashboard?.actionable.orders ?? 0,
+    invoices: dashboard?.actionable.invoices ?? 0,
+    delivery: dashboard?.actionable.deliveries ?? 0,
+    customers: 0,
+  };
   const { data: access } = useCurrentAccess();
   const canSee = (to: string) => { const required = permissionForRoute(to); return !required || hasPermission(access, required); };
   const groupOpenByRoute = (entry: NavEntry) =>

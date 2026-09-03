@@ -9,19 +9,22 @@ import {
 export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, brandLogo?: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const logo = brandLogo ?? await loadBrandLogo();
-  let y = drawDocumentHeader(doc, "QUOTATION", "Quotation No", q.quotation_no, q.created_on, company, logo);
+  let y = drawDocumentHeader(doc, "QUOTATION", "No.", q.quotation_no, q.created_on, company, logo);
 
   const detailRows: Array<[string, unknown]> = [
-    ["Number", q.quotation_no], ["Date", displayDate(q.created_on)],
-    ["Payment", q.payment_method || "Not recorded"], ["Status", q.status],
+    ["Date", displayDate(q.created_on)],
+    ["Valid until", q.valid_until ? displayDate(q.valid_until) : null],
+    ["Status", q.status], ["Payment", q.payment_method || "Not recorded"],
   ];
   const customerRows: Array<[string, unknown]> = [
     ["Name", q.customer_name], ["Phone", q.phone],
+    ["Email", q.email],
     ["Address", q.billing_address || q.address],
   ];
-  const cardHeight = Math.max(measureInfoBlockHeight(doc, detailRows, 92), measureInfoBlockHeight(doc, customerRows, 92));
-  const detailsBottom = drawInfoBlock(doc, "Quotation details", detailRows, PDF.left, y, 92, cardHeight);
-  const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 108, y, 92, cardHeight);
+  const cardWidth = 84;
+  const cardHeight = Math.max(measureInfoBlockHeight(doc, detailRows, cardWidth), measureInfoBlockHeight(doc, customerRows, cardWidth));
+  const detailsBottom = drawInfoBlock(doc, "Quote details", detailRows, PDF.left, y, cardWidth, cardHeight);
+  const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 110, y, cardWidth, cardHeight);
   y = Math.max(customerBottom, detailsBottom) + 4;
 
   if (q.occasion || q.event_date || q.delivery_date || (q.address && q.address !== q.billing_address)) {
@@ -33,10 +36,10 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   }
 
   const headers = [
-    { text: "#", x: 15, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 22 }, { text: "FLAVOUR", x: 81 },
-    { text: "QTY", x: 116, align: "center" as const }, { text: "UNIT", x: 130, align: "center" as const },
-    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 168, align: "center" as const },
-    { text: "AMOUNT", x: 196, align: "right" as const },
+    { text: "#", x: 24, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 31 }, { text: "FLAVOUR", x: 86 },
+    { text: "QTY", x: 118, align: "center" as const }, { text: "UNIT", x: 132, align: "center" as const },
+    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 169, align: "center" as const },
+    { text: "AMOUNT", x: 190, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
   const items = q.items?.length ? q.items : [{
@@ -44,6 +47,20 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     quantity: q.quantity || 0, unit_type: "kg", rate: q.rate || 0, gst_percentage: q.gst_percentage,
     amount: q.subtotal,
   }];
+  const hasItemRows = Boolean(q.items?.length);
+  const calculatedSubtotal = hasItemRows
+    ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.rate) || 0), 0)
+    : Number(q.subtotal || 0);
+  const calculatedGst = hasItemRows
+    ? items.reduce((sum, item) => {
+        const lineAmount = (Number(item.quantity) || 0) * (Number(item.rate) || 0);
+        return sum + lineAmount * (Number(item.gst_percentage) || 0) / 100;
+      }, 0)
+    : Number(q.gst_amount || 0);
+  const discount = Number(q.discount_amount || 0);
+  const grandTotal = Math.max(0, calculatedSubtotal + calculatedGst - discount);
+  const advance = Number(q.advance_amount || 0);
+  const balance = Math.max(0, grandTotal - advance);
 
   items.forEach((item, index) => {
     const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 54).slice(0, 5);
@@ -51,24 +68,23 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     const rowHeight = Math.max(14, Math.max(productLines.length, flavourLines.length) * 4.5 + 5);
     if (y + rowHeight > 267) {
       doc.addPage();
-      y = drawDocumentHeader(doc, "QUOTATION", "Quotation No", q.quotation_no, q.created_on, company, logo, true);
+      y = drawDocumentHeader(doc, "QUOTATION", "No.", q.quotation_no, q.created_on, company, logo, true);
       y = drawTableHeader(doc, y, headers);
     }
     const qty = Number(item.quantity) || 0, rate = Number(item.rate) || 0, gst = Number(item.gst_percentage) || 0;
     drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.3); doc.setTextColor(...PDF.ink);
-    [20, 79, 109, 123, 138, 160, 176].forEach((x) => { doc.setDrawColor(...PDF.rule); doc.line(x, y, x, y + rowHeight); });
-    doc.text(String(index + 1), 15, y + 6.5, { align: "center" }); doc.text(productLines, 22, y + 6.5); doc.text(flavourLines, 81, y + 6.5);
-    doc.text(String(qty), 116, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 130, y + 6.5, { align: "center" });
-    doc.text(money(rate), 158, y + 6.5, { align: "right" }); doc.text(`${gst}%`, 168, y + 6.5, { align: "center" });
-    doc.setFont("helvetica", "bold"); doc.text(money(item.amount ?? item.subtotal ?? 0), 196, y + 6.5, { align: "right" });
+    doc.text(String(index + 1), 24, y + 6.5, { align: "center" }); doc.text(productLines, 31, y + 6.5); doc.text(flavourLines, 86, y + 6.5);
+    doc.text(String(qty), 118, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6.5, { align: "center" });
+    doc.text(money(rate), 158, y + 6.5, { align: "right" }); doc.text(`${gst}%`, 169, y + 6.5, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.text(money(qty * rate), 190, y + 6.5, { align: "right" });
     y += rowHeight;
   });
 
   const totalsHeight = 54 + (Number(q.discount_amount || 0) ? 6.5 : 0);
   if (y + totalsHeight > 267) {
     doc.addPage();
-    y = drawDocumentHeader(doc, "QUOTATION", "Quotation No", q.quotation_no, q.created_on, company, logo, true);
+    y = drawDocumentHeader(doc, "QUOTATION", "No.", q.quotation_no, q.created_on, company, logo, true);
   } else y += 7;
 
   const notes = [
@@ -87,13 +103,13 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   } else drawBakeryMessage(doc, y);
 
   const totalRows = [
-    { label: "Subtotal", value: q.subtotal },
-    { label: "Discount", value: Number(q.discount_amount || 0) ? -Number(q.discount_amount) : 0, kind: "discount" as const },
-    { label: "CGST", value: Number(q.gst_amount || 0) / 2 },
-    { label: "SGST", value: Number(q.gst_amount || 0) / 2 },
-    { label: "Grand Total", value: q.total_amount, kind: "grand" as const },
-    { label: "Advance Received", value: q.advance_amount, kind: "advance" as const },
-    { label: "Balance Due", value: q.balance_amount, kind: "balance" as const },
+    { label: "Subtotal", value: calculatedSubtotal },
+    { label: "Discount", value: discount ? -discount : 0, kind: "discount" as const },
+    { label: "CGST", value: calculatedGst / 2 },
+    { label: "SGST", value: calculatedGst / 2 },
+    { label: "Grand Total", value: grandTotal, kind: "grand" as const },
+    { label: "Advance Received", value: advance, kind: "advance" as const },
+    { label: "Balance Due", value: balance, kind: "balance" as const },
   ];
   drawTotalsPanel(doc, y, totalRows);
 

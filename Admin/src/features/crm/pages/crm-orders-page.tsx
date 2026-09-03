@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inr } from "@/lib/data";
 import { useOrders, displayOrderStatus, type CrmOrder } from "@/features/crm/orders-hooks";
+import { useCrmDashboard } from "@/features/crm/hooks";
 
 const displayStatuses = ["Confirmed", "Processing", "Ready", "Invoice Pending", "Delivery", "Closed", "Cancelled"];
 
@@ -17,11 +18,24 @@ function CrmOrdersPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("all");
   const { data: orders, isLoading, isError, refetch } = useOrders();
+  const { data: dashboard } = useCrmDashboard();
+  const rawCounts = dashboard?.status_counts.orders ?? {};
+  const statusCounts: Record<string, number> = {
+    Confirmed: rawCounts["Confirmed"] ?? 0,
+    Processing: (rawCounts["Processing"] ?? 0) + (rawCounts["Production"] ?? 0),
+    Ready: rawCounts["Ready"] ?? 0,
+    "Invoice Pending": (rawCounts["Invoice Pending"] ?? 0) + (rawCounts["Invoice Generated"] ?? 0),
+    Delivery: (rawCounts["Delivery"] ?? 0) + (rawCounts["Out for Delivery"] ?? 0),
+    Closed: (rawCounts["Closed"] ?? 0) + (rawCounts["Delivered"] ?? 0) + (rawCounts["Completed"] ?? 0),
+    Cancelled: rawCounts["Cancelled"] ?? 0,
+  };
 
   const rows = useMemo(() => {
     const all = orders ?? [];
-    return status === "all" ? all : all.filter((o) => displayOrderStatus(o.status) === status);
-  }, [orders, status]);
+    if (status === "all") return all;
+    if (status === "action") return all.filter((o) => dashboard?.actionable_statuses?.orders.includes(o.status));
+    return all.filter((o) => displayOrderStatus(o.status) === status);
+  }, [dashboard?.actionable_statuses.orders, orders, status]);
 
   return (
     <>
@@ -31,11 +45,20 @@ function CrmOrdersPage() {
         actions={<Button onClick={() => navigate("/crm/orders/new")}><Plus className="size-4" /> New order</Button>}
       />
 
+      <div className="grid gap-3 sm:grid-cols-4 xl:grid-cols-8">
+        {[{ key: "all", label: "All", value: dashboard?.documents.orders ?? 0 }, { key: "action", label: "Action required", value: dashboard?.actionable.orders ?? 0 }, ...displayStatuses.map((s) => ({ key: s, label: s, value: statusCounts[s] ?? 0 }))].map((tile) => (
+          <button key={tile.key} onClick={() => setStatus(tile.key)} className={`rounded-2xl border p-3 text-left transition-colors ${status === tile.key ? "border-primary bg-primary-soft" : "border-border bg-card hover:border-border-strong"}`}>
+            <p className="text-xs text-muted-foreground">{tile.label}</p><p className="text-xl font-semibold tabular">{tile.value}</p>
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center gap-2">
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="action">Action required</SelectItem>
             {displayStatuses.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>

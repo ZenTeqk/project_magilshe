@@ -16,6 +16,15 @@ const leadKey = (id: string | number) => ["crm", "lead", String(id)] as const;
 export type CrmDashboardResponse = {
   leads: { total: number; [status: string]: number };
   documents: { quotations: number; orders: number; invoices: number; deliveries: number };
+  status_counts: {
+    quotations: Record<string, number>; orders: Record<string, number>;
+    invoices: Record<string, number>; deliveries: Record<string, number>;
+  };
+  actionable: { leads: number; follow_ups: number; quotations: number; orders: number; invoices: number; deliveries: number };
+  actionable_statuses: {
+    leads: string[]; follow_ups: string[]; quotations: string[];
+    orders: string[]; invoices: string[]; deliveries: string[];
+  };
   funnel: {
     total_leads: number;
     lead_only: number;
@@ -199,6 +208,7 @@ export type LeadListParams = {
   created_date?: string;
   from_date?: string;
   to_date?: string;
+  action_required?: boolean;
 };
 
 export function useLeads(params: LeadListParams = {}) {

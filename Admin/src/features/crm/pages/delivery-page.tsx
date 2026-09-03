@@ -10,16 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inr } from "@/lib/data";
 import { useDeliveries, DELIVERY_STATUSES, type CrmDelivery } from "@/features/crm/deliveries-hooks";
+import { useCrmDashboard } from "@/features/crm/hooks";
 
 function CrmDeliveryPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("all");
   const { data: deliveries, isLoading, isError, refetch } = useDeliveries();
+  const { data: dashboard } = useCrmDashboard();
 
   const rows = useMemo(() => {
     const all = deliveries ?? [];
-    return status === "all" ? all : all.filter((d) => d.delivery_status === status);
-  }, [deliveries, status]);
+    if (status === "all") return all;
+    if (status === "action") return all.filter((d) => dashboard?.actionable_statuses?.deliveries.includes(d.delivery_status));
+    return all.filter((d) => d.delivery_status === status);
+  }, [dashboard?.actionable_statuses.deliveries, deliveries, status]);
 
   return (
     <>
@@ -28,11 +32,20 @@ function CrmDeliveryPage() {
         description="Final fulfilment workspace for Customer Pickup, Magilshe Delivery and Porter Delivery orders."
       />
 
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {[{ key: "all", label: "All deliveries", value: dashboard?.documents.deliveries ?? 0 }, { key: "action", label: "Action required", value: dashboard?.actionable.deliveries ?? 0 }, ...DELIVERY_STATUSES.map((s) => ({ key: s, label: s, value: dashboard?.status_counts.deliveries[s] ?? 0 }))].map((tile) => (
+          <button key={tile.key} onClick={() => setStatus(tile.key)} className={`rounded-2xl border p-3 text-left transition-colors ${status === tile.key ? "border-primary bg-primary-soft" : "border-border bg-card hover:border-border-strong"}`}>
+            <p className="text-xs text-muted-foreground">{tile.label}</p><p className="text-xl font-semibold tabular">{tile.value}</p>
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center gap-2">
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="action">Action required</SelectItem>
             {DELIVERY_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>

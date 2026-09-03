@@ -158,3 +158,8 @@ Every other module (Leads, Quotations, CRM Orders, Invoices, Delivery, Catalog, 
 Operations, Marketing, Reports, Configuration) is still on sample data — those pages are
 visibly flagged with a "Preview layout" banner and a "Soon" sidebar tag so nothing pretends to
 be real.
+# PDF template rollback
+
+Quotation and invoice PDFs have two isolated templates. V2 is active by
+default. Set `VITE_ACTIVE_PDF_TEMPLATE=v1` at build time to restore the frozen
+V1 renderers without changing any CRM records, calculations, or API data.

@@ -22,23 +22,23 @@ import {
   QUOTATION_STATUSES,
   type QuotationListItem,
 } from "@/features/crm/quotations-hooks";
+import { useCrmDashboard } from "@/features/crm/hooks";
 
 function QuotationsPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<string>("all");
   const { data: quotations, isLoading, isError, refetch } = useQuotations();
   const { data: pendingLeads, isLoading: pendingLoading } = useQuotationsPending();
+  const { data: dashboard } = useCrmDashboard();
 
   const rows = useMemo(() => {
     const all = quotations ?? [];
-    return status === "all" ? all : all.filter((q) => q.status === status);
-  }, [quotations, status]);
+    if (status === "all") return all;
+    if (status === "action") return all.filter((q) => dashboard?.actionable_statuses?.quotations.includes(q.status));
+    return all.filter((q) => q.status === status);
+  }, [dashboard?.actionable_statuses.quotations, quotations, status]);
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const q of quotations ?? []) counts[q.status] = (counts[q.status] ?? 0) + 1;
-    return counts;
-  }, [quotations]);
+  const statusCounts = dashboard?.status_counts.quotations ?? {};
 
   return (
     <>
@@ -52,15 +52,19 @@ function QuotationsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <button
           onClick={() => setStatus("all")}
           className={`rounded-2xl border p-3 text-left transition-colors ${status === "all" ? "border-primary bg-primary-soft" : "border-border bg-card hover:border-border-strong"}`}
         >
           <p className="text-xs text-muted-foreground">All</p>
-          <p className="text-xl font-semibold tabular">{quotations?.length ?? 0}</p>
+          <p className="text-xl font-semibold tabular">{dashboard?.documents.quotations ?? 0}</p>
         </button>
-        {(["Draft", "Sent", "Accepted", "Advance Received", "Order Confirmed"] as const).map(
+        <button onClick={() => setStatus("action")} className={`rounded-2xl border p-3 text-left transition-colors ${status === "action" ? "border-primary bg-primary-soft" : "border-border bg-card hover:border-border-strong"}`}>
+          <p className="text-xs text-muted-foreground">Action required</p>
+          <p className="text-xl font-semibold tabular">{dashboard?.actionable.quotations ?? 0}</p>
+        </button>
+        {QUOTATION_STATUSES.map(
           (s) => (
             <button
               key={s}
@@ -105,6 +109,7 @@ function QuotationsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="action">Action required</SelectItem>
             {QUOTATION_STATUSES.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}
