@@ -14,6 +14,50 @@ from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSer
 from .uploads import validate_image_upload
 
 
+class CRMStatusSummaryAndCancellationTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(username="status-admin", password="password")
+        self.client = APIClient(); self.client.force_authenticate(self.user)
+
+    def make_order(self, suffix):
+        quotation = Quotation.objects.create(
+            customer_name=f"Customer {suffix}", phone=f"98765432{suffix:02d}",
+            quantity=1, rate="500.00", status="Order Confirmed",
+        )
+        return CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name,
+            phone=quotation.phone, total_amount="500.00", status="Confirmed",
+        )
+
+    def test_backend_counts_and_cancellations_share_persisted_statuses(self):
+        invoice_order = self.make_order(1)
+        delivery_order = self.make_order(2)
+        invoice = CRMInvoice.objects.create(
+            order=invoice_order, customer_name=invoice_order.customer_name,
+            phone=invoice_order.phone, total_amount=500, balance_amount=500,
+        )
+        delivery = CRMDelivery.objects.create(order=delivery_order, delivery_status="Pending")
+
+        before = self.client.get("/crm/leads/crm-dashboard/")
+        self.assertEqual(before.status_code, 200, before.data)
+        self.assertEqual(before.data["status_counts"]["orders"]["Confirmed"], 2)
+        self.assertEqual(before.data["actionable"]["orders"], 2)
+        self.assertEqual(before.data["actionable"]["invoices"], 1)
+        self.assertEqual(before.data["actionable"]["deliveries"], 1)
+
+        self.assertEqual(self.client.post(f"/crm/invoices/{invoice.id}/cancel/").status_code, 200)
+        self.assertEqual(self.client.post(f"/crm/deliveries/{delivery.id}/cancel/").status_code, 200)
+        invoice.refresh_from_db(); delivery.refresh_from_db()
+        self.assertEqual(invoice.status, "Cancelled")
+        self.assertEqual(delivery.delivery_status, "Cancelled")
+
+        after = self.client.get("/crm/leads/crm-dashboard/")
+        self.assertEqual(after.data["status_counts"]["invoices"]["Cancelled"], 1)
+        self.assertEqual(after.data["status_counts"]["deliveries"]["Cancelled"], 1)
+        self.assertEqual(after.data["actionable"]["invoices"], 0)
+        self.assertEqual(after.data["actionable"]["deliveries"], 0)
+
+
 class QuotationVersionSnapshotTests(TestCase):
     def test_edit_preserves_generated_snapshot_until_explicit_regeneration(self):
         user = get_user_model().objects.create_superuser(

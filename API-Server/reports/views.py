@@ -127,7 +127,7 @@ class CRMAnalyticsReport(APIView):
         # advance_paid synchronized as payments are recorded.
         today_orders = CRMOrder.objects.filter(
             confirmed_on__date=timezone.localdate()
-        ).count()
+        ).exclude(status="Cancelled").count()
         pending_orders = CRMOrder.objects.exclude(status="Cancelled").annotate(
             balance_due=F("total_amount") - F("advance_paid")
         ).filter(balance_due__gt=0)

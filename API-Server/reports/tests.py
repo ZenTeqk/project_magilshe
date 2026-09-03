@@ -67,6 +67,6 @@ class CRMAnalyticsReportTests(TestCase):
         })
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["current"]["today_orders"], 4)
+        self.assertEqual(response.data["current"]["today_orders"], 3)
         self.assertEqual(response.data["current"]["payments_pending"]["count"], 2)
         self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "2000.00")

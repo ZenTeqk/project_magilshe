@@ -81,6 +81,8 @@ def required_permission(request, view):
     )
     for prefix, resource in mappings:
         if path.startswith(prefix):
+            if action == "cancel":
+                return f"{resource}.{'delete' if resource == 'crm.quotations' else 'process'}"
             if resource == "crm.settings" and permission_action != "view": permission_action = "configure"
             return f"{resource}.{permission_action}"
     return None

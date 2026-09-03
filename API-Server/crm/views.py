@@ -20,6 +20,11 @@ from .models import (
     Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment,
 )
 from .customer_matching import find_existing_customer
+from .actionable import (
+    DELIVERY_ACTIONABLE_STATUSES, INVOICE_ACTIONABLE_STATUSES,
+    LEAD_ACTIONABLE_STATUSES, ORDER_ACTIONABLE_STATUSES,
+    QUOTATION_ACTIONABLE_STATUSES, status_payload,
+)
 from .recurring_events import recurring_event_summary, sync_recurring_event
 from .uploads import validate_image_upload
 from .serializers import (
@@ -40,6 +45,8 @@ class LeadViewSet(viewsets.ModelViewSet):
         if p.get("search"):
             term = p["search"]
             qs = qs.filter(Q(lead_no__icontains=term) | Q(customer_name__icontains=term) | Q(phone__icontains=term))
+        if p.get("action_required", "").lower() in ("1", "true", "yes"):
+            qs = qs.filter(status__in=LEAD_ACTIONABLE_STATUSES)
         for field in ("status", "occasion", "cake_type", "event_date"):
             if p.get(field):
                 qs = qs.filter(**{field: p[field]})
@@ -69,7 +76,22 @@ class LeadViewSet(viewsets.ModelViewSet):
         orders_qs = in_range(CRMOrder.objects.all(), "confirmed_on")
         invoices_qs = in_range(CRMInvoice.objects.all(), "generated_on")
         deliveries_qs = in_range(CRMDelivery.objects.all(), "created_on")
+        follow_ups_qs = leads_qs.filter(status="Follow-up", follow_up_date__isnull=False)
         lead_counts = dict(leads_qs.values_list("status").annotate(total=models.Count("id")))
+        status_counts = {
+            "quotations": dict(quotations_qs.values_list("status").annotate(total=Count("id"))),
+            "orders": dict(orders_qs.values_list("status").annotate(total=Count("id"))),
+            "invoices": dict(invoices_qs.values_list("status").annotate(total=Count("id"))),
+            "deliveries": dict(deliveries_qs.values_list("delivery_status").annotate(total=Count("id"))),
+        }
+        actionable = {
+            "leads": leads_qs.filter(status__in=LEAD_ACTIONABLE_STATUSES).count(),
+            "follow_ups": follow_ups_qs.count(),
+            "quotations": quotations_qs.filter(status__in=QUOTATION_ACTIONABLE_STATUSES).count(),
+            "orders": orders_qs.filter(status__in=ORDER_ACTIONABLE_STATUSES).count(),
+            "invoices": invoices_qs.filter(status__in=INVOICE_ACTIONABLE_STATUSES, balance_amount__gt=0).count(),
+            "deliveries": deliveries_qs.filter(delivery_status__in=DELIVERY_ACTIONABLE_STATUSES).count(),
+        }
         document_counts = {
             "quotations": quotations_qs.count(), "orders": orders_qs.count(),
             "invoices": invoices_qs.count(), "deliveries": deliveries_qs.count(),
@@ -109,7 +131,9 @@ class LeadViewSet(viewsets.ModelViewSet):
                 "updated_on": quotation.updated_on,
             })
         payload = {"leads": {"total": sum(lead_counts.values()), **lead_counts},
-                   "documents": document_counts, "funnel": funnel, "workflows": workflows}
+                   "documents": document_counts, "status_counts": status_counts,
+                   "actionable": actionable, "actionable_statuses": status_payload(),
+                   "funnel": funnel, "workflows": workflows}
         return Response(payload)
 
 
@@ -1075,6 +1099,19 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(generated_on__date__lte=end)
         return queryset
 
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        invoice = self.get_object()
+        if invoice.status not in {"Generated", "Issued"}:
+            return Response({"message": f"This invoice cannot be cancelled while it is {invoice.status}."}, status=400)
+        invoice.status = "Cancelled"
+        invoice.save(update_fields=("status", "updated_on"))
+        QuotationActivity.objects.create(
+            quotation=invoice.order.quotation, action="Invoice Cancelled",
+            description=invoice.invoice_no, staff=request.user,
+        )
+        return Response(self.get_serializer(invoice).data)
+
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
         with transaction.atomic():
@@ -1191,6 +1228,19 @@ class CRMDeliveryViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         return Response({"message": "Deliveries are created from paid invoices."}, status=405)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        delivery = self.get_object()
+        if delivery.delivery_status != "Pending":
+            return Response({"message": f"This delivery cannot be cancelled while it is {delivery.delivery_status}."}, status=400)
+        delivery.delivery_status = "Cancelled"
+        delivery.save(update_fields=("delivery_status", "updated_on"))
+        QuotationActivity.objects.create(
+            quotation=delivery.order.quotation, action="Delivery Cancelled",
+            description=delivery.delivery_no, staff=request.user,
+        )
+        return Response(self.get_serializer(delivery).data)
 
     @action(detail=True, methods=["post"], url_path="workflow-action")
     def workflow_action(self, request, pk=None):

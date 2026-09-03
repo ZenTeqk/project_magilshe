@@ -405,7 +405,7 @@ class CRMOrderItem(models.Model):
 
 
 class CRMInvoice(models.Model):
-    STATUS_CHOICES = (("Generated", "Generated"), ("Issued", "Issued"), ("Paid", "Paid"), ("Closed", "Closed"))
+    STATUS_CHOICES = (("Generated", "Generated"), ("Issued", "Issued"), ("Paid", "Paid"), ("Closed", "Closed"), ("Cancelled", "Cancelled"))
     invoice_no = models.CharField(max_length=30, unique=True, editable=False)
     order = models.OneToOneField(CRMOrder, on_delete=models.PROTECT, related_name="invoice")
     customer = models.ForeignKey("customer.Customer", null=True, blank=True, on_delete=models.SET_NULL, related_name="crm_invoices")
@@ -439,6 +439,7 @@ class CRMDelivery(models.Model):
         ("Delivered Successfully", "Delivered Successfully"),
         ("Damaged During Delivery", "Damaged During Delivery"),
         ("Delivery Failed", "Delivery Failed"),
+        ("Cancelled", "Cancelled"),
     )
     DELIVERY_TYPE_CHOICES = (
         ("Customer Pickup", "Customer Pickup"),
