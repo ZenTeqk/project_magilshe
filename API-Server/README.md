@@ -48,3 +48,5 @@ response : {
         "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzMzMDczNDUwLCJpYXQiOjE3MzI5ODcwNTAsImp0aSI6ImEyZGYzNzczNDc2YjQzYzdiN2M1N2IzYWI3MTRjYWE0IiwidXNlcl9pZCI6MTJ9.AkhslQsGPEmFSeLfLIc75EPkIqg2sOn8NiGXHIh9XH8"
     }
 }
+
+<!-- Deploy pipeline re-verified after moving to the ZenTeqk/project_magilshe repo. -->
