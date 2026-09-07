@@ -163,3 +163,5 @@ be real.
 Quotation and invoice PDFs have two isolated templates. V2 is active by
 default. Set `VITE_ACTIVE_PDF_TEMPLATE=v1` at build time to restore the frozen
 V1 renderers without changing any CRM records, calculations, or API data.
+
+<!-- Deploy pipeline re-verified after moving to the ZenTeqk/project_magilshe repo. -->
