@@ -256,22 +256,27 @@ function QuotationFormPage() {
   });
 
   const normalizedDocumentData = (source: ReturnType<typeof buildPayload>) => ({
+    // "" and null/undefined must compare equal here: buildPayload() coerces
+    // empty strings to null on the live side, but a saved snapshot stores
+    // the raw API value, which is often "" rather than null for the same
+    // "unset" field. Using ?? here would treat those as a real difference
+    // and permanently show "Changes detected" even with no actual edit.
     customer: source.customer ?? null,
     customer_name: source.customer_name.trim(),
     phone: source.phone.trim(),
-    email: source.email ?? null,
-    billing_address: source.billing_address ?? null,
+    email: source.email || null,
+    billing_address: source.billing_address || null,
     shipping_same_as_billing: source.shipping_same_as_billing,
-    address: source.address ?? null,
-    occasion: source.occasion ?? null,
-    event_date: source.event_date ?? null,
-    valid_until: source.valid_until ?? null,
-    delivery_type: source.delivery_type ?? null,
-    delivery_date: source.delivery_date ?? null,
-    delivery_time: source.delivery_time ?? null,
-    special_instructions: source.special_instructions ?? null,
-    payment_terms: source.payment_terms ?? null,
-    notes: source.notes ?? null,
+    address: source.address || null,
+    occasion: source.occasion || null,
+    event_date: source.event_date || null,
+    valid_until: source.valid_until || null,
+    delivery_type: source.delivery_type || null,
+    delivery_date: source.delivery_date || null,
+    delivery_time: source.delivery_time || null,
+    special_instructions: source.special_instructions || null,
+    payment_terms: source.payment_terms || null,
+    notes: source.notes || null,
     discount_amount: Number(source.discount_amount ?? 0),
     items: source.items.map((item) => ({
       item_name: item.item_name.trim(),
