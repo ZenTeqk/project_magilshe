@@ -2,7 +2,7 @@
 
 The new MagliShe Admin Platform — a from-scratch UI/UX (not a reskin of `Admin/`) built on a
 conventional, widely-adopted React stack, talking to the existing Django REST backend in
-`API-Server/` with zero backend changes.
+`API-Server/` with zero backend change.
 
 `Admin/` (the old CRA app) remains the **functional reference** — its API contracts, auth
 flow, business rules and workflows are authoritative. This app is the **new product
