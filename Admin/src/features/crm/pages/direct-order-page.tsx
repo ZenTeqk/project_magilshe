@@ -10,16 +10,26 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { inr } from "@/lib/data";
-import { type CrmCustomerSearchResult } from "@/features/crm/hooks";
+import { type CrmCustomerSearchResult, useCrmOptions } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { configuredOptions } from "@/features/crm/config-options";
 
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", gst_percentage: "" };
-const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank Transfer", "Other UPI", "Other"];
 
 function DirectOrderPage() {
   const { units: saleUnits } = useSaleUnits();
+  const { data: cakeTypes } = useCrmOptions("cake_type");
+  const { data: occasions } = useCrmOptions("occasion");
+  const { data: cakeProducts } = useCrmOptions("cake_product");
+  const { data: gstRates } = useCrmOptions("tax_setting");
+  const { data: livePaymentMethods } = useCrmOptions("payment_method");
+  const cakeTypeOptions = configuredOptions(cakeTypes);
+  const occasionOptions = configuredOptions(occasions);
+  const productOptions = configuredOptions(cakeProducts);
+  const gstOptions = configuredOptions(gstRates);
+  const paymentMethods = configuredOptions(livePaymentMethods);
   const navigate = useNavigate();
   const createOrder = useCreateDirectOrder();
 
@@ -29,12 +39,12 @@ function DirectOrderPage() {
   const [billingAddress, setBillingAddress] = useState("");
   const [occasion, setOccasion] = useState("");
   const [eventDate, setEventDate] = useState("");
-  const [cakeType, setCakeType] = useState("Custom Cake");
+  const [cakeType, setCakeType] = useState("");
   const [items, setItems] = useState<DirectOrderItem[]>([emptyItem]);
   const [discountAmount, setDiscountAmount] = useState("0");
   const [advanceAmount, setAdvanceAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [transactionReference, setTransactionReference] = useState("");
   const [customerRemarks, setCustomerRemarks] = useState("");
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
@@ -62,10 +72,12 @@ function DirectOrderPage() {
     const phoneDigits = phone.replace(/\D/g, "");
     if (!/^[6-9]\d{9}$/.test(phoneDigits)) clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!customerName.trim()) clientErrors["customer_name"] = "Customer name is required.";
+    if (!cakeType.trim()) clientErrors["cake_type"] = "Cake type is required.";
     if (!items.some((it) => it.item_name.trim() && Number(it.rate) > 0)) clientErrors["items"] = "Add at least one item with a name and rate.";
     if (items.some((it) => it.item_name.trim() && it.quantity === "")) clientErrors["items"] = "Quantity is required for every item.";
     const advance = Number(advanceAmount);
     if (!advance || advance <= 0) clientErrors["advance_amount"] = "Collect the advance payment before confirming this order.";
+    if (!paymentMethod) clientErrors["payment_method"] = "Select a payment method.";
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
 
@@ -126,8 +138,17 @@ function DirectOrderPage() {
 
       <SectionCard title="Order details">
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Cake type" required><Input value={cakeType} onChange={(e) => setCakeType(e.target.value)} /></Field>
-          <Field label="Occasion"><Input value={occasion} onChange={(e) => setOccasion(e.target.value)} /></Field>
+          <Field label="Cake type" required error={errors["cake_type"]}>
+            <Select value={cakeType} onValueChange={setCakeType}>
+              <SelectTrigger><SelectValue placeholder="Select cake type" /></SelectTrigger>
+              <SelectContent>{cakeTypeOptions.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
+            </Select>
+            {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
+          </Field>
+          <Field label="Occasion">
+            <Input value={occasion} list="direct-order-occasions" onChange={(e) => setOccasion(e.target.value)} />
+            <datalist id="direct-order-occasions">{occasionOptions.map((value) => <option key={value} value={value} />)}</datalist>
+          </Field>
           <Field label="Event date"><Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} /></Field>
         </div>
       </SectionCard>
@@ -143,12 +164,12 @@ function DirectOrderPage() {
                 const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
-                    <td className="py-2 pr-2"><Input value={item.item_name} onChange={(e) => setItem(i, { item_name: e.target.value })} /></td>
+                    <td className="py-2 pr-2"><Input value={item.item_name} list="direct-order-products" onChange={(e) => setItem(i, { item_name: e.target.value })} /></td>
                     <td className="py-2 pr-2"><Input value={item.flavour ?? ""} onChange={(e) => setItem(i, { flavour: e.target.value })} /></td>
                     <td className="py-2 pr-2"><Input type="number" min={quantityMin(item.unit_type)} step={quantityStep(item.unit_type)} value={item.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></td>
                     <td className="py-2 pr-2"><Select value={item.unit_type} onValueChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent></Select></td>
                     <td className="py-2 pr-2"><Input type="number" min={0} value={item.rate} onChange={(e) => setItem(i, { rate: e.target.value })} /></td>
-                    <td className="py-2 pr-2"><Input type="number" min={0} max={100} value={item.gst_percentage} onChange={(e) => setItem(i, { gst_percentage: e.target.value })} /></td>
+                    <td className="py-2 pr-2"><Input type="number" min={0} max={100} list="direct-order-gst-rates" value={item.gst_percentage} onChange={(e) => setItem(i, { gst_percentage: e.target.value })} /></td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right"><Button variant="ghost" size="icon" className="size-8" disabled={items.length === 1} onClick={() => removeItem(i)}><Trash2 className="size-4" /></Button></td>
                   </tr>
@@ -156,6 +177,8 @@ function DirectOrderPage() {
               })}
             </tbody>
           </table>
+          <datalist id="direct-order-products">{productOptions.map((value) => <option key={value} value={value} />)}</datalist>
+          <datalist id="direct-order-gst-rates">{gstOptions.map((value) => <option key={value} value={value} />)}</datalist>
         </div>
         <Button variant="outline" size="sm" className="mt-3" onClick={addItem}><Plus className="size-4" /> Add item</Button>
       </SectionCard>
@@ -176,11 +199,12 @@ function DirectOrderPage() {
               <Input type="number" min={0} max={total} value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} />
             </Field>
             <Field label="Payment date" required><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></Field>
-            <Field label="Payment method" required>
+            <Field label="Payment method" required error={errors["payment_method"]}>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
                 <SelectContent>{paymentMethods.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
               </Select>
+              {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
             </Field>
             <Field label="Transaction reference"><Input value={transactionReference} onChange={(e) => setTransactionReference(e.target.value)} /></Field>
             <Field label="Customer remarks" className="sm:col-span-2"><Textarea rows={2} value={customerRemarks} onChange={(e) => setCustomerRemarks(e.target.value)} /></Field>

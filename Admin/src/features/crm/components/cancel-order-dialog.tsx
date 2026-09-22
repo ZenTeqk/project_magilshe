@@ -4,24 +4,21 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useCrmOptions } from "@/features/crm/hooks";
 import { useOrderWorkflowAction } from "@/features/crm/orders-hooks";
-
-const fallbackReasons = ["Customer cancelled", "Payment not received", "Duplicate order", "Product unavailable", "Delivery issue", "Customer not responding"];
+import { configuredOptions } from "@/features/crm/config-options";
 
 export function CancelOrderDialog({
   orderId, open, onOpenChange,
 }: { orderId: string | number; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { data: liveReasons } = useCrmOptions("order_cancellation_reason");
-  const reasons = liveReasons?.length ? liveReasons : fallbackReasons;
+  const reasons = configuredOptions(liveReasons);
   const [reason, setReason] = useState("");
-  const [custom, setCustom] = useState("");
   const workflowAction = useOrderWorkflowAction();
 
-  const finalReason = reason === "__other__" ? custom : reason;
+  const finalReason = reason;
 
   const submit = async () => {
     if (!finalReason.trim()) return;
@@ -47,15 +44,10 @@ export function CancelOrderDialog({
             <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
             <SelectContent>
               {reasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-              <SelectItem value="__other__">Other (specify)</SelectItem>
             </SelectContent>
           </Select>
+          {!reasons.length && <p className="text-xs text-warning">Add an active cancellation reason in CRM Settings.</p>}
         </Field>
-        {reason === "__other__" && (
-          <Field label="Custom reason" required>
-            <Input autoFocus value={custom} onChange={(e) => setCustom(e.target.value)} />
-          </Field>
-        )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Keep order</Button>
           <Button type="button" className="bg-danger text-primary-foreground hover:bg-danger/90" disabled={!finalReason.trim() || workflowAction.isPending} onClick={submit}>

@@ -26,13 +26,14 @@ import {
 } from "@/features/crm/hooks";
 import { CustomerMatchPicker } from "./customer-match-picker";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { configuredOptions } from "@/features/crm/config-options";
 
 const emptyQuickLead = {
   customer_id: null as number | null,
   customer_name: "",
   phone: "",
-  occasion: "Birthday",
-  cake_type: "Custom Cake",
+  occasion: "",
+  cake_type: "",
   flavour: "",
   weight: "",
   quantity: "" as number | string,
@@ -55,7 +56,11 @@ export function QuickCreateLeadDialog({
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
 
   const { data: occasions } = useCrmOptions("occasion");
+  const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: flavours } = useCrmOptions("cake_flavour");
+  const occasionOptions = configuredOptions(occasions);
+  const cakeTypeOptions = configuredOptions(cakeTypes);
+  const flavourOptions = configuredOptions(flavours);
   const createLead = useCreateLead();
 
   useEffect(() => {
@@ -82,6 +87,8 @@ export function QuickCreateLeadDialog({
     if (!/^[6-9]\d{9}$/.test(phoneDigits))
       clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
+    if (!form.occasion.trim()) clientErrors["occasion"] = "Occasion is required.";
+    if (!form.cake_type.trim()) clientErrors["cake_type"] = "Cake type is required.";
     if (!form.event_date) clientErrors["event_date"] = "Event date is required.";
     if (form.quantity === "") clientErrors["quantity"] = "Quantity is required.";
     setErrors(clientErrors);
@@ -148,25 +155,41 @@ export function QuickCreateLeadDialog({
               Order requirement
             </p>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Occasion" required>
+              <Field label="Occasion" required error={errors["occasion"]}>
                 <Select
                   value={form.occasion}
                   onValueChange={(v) => setForm((f) => ({ ...f, occasion: v }))}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Select occasion" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(occasions?.length
-                      ? occasions
-                      : ["Birthday", "Wedding", "Anniversary", "Other"]
-                    ).map((o) => (
+                    {occasionOptions.map((o) => (
                       <SelectItem key={o} value={o}>
                         {o}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
+              </Field>
+              <Field label="Cake type" required error={errors["cake_type"]}>
+                <Select
+                  value={form.cake_type}
+                  onValueChange={(v) => setForm((f) => ({ ...f, cake_type: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select cake type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cakeTypeOptions.map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
               </Field>
               <Field label="Flavour">
                 <Select
@@ -177,7 +200,7 @@ export function QuickCreateLeadDialog({
                     <SelectValue placeholder="Select…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(flavours ?? []).map((o) => (
+                    {flavourOptions.map((o) => (
                       <SelectItem key={o} value={o}>
                         {o}
                       </SelectItem>

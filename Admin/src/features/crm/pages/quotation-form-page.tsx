@@ -55,6 +55,7 @@ import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
+import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
 
 const emptyItem: QuotationItem = {
   item_name: "",
@@ -117,6 +118,14 @@ function QuotationFormPage() {
   const [gstDialogOpen, setGstDialogOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [expandedVersions, setExpandedVersions] = useState<number[]>([]);
+  const productOptions = useMemo(() => {
+    const currentItems = isEdit ? form.items.map((item) => item.item_name) : [];
+    return optionsWithCurrentValues(cakeProducts, currentItems);
+  }, [cakeProducts, form.items, isEdit]);
+  const gstOptions = useMemo(() => {
+    const currentRates = isEdit ? form.items.map((item) => String(item.gst_percentage ?? "")) : [];
+    return optionsWithCurrentValues(gstRates, currentRates);
+  }, [gstRates, form.items, isEdit]);
 
   useEffect(() => {
     if (existingQuotation) {
@@ -677,7 +686,7 @@ function QuotationFormPage() {
               value={formatTimeOfDay(form.delivery_time)}
               onChange={(e) => setForm((f) => ({ ...f, delivery_time: normalizeTimeOfDayInput(e.target.value) }))}
             />
-            <datalist id="quotation-delivery-time-slots">{(deliveryTimeSlots ?? []).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
+            <datalist id="quotation-delivery-time-slots">{configuredOptions(deliveryTimeSlots).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
           </Field>
         </div>
       </SectionCard>
@@ -780,10 +789,9 @@ function QuotationFormPage() {
               })}
             </tbody>
           </table>
-          <datalist id="quotation-products">{(cakeProducts ?? []).map((product) => <option key={product} value={product} />)}</datalist>
+          <datalist id="quotation-products">{productOptions.map((product) => <option key={product} value={product} />)}</datalist>
           <datalist id="quotation-gst-rates">
-            {[0, 5, 12, 18, 28, ...(gstRates ?? []).map(Number)]
-              .filter((v, i, a) => a.indexOf(v) === i)
+            {gstOptions
               .map((v) => (
                 <option key={v} value={v} />
               ))}

@@ -10,8 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/shared/field";
 import { inr } from "@/lib/data";
 import { useRecordInvoicePayment, type CrmInvoice } from "@/features/crm/invoices-hooks";
-
-const paymentMethods = ["Cash", "Google Pay", "PhonePe", "Paytm", "Card", "Bank Transfer", "Other UPI", "Other"];
+import { useCrmOptions } from "@/features/crm/hooks";
+import { configuredOptions } from "@/features/crm/config-options";
 
 export function RecordInvoicePaymentDialog({
   invoice, open, onOpenChange,
@@ -24,6 +24,8 @@ export function RecordInvoicePaymentDialog({
   const [customerRemarks, setCustomerRemarks] = useState("");
   const [proof, setProof] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { data: livePaymentMethods } = useCrmOptions("payment_method");
+  const paymentMethods = configuredOptions(livePaymentMethods);
 
   const recordPayment = useRecordInvoicePayment();
 
@@ -67,6 +69,7 @@ export function RecordInvoicePaymentDialog({
               <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
               <SelectContent>{paymentMethods.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
             </Select>
+            {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
           </Field>
           <Field label="Transaction reference">
             <Input value={transactionReference} onChange={(e) => setTransactionReference(e.target.value)} />

@@ -34,6 +34,7 @@ import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeli
 import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
+import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
 
 const blank = {
   customer_id: null as number | null,
@@ -46,14 +47,14 @@ const blank = {
   city: "",
   state: "",
   pincode: "",
-  cake_type: "Custom Cake",
+  cake_type: "",
   flavour: "",
   shape: "",
   weight: "",
   quantity: "" as number | string,
   unit_type: "kg" as SaleUnit,
   theme: "",
-  occasion: "Birthday",
+  occasion: "",
   event_date: "",
   delivery_date: "",
   delivery_time: "",
@@ -66,7 +67,7 @@ const blank = {
   follow_up_date: "",
   follow_up_time: "",
   follow_up_notes: "",
-  lead_source: "Walk-in",
+  lead_source: "",
   lead_source_details: "",
   staff_remarks: "",
   winning_reason: "",
@@ -111,6 +112,12 @@ function LeadFormPage() {
   const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: winningReasons } = useCrmOptions("winning_reason");
   const { data: lossReasons } = useCrmOptions("loss_reason");
+  const occasionOptions = optionsWithCurrent(occasions, isEdit ? form.occasion : "");
+  const cakeTypeOptions = optionsWithCurrent(cakeTypes, isEdit ? form.cake_type : "");
+  const flavourOptions = optionsWithCurrent(flavours, isEdit ? form.flavour : "");
+  const leadSourceOptions = optionsWithCurrent(leadSources, isEdit ? form.lead_source : "");
+  const winningReasonOptions = optionsWithCurrent(winningReasons, isEdit ? form.winning_reason : "");
+  const lossReasonOptions = optionsWithCurrent(lossReasons, isEdit ? form.loss_reason : "");
 
   useEffect(() => {
     if (existingLead) {
@@ -160,6 +167,8 @@ function LeadFormPage() {
     if (!/^[6-9]\d{9}$/.test(phoneDigits))
       clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
+    if (!form.occasion.trim()) clientErrors["occasion"] = "Occasion is required.";
+    if (!form.cake_type.trim()) clientErrors["cake_type"] = "Cake type is required.";
     if (!form.event_date) clientErrors["event_date"] = "Event date is required.";
     if (form.quantity === "") clientErrors["quantity"] = "Quantity is required.";
     if (form.status === "Follow-up" && !form.follow_up_date) clientErrors["follow_up_date"] = "Next follow-up date is required.";
@@ -335,22 +344,20 @@ function LeadFormPage() {
 
       <SectionCard title="Event Details">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Occasion" required>
+          <Field label="Occasion" required error={errors["occasion"]}>
             <Select value={form.occasion} onValueChange={(v) => set("occasion", v)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select occasion" />
               </SelectTrigger>
               <SelectContent>
-                {(occasions?.length
-                  ? occasions
-                  : ["Birthday", "Wedding", "Anniversary", "Other"]
-                ).map((o) => (
+                {occasionOptions.map((o) => (
                   <SelectItem key={o} value={o}>
                     {o}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
           </Field>
           <Field label="Event date" required error={errors["event_date"]}>
             <Input
@@ -365,21 +372,20 @@ function LeadFormPage() {
 
       <SectionCard title="Cake Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Cake type" required>
+          <Field label="Cake type" required error={errors["cake_type"]}>
             <Select value={form.cake_type} onValueChange={(v) => set("cake_type", v)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select cake type" />
               </SelectTrigger>
               <SelectContent>
-                {(cakeTypes?.length ? cakeTypes : ["Custom Cake", "Photo Cake", "Tier Cake"]).map(
-                  (o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
-                    </SelectItem>
-                  ),
-                )}
+                {cakeTypeOptions.map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Flavour">
             <Select value={form.flavour} onValueChange={(v) => set("flavour", v)}>
@@ -387,7 +393,7 @@ function LeadFormPage() {
                 <SelectValue placeholder="Select…" />
               </SelectTrigger>
               <SelectContent>
-                {(flavours ?? []).map((o) => (
+                {flavourOptions.map((o) => (
                   <SelectItem key={o} value={o}>
                     {o}
                   </SelectItem>
@@ -493,7 +499,7 @@ function LeadFormPage() {
               value={formatTimeOfDay(form.delivery_time)}
               onChange={(e) => set("delivery_time", normalizeTimeOfDayInput(e.target.value))}
             />
-            <datalist id="lead-delivery-time-slots">{(deliveryTimeSlots ?? []).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
+            <datalist id="lead-delivery-time-slots">{configuredOptions(deliveryTimeSlots).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
           </Field>
         </div>
       </SectionCard>
@@ -572,9 +578,9 @@ function LeadFormPage() {
             <Field label="Reason for winning" required error={errors["winning_reason"]}>
               <Select value={form.winning_reason} onValueChange={(value) => set("winning_reason", value)}>
                 <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-                <SelectContent>{(winningReasons ?? []).map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
+                <SelectContent>{winningReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
               </Select>
-              {!winningReasons?.length && <p className="text-xs text-warning">Add an active winning reason in CRM Settings.</p>}
+              {!winningReasonOptions.length && <p className="text-xs text-warning">Add an active winning reason in CRM Settings.</p>}
             </Field>
           </div>
         )}
@@ -583,9 +589,9 @@ function LeadFormPage() {
             <Field label="Reason for loss" required error={errors["loss_reason"]}>
               <Select value={form.loss_reason} onValueChange={(value) => set("loss_reason", value)}>
                 <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-                <SelectContent>{(lossReasons ?? []).map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
+                <SelectContent>{lossReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
               </Select>
-              {!lossReasons?.length && <p className="text-xs text-warning">Add an active loss reason in CRM Settings.</p>}
+              {!lossReasonOptions.length && <p className="text-xs text-warning">Add an active loss reason in CRM Settings.</p>}
             </Field>
           </div>
         )}
@@ -618,16 +624,14 @@ function LeadFormPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(leadSources?.length
-                  ? leadSources
-                  : ["Walk-in", "Instagram", "Referral", "Website"]
-                ).map((o) => (
+                {leadSourceOptions.map((o) => (
                   <SelectItem key={o} value={o}>
                     {o}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!leadSourceOptions.length && <p className="text-xs text-warning">Add an active lead source in CRM Settings.</p>}
           </Field>
           <Field label="Lead source details">
             <Input

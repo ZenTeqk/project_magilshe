@@ -3,12 +3,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useCrmOptions } from "@/features/crm/hooks";
-
-const fallbackReasons = ["Customer unavailable", "Wrong address", "Customer cancelled", "Vehicle issue", "Unable to contact customer"];
+import { configuredOptions } from "@/features/crm/config-options";
 
 export function MarkFailedDialog({
   open, onOpenChange, busy, onSubmit,
@@ -19,12 +17,11 @@ export function MarkFailedDialog({
   onSubmit: (reason: string) => Promise<void>;
 }) {
   const { data: liveReasons } = useCrmOptions("delivery_failure_reason");
-  const reasons = liveReasons?.length ? liveReasons : fallbackReasons;
+  const reasons = configuredOptions(liveReasons);
   const [reason, setReason] = useState("");
-  const [custom, setCustom] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const finalReason = reason === "__other__" ? custom : reason;
+  const finalReason = reason;
 
   const submit = async () => {
     if (!finalReason.trim()) { setError("Failure reason is required."); return; }
@@ -32,7 +29,6 @@ export function MarkFailedDialog({
     try {
       await onSubmit(finalReason);
       setReason("");
-      setCustom("");
       onOpenChange(false);
     } catch (err: unknown) {
       const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
@@ -53,15 +49,10 @@ export function MarkFailedDialog({
             <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
             <SelectContent>
               {reasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-              <SelectItem value="__other__">Other (specify)</SelectItem>
             </SelectContent>
           </Select>
+          {!reasons.length && <p className="text-xs text-warning">Add an active failure reason in CRM Settings.</p>}
         </Field>
-        {reason === "__other__" && (
-          <Field label="Custom reason" required>
-            <Input autoFocus value={custom} onChange={(e) => setCustom(e.target.value)} />
-          </Field>
-        )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="button" className="bg-danger text-primary-foreground hover:bg-danger/90" disabled={busy || !finalReason.trim()} onClick={submit}>Mark Failed</Button>

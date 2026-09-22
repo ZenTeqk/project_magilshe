@@ -21,17 +21,8 @@ import {
 import { Field } from "@/components/shared/field";
 import { inr } from "@/lib/data";
 import { useRecordQuotationPayment, type Quotation } from "@/features/crm/quotations-hooks";
-
-const paymentMethods = [
-  "Cash",
-  "Google Pay",
-  "PhonePe",
-  "Paytm",
-  "Card",
-  "Bank Transfer",
-  "Other UPI",
-  "Other",
-];
+import { useCrmOptions } from "@/features/crm/hooks";
+import { configuredOptions } from "@/features/crm/config-options";
 
 export function RecordQuotationPaymentDialog({
   quotation,
@@ -45,11 +36,13 @@ export function RecordQuotationPaymentDialog({
   const balance = Number(quotation.balance_amount) || Number(quotation.total_amount) || 0;
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [transactionReference, setTransactionReference] = useState("");
   const [customerRemarks, setCustomerRemarks] = useState("");
   const [proof, setProof] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { data: livePaymentMethods } = useCrmOptions("payment_method");
+  const paymentMethods = configuredOptions(livePaymentMethods);
 
   const recordPayment = useRecordQuotationPayment();
 
@@ -62,6 +55,10 @@ export function RecordQuotationPaymentDialog({
     }
     if (value > balance) {
       setError("Payment cannot exceed the remaining balance.");
+      return;
+    }
+    if (!paymentMethod) {
+      setError("Select a payment method.");
       return;
     }
     try {
@@ -117,7 +114,7 @@ export function RecordQuotationPaymentDialog({
           <Field label="Payment method" required>
             <Select value={paymentMethod} onValueChange={setPaymentMethod}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select payment method" />
               </SelectTrigger>
               <SelectContent>
                 {paymentMethods.map((m) => (
@@ -127,6 +124,7 @@ export function RecordQuotationPaymentDialog({
                 ))}
               </SelectContent>
             </Select>
+            {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
           </Field>
           <Field label="Transaction reference">
             <Input
