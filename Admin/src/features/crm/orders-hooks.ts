@@ -75,11 +75,12 @@ export type CrmOrder = {
   timeline: Array<{ id: string | number; action: string; description: string; staff_name: string; created_on: string }>;
 };
 
-export function useOrders() {
+export function useOrders(params: { archived?: boolean } = {}) {
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== false));
   return useQuery({
-    queryKey: ["crm", "orders"],
+    queryKey: ["crm", "orders", cleaned],
     queryFn: async () => {
-      const { data } = await apiClient.get(endpoints.crm.orders);
+      const { data } = await apiClient.get(endpoints.crm.orders, { params: cleaned });
       return unwrapList<CrmOrder>(data);
     },
   });
@@ -111,6 +112,39 @@ export function useUpdateOrderNotes() {
       return data;
     },
     onSuccess: (data, { id }) => { queryClient.setQueryData(orderKey(id), data); invalidateOrder(queryClient, id); },
+  });
+}
+
+export function useArchiveOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.order(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateOrder(queryClient, id),
+  });
+}
+
+export function useRestoreOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.post(endpoints.crm.orderRestore(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateOrder(queryClient, id),
+  });
+}
+
+export function usePermanentDeleteOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.orderPermanentDelete(id));
+      return id;
+    },
+    onSuccess: () => invalidateOrder(queryClient),
   });
 }
 

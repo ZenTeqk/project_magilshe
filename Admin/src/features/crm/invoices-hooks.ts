@@ -55,11 +55,12 @@ export type CrmInvoice = {
   timeline: Array<{ id: string | number; action: string; description: string; staff_name: string; created_on: string }>;
 };
 
-export function useInvoices() {
+export function useInvoices(params: { archived?: boolean } = {}) {
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== false));
   return useQuery({
-    queryKey: ["crm", "invoices"],
+    queryKey: ["crm", "invoices", cleaned],
     queryFn: async () => {
-      const { data } = await apiClient.get(endpoints.crm.invoices);
+      const { data } = await apiClient.get(endpoints.crm.invoices, { params: cleaned });
       return unwrapList<CrmInvoice>(data);
     },
   });
@@ -108,6 +109,39 @@ export function useRecordInvoicePayment() {
       queryClient.setQueryData(invoiceKey(id), data);
       invalidateInvoice(queryClient, id);
     },
+  });
+}
+
+export function useArchiveInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.invoice(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateInvoice(queryClient, id),
+  });
+}
+
+export function useRestoreInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.post(endpoints.crm.invoiceRestore(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateInvoice(queryClient, id),
+  });
+}
+
+export function usePermanentDeleteInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.invoicePermanentDelete(id));
+      return id;
+    },
+    onSuccess: () => invalidateInvoice(queryClient),
   });
 }
 

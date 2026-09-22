@@ -107,11 +107,12 @@ export type CrmDelivery = {
 
 export type DeliveryPerson = { id: string | number; name: string; phone: string; status: boolean };
 
-export function useDeliveries() {
+export function useDeliveries(params: { archived?: boolean } = {}) {
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== false));
   return useQuery({
-    queryKey: ["crm", "deliveries"],
+    queryKey: ["crm", "deliveries", cleaned],
     queryFn: async () => {
-      const { data } = await apiClient.get(endpoints.crm.deliveries);
+      const { data } = await apiClient.get(endpoints.crm.deliveries, { params: cleaned });
       return unwrapList<CrmDelivery>(data);
     },
   });
@@ -183,6 +184,39 @@ export function useUpdateDelivery() {
       return data;
     },
     onSuccess: (data, { id }) => { queryClient.setQueryData(deliveryKey(id), data); invalidateDelivery(queryClient, id); },
+  });
+}
+
+export function useArchiveDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.delivery(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateDelivery(queryClient, id),
+  });
+}
+
+export function useRestoreDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.post(endpoints.crm.deliveryRestore(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateDelivery(queryClient, id),
+  });
+}
+
+export function usePermanentDeleteDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.deliveryPermanentDelete(id));
+      return id;
+    },
+    onSuccess: () => invalidateDelivery(queryClient),
   });
 }
 
