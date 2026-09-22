@@ -27,6 +27,7 @@ import {
 import { CustomerMatchPicker } from "./customer-match-picker";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
 
 const emptyQuickLead = {
   customer_id: null as number | null,
@@ -58,9 +59,11 @@ export function QuickCreateLeadDialog({
   const { data: occasions } = useCrmOptions("occasion");
   const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: flavours } = useCrmOptions("cake_flavour");
+  const { data: productRates } = useCrmOptions("product_rate");
   const occasionOptions = configuredOptions(occasions);
   const cakeTypeOptions = configuredOptions(cakeTypes);
   const flavourOptions = configuredOptions(flavours);
+  const productRateOptions = configuredOptions(productRates);
   const createLead = useCreateLead();
 
   useEffect(() => {
@@ -156,57 +159,15 @@ export function QuickCreateLeadDialog({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Occasion" required error={errors["occasion"]}>
-                <Select
-                  value={form.occasion}
-                  onValueChange={(v) => setForm((f) => ({ ...f, occasion: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select occasion" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {occasionOptions.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => setForm((f) => ({ ...f, occasion: v }))} placeholder="Select or type occasion" />
                 {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
               </Field>
               <Field label="Cake type" required error={errors["cake_type"]}>
-                <Select
-                  value={form.cake_type}
-                  onValueChange={(v) => setForm((f) => ({ ...f, cake_type: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select cake type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cakeTypeOptions.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => setForm((f) => ({ ...f, cake_type: v }))} placeholder="Select or type cake type" />
                 {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
               </Field>
               <Field label="Flavour">
-                <Select
-                  value={form.flavour}
-                  onValueChange={(v) => setForm((f) => ({ ...f, flavour: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {flavourOptions.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => setForm((f) => ({ ...f, flavour: v }))} placeholder="Select or type flavour" />
               </Field>
               <Field label="Quantity" required>
                 <Input
@@ -225,7 +186,9 @@ export function QuickCreateLeadDialog({
                   <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Rate"><Input type="number" min={0} value={form.estimated_amount} onChange={(e) => setForm((f) => ({ ...f, estimated_amount: e.target.value }))} /></Field>
+              <Field label="Rate">
+                <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, estimated_amount: v }))} placeholder="Select or type rate" />
+              </Field>
               <Field label="Amount"><Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} /></Field>
               <Field label="Event date" required error={errors["event_date"]}>
                 <Input

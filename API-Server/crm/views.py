@@ -96,18 +96,96 @@ class ArchivedLifecycleMixin:
         instance = self.get_object()
         blocker = self.permanent_delete_blocker(instance)
         if blocker:
-            return Response({"message": blocker}, status=status.HTTP_409_CONFLICT)
-        try:
-            instance.delete()
-        except ProtectedError:
             return Response(
-                {"message": f"{self.lifecycle_label} cannot be permanently deleted because it has protected related records. Archive it instead."},
+                {"message": blocker, "dependencies": self.deletion_dependencies(instance)},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            with transaction.atomic():
+                self.prepare_permanent_delete(instance)
+                instance.delete()
+        except ProtectedError as exc:
+            dependencies = self.protected_error_dependencies(exc)
+            return Response(
+                {
+                    "message": f"{self.lifecycle_label} cannot be permanently deleted because it has protected related records. Delete linked records first.",
+                    "dependencies": dependencies,
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["get"], url_path="deletion-dependencies")
+    def deletion_dependencies_action(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        return Response(self.deletion_dependencies(self.get_object()))
+
     def permanent_delete_blocker(self, instance):
         return None
+
+    def prepare_permanent_delete(self, instance):
+        return None
+
+    def deletion_dependencies(self, instance):
+        blocker = self.permanent_delete_blocker(instance)
+        if not blocker:
+            return {"has_dependencies": False, "links": []}
+        return {
+            "has_dependencies": True,
+            "links": [{
+                "label": "Blocked",
+                "count": 1,
+                "records": [{"id": instance.pk, "message": blocker}],
+            }],
+        }
+
+    def protected_error_dependencies(self, exc):
+        protected = list(getattr(exc, "protected_objects", []) or [])
+        records = []
+        for obj in protected[:20]:
+            record = {
+                "id": getattr(obj, "pk", None),
+                "message": str(obj),
+            }
+            if isinstance(obj, CRMOrder):
+                record.update({
+                    "order_no": obj.order_no,
+                    "customer_name": obj.customer_name,
+                    "status": obj.status,
+                    "record_type": "orders",
+                })
+            elif isinstance(obj, CRMInvoice):
+                record.update({
+                    "invoice_no": obj.invoice_no,
+                    "customer_name": obj.customer_name,
+                    "status": obj.status,
+                    "record_type": "invoices",
+                })
+            elif isinstance(obj, CRMDelivery):
+                record.update({
+                    "delivery_no": obj.delivery_no,
+                    "customer_name": obj.recipient_name,
+                    "status": obj.delivery_status,
+                    "record_type": "deliveries",
+                })
+            elif isinstance(obj, Quotation):
+                record.update({
+                    "quotation_no": obj.quotation_no,
+                    "customer_name": obj.customer_name,
+                    "status": obj.status,
+                    "record_type": "quotations",
+                })
+            records.append(record)
+        return {
+            "has_dependencies": bool(records),
+            "links": [{
+                "label": "Protected related records",
+                "count": len(protected),
+                "records": records,
+            }] if records else [],
+        }
 
 
 class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
@@ -135,11 +213,26 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         return qs
 
     def permanent_delete_blocker(self, instance):
-        if hasattr(instance, "quotation"):
+        if Quotation.objects.filter(lead=instance).exists():
             return "Lead cannot be permanently deleted because it has a related quotation. Archive it instead."
-        if instance.activities.exists() or instance.reference_images.exists():
-            return "Lead cannot be permanently deleted because it has CRM history. Archive it instead."
         return None
+
+    def deletion_dependencies(self, instance):
+        links = []
+        quotations = Quotation.objects.filter(lead=instance).order_by("-id")
+        if quotations.exists():
+            links.append({
+                "label": "Quotations",
+                "count": quotations.count(),
+                "records": [{
+                    "id": quotation.id,
+                    "quotation_no": quotation.quotation_no,
+                    "customer_name": quotation.customer_name,
+                    "status": quotation.status,
+                    "record_type": "quotations",
+                } for quotation in quotations[:20]],
+            })
+        return {"has_dependencies": bool(links), "links": links}
 
     @action(detail=False, methods=["get"], url_path="crm-dashboard")
     def crm_dashboard(self, request):
@@ -651,30 +744,79 @@ class CRMCustomerViewSet(
 
     @staticmethod
     def deletion_dependencies(customer):
+        deliveries = CRMDelivery.objects.filter(order__customer=customer).order_by("-id")
         links = [
             {
                 "label": "Leads",
                 "count": customer.crm_leads.count(),
-                "records": list(customer.crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "leads"}
+                    for record in customer.crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Quotations",
                 "count": customer.crm_quotations.count(),
-                "records": list(customer.crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "quotations"}
+                    for record in customer.crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Orders",
                 "count": customer.crm_orders.count(),
-                "records": list(customer.crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "orders"}
+                    for record in customer.crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Invoices",
                 "count": customer.crm_invoices.count(),
-                "records": list(customer.crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "invoices"}
+                    for record in customer.crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]
+                ],
+            },
+            {
+                "label": "Deliveries",
+                "count": deliveries.count(),
+                "records": [
+                    {
+                        "id": delivery.id,
+                        "delivery_no": delivery.delivery_no,
+                        "customer_name": delivery.recipient_name or delivery.order.customer_name,
+                        "status": delivery.delivery_status,
+                        "record_type": "deliveries",
+                    }
+                    for delivery in deliveries[:20]
+                ],
             },
         ]
         links = [link for link in links if link["count"]]
         return {"has_dependencies": bool(links), "links": links}
+
+    @staticmethod
+    def protected_error_dependencies(exc):
+        protected = list(getattr(exc, "protected_objects", []) or [])
+        records = []
+        for obj in protected[:20]:
+            record = {"id": getattr(obj, "pk", None), "message": str(obj)}
+            if isinstance(obj, Lead):
+                record.update({"lead_no": obj.lead_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "leads"})
+            elif isinstance(obj, Quotation):
+                record.update({"quotation_no": obj.quotation_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "quotations"})
+            elif isinstance(obj, CRMOrder):
+                record.update({"order_no": obj.order_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "orders"})
+            elif isinstance(obj, CRMInvoice):
+                record.update({"invoice_no": obj.invoice_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "invoices"})
+            elif isinstance(obj, CRMDelivery):
+                record.update({"delivery_no": obj.delivery_no, "customer_name": obj.recipient_name, "status": obj.delivery_status, "record_type": "deliveries"})
+            records.append(record)
+        return {
+            "has_dependencies": bool(records),
+            "links": [{"label": "Protected related records", "count": len(protected), "records": records}] if records else [],
+        }
 
     @action(detail=True, methods=["get"], url_path="deletion-dependencies")
     def deletion_dependencies_action(self, request, pk=None):
@@ -715,8 +857,11 @@ class CRMCustomerViewSet(
             }, status=409)
         try:
             customer.delete()
-        except ProtectedError:
-            return Response({"message": "Customer cannot be permanently deleted because it has protected related records. Archive it instead."}, status=409)
+        except ProtectedError as exc:
+            return Response({
+                "message": "Customer cannot be permanently deleted because it has protected related records. Clear linked CRM records first.",
+                "dependencies": self.protected_error_dependencies(exc),
+            }, status=409)
         return Response(status=204)
 
     def list(self, request, *args, **kwargs):
@@ -905,10 +1050,6 @@ class CRMCustomerViewSet(
         """Reuse the customer projection under the separately enforceable
         analytics permission consumed by the Customer Dashboard."""
         queryset = self.get_queryset()
-        if request.query_params.get("from_date"):
-            queryset = queryset.filter(date_joined__date__gte=request.query_params["from_date"])
-        if request.query_params.get("to_date"):
-            queryset = queryset.filter(date_joined__date__lte=request.query_params["to_date"])
         return Response([self.summary(customer) for customer in queryset[:200]])
 
     def retrieve(self, request, *args, **kwargs):
@@ -1112,15 +1253,30 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         return QuotationListSerializer if self.action == "list" else QuotationSerializer
 
     def permanent_delete_blocker(self, instance):
-        if instance.payments.exists():
-            return "Quotation cannot be permanently deleted because it has payment history. Archive it instead."
-        if instance.versions.exists():
-            return "Quotation cannot be permanently deleted because it has quotation versions. Archive it instead."
-        if hasattr(instance, "crm_order"):
+        if CRMOrder.objects.filter(quotation=instance).exists():
             return "Quotation cannot be permanently deleted because it has a related order. Archive it instead."
-        if instance.activities.exists():
-            return "Quotation cannot be permanently deleted because it has CRM history. Archive it instead."
         return None
+
+    def prepare_permanent_delete(self, instance):
+        instance.payments.all().delete()
+        instance.versions.all().delete()
+
+    def deletion_dependencies(self, instance):
+        links = []
+        orders = CRMOrder.objects.filter(quotation=instance).order_by("-id")
+        if orders.exists():
+            links.append({
+                "label": "Orders",
+                "count": orders.count(),
+                "records": [{
+                    "id": order.id,
+                    "order_no": order.order_no,
+                    "customer_name": order.customer_name,
+                    "status": order.status,
+                    "record_type": "orders",
+                } for order in orders[:20]],
+            })
+        return {"has_dependencies": bool(links), "links": links}
 
     def perform_create(self, serializer):
         customer = serializer.validated_data.get("customer")
@@ -1352,15 +1508,39 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         return queryset
 
     def permanent_delete_blocker(self, instance):
-        if instance.advance_paid and instance.advance_paid > 0:
-            return "Order cannot be permanently deleted because it has payment history. Archive it instead."
-        if instance.status not in {"Cancelled"}:
-            return "Order cannot be permanently deleted unless it is cancelled and has no dependencies. Archive it instead."
-        if hasattr(instance, "invoice") or hasattr(instance, "delivery"):
+        if CRMInvoice.objects.filter(order=instance).exists() or CRMDelivery.objects.filter(order=instance).exists():
             return "Order cannot be permanently deleted because it has invoice or delivery history. Archive it instead."
-        if instance.items.exists() or instance.quotation.activities.exists():
-            return "Order cannot be permanently deleted because it has order or CRM history. Archive it instead."
         return None
+
+    def deletion_dependencies(self, instance):
+        links = []
+        invoices = CRMInvoice.objects.filter(order=instance).order_by("-id")
+        if invoices.exists():
+            links.append({
+                "label": "Invoices",
+                "count": invoices.count(),
+                "records": [{
+                    "id": invoice.id,
+                    "invoice_no": invoice.invoice_no,
+                    "customer_name": invoice.customer_name,
+                    "status": invoice.status,
+                    "record_type": "invoices",
+                } for invoice in invoices[:20]],
+            })
+        deliveries = CRMDelivery.objects.filter(order=instance).order_by("-id")
+        if deliveries.exists():
+            links.append({
+                "label": "Deliveries",
+                "count": deliveries.count(),
+                "records": [{
+                    "id": delivery.id,
+                    "delivery_no": delivery.delivery_no,
+                    "customer_name": delivery.recipient_name or instance.customer_name,
+                    "status": delivery.delivery_status,
+                    "record_type": "deliveries",
+                } for delivery in deliveries[:20]],
+            })
+        return {"has_dependencies": bool(links), "links": links}
 
     def create(self, request, *args, **kwargs):
         return Response(
@@ -1559,13 +1739,10 @@ class CRMInvoiceViewSet(ArchivedLifecycleMixin, viewsets.ReadOnlyModelViewSet):
         return queryset
 
     def permanent_delete_blocker(self, instance):
-        if instance.amount_paid and instance.amount_paid > 0:
-            return "Invoice cannot be permanently deleted because it has payment history. Archive it instead."
-        if instance.status != "Cancelled":
-            return "Invoice cannot be permanently deleted unless it is cancelled and has no dependencies. Archive it instead."
-        if instance.order.quotation.payments.exists() or instance.order.quotation.activities.exists():
-            return "Invoice cannot be permanently deleted because it has payment or CRM history. Archive it instead."
         return None
+
+    def deletion_dependencies(self, instance):
+        return {"has_dependencies": False, "links": []}
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
@@ -1724,13 +1901,10 @@ class CRMDeliveryViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         return queryset.filter(scheduled) if start or end else queryset
 
     def permanent_delete_blocker(self, instance):
-        if instance.delivery_status not in {"Pending", "Cancelled"}:
-            return "Delivery cannot be permanently deleted because it has delivery history. Archive it instead."
-        if instance.damage_images.exists():
-            return "Delivery cannot be permanently deleted because it has damage history. Archive it instead."
-        if instance.order_id:
-            return "Delivery cannot be permanently deleted because it is related to an order. Archive it instead."
         return None
+
+    def deletion_dependencies(self, instance):
+        return {"has_dependencies": False, "links": []}
 
     def create(self, request, *args, **kwargs):
         return Response({"message": "Deliveries are created from paid invoices."}, status=405)

@@ -35,6 +35,7 @@ import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
 
 const blank = {
   customer_id: null as number | null,
@@ -108,6 +109,7 @@ function LeadFormPage() {
   const { data: occasions } = useCrmOptions("occasion");
   const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: flavours } = useCrmOptions("cake_flavour");
+  const { data: productRates } = useCrmOptions("product_rate");
   const { data: leadSources } = useCrmOptions("lead_source");
   const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: winningReasons } = useCrmOptions("winning_reason");
@@ -115,6 +117,7 @@ function LeadFormPage() {
   const occasionOptions = optionsWithCurrent(occasions, isEdit ? form.occasion : "");
   const cakeTypeOptions = optionsWithCurrent(cakeTypes, isEdit ? form.cake_type : "");
   const flavourOptions = optionsWithCurrent(flavours, isEdit ? form.flavour : "");
+  const productRateOptions = optionsWithCurrent(productRates, isEdit ? form.estimated_amount : "");
   const leadSourceOptions = optionsWithCurrent(leadSources, isEdit ? form.lead_source : "");
   const winningReasonOptions = optionsWithCurrent(winningReasons, isEdit ? form.winning_reason : "");
   const lossReasonOptions = optionsWithCurrent(lossReasons, isEdit ? form.loss_reason : "");
@@ -345,18 +348,7 @@ function LeadFormPage() {
       <SectionCard title="Event Details">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Occasion" required error={errors["occasion"]}>
-            <Select value={form.occasion} onValueChange={(v) => set("occasion", v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select occasion" />
-              </SelectTrigger>
-              <SelectContent>
-                {occasionOptions.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => set("occasion", v)} placeholder="Select or type occasion" />
             {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
           </Field>
           <Field label="Event date" required error={errors["event_date"]}>
@@ -373,33 +365,11 @@ function LeadFormPage() {
       <SectionCard title="Cake Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Cake type" required error={errors["cake_type"]}>
-            <Select value={form.cake_type} onValueChange={(v) => set("cake_type", v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select cake type" />
-              </SelectTrigger>
-              <SelectContent>
-                {cakeTypeOptions.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => set("cake_type", v)} placeholder="Select or type cake type" />
             {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Flavour">
-            <Select value={form.flavour} onValueChange={(v) => set("flavour", v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select…" />
-              </SelectTrigger>
-              <SelectContent>
-                {flavourOptions.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => set("flavour", v)} placeholder="Select or type flavour" />
           </Field>
           <Field label="Shape">
             <Input value={form.shape} onChange={(e) => set("shape", e.target.value)} />
@@ -515,12 +485,7 @@ function LeadFormPage() {
             />
           </Field>
           <Field label="Rate">
-            <Input
-              type="number"
-              min={0}
-              value={form.estimated_amount}
-              onChange={(e) => set("estimated_amount", e.target.value)}
-            />
+            <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => set("estimated_amount", v)} placeholder="Select or type rate" />
           </Field>
           <Field label="Amount">
             <Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} />
@@ -619,18 +584,7 @@ function LeadFormPage() {
       <SectionCard title="Sales Information">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Lead source">
-            <Select value={form.lead_source} onValueChange={(v) => set("lead_source", v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {leadSourceOptions.map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionCombobox value={form.lead_source} options={leadSourceOptions} onChange={(v) => set("lead_source", v)} placeholder="Select or type source" />
             {!leadSourceOptions.length && <p className="text-xs text-warning">Add an active lead source in CRM Settings.</p>}
           </Field>
           <Field label="Lead source details">

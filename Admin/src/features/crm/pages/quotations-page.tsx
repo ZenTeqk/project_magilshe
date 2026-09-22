@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { Archive, FileText, MoreHorizontal, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,6 +30,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { inr } from "@/lib/data";
+import { apiClient } from "@/lib/api-client";
+import { endpoints } from "@/lib/endpoints";
 import {
   useQuotations,
   useQuotationsPending,
@@ -46,13 +49,74 @@ function mutationMessage(error: unknown, fallback: string) {
   return data?.message || data?.detail || fallback;
 }
 
+type DependencyLink = {
+  label: string;
+  count: number;
+  records: Array<Record<string, unknown>>;
+};
+
+type DeletionDependencies = {
+  has_dependencies: boolean;
+  links: DependencyLink[];
+};
+
+function errorDependencies(error: unknown): DeletionDependencies | null {
+  return ((error as { response?: { data?: { dependencies?: DeletionDependencies } } })?.response?.data?.dependencies) ?? null;
+}
+
+function dependencyRecordLabel(record: Record<string, unknown>) {
+  return String(record["order_no"] ?? record["invoice_no"] ?? record["delivery_no"] ?? record["customer_name"] ?? record["message"] ?? record["id"] ?? "Record");
+}
+
+function dependencyRecordType(record: Record<string, unknown>) {
+  const recordType = record["record_type"];
+  if (recordType === "orders" || recordType === "invoices" || recordType === "deliveries") {
+    return recordType;
+  }
+  return null;
+}
+
+function dependencyRecordPath(record: Record<string, unknown>) {
+  const id = record["id"];
+  if (!id) return null;
+  if (record["record_type"] === "orders") return `/crm/orders/${id}`;
+  if (record["record_type"] === "invoices") return `/crm/invoices/${id}`;
+  if (record["record_type"] === "deliveries") return `/crm/delivery/${id}`;
+  return null;
+}
+
+function dependencyPermanentDeleteEndpoint(record: Record<string, unknown>) {
+  const id = record["id"];
+  if (!id) return null;
+  switch (dependencyRecordType(record)) {
+    case "orders":
+      return endpoints.crm.orderPermanentDelete(id as string | number);
+    case "invoices":
+      return endpoints.crm.invoicePermanentDelete(id as string | number);
+    case "deliveries":
+      return endpoints.crm.deliveryPermanentDelete(id as string | number);
+    default:
+      return null;
+  }
+}
+
+function invalidateDashboardData(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["dashboard", "home"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "crm-analytics"] });
+}
+
 function QuotationsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<string>("all");
   const [archived, setArchived] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<QuotationListItem | null>(null);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<QuotationListItem | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteDependencies, setDeleteDependencies] = useState<DeletionDependencies | null>(null);
+  const [checkingDependencies, setCheckingDependencies] = useState(false);
+  const [deletingLinkedRecord, setDeletingLinkedRecord] = useState<string | number | null>(null);
   const access = useCurrentAccess();
   const { data: quotations, isLoading, isError, refetch } = useQuotations({ archived });
   const { data: pendingLeads, isLoading: pendingLoading } = useQuotationsPending();
@@ -68,6 +132,11 @@ function QuotationsPage() {
     if (status === "action") return all.filter((q) => dashboard?.actionable_statuses?.quotations.includes(q.status));
     return all.filter((q) => q.status === status);
   }, [dashboard?.actionable_statuses.quotations, quotations, status]);
+  const dependencyRecords = useMemo(() => (
+    deleteDependencies?.links.flatMap((link) => (
+      link.records.map((record) => ({ link, record }))
+    )) ?? []
+  ), [deleteDependencies]);
 
   const statusCounts = dashboard?.status_counts.quotations ?? {};
 
@@ -87,10 +156,59 @@ function QuotationsPage() {
     try {
       await permanentDeleteQuotation.mutateAsync(permanentDeleteTarget.id);
       toast.success("Quotation permanently deleted.");
+      invalidateDashboardData(queryClient);
       setPermanentDeleteTarget(null);
       setDeleteConfirmation("");
+      setDeleteDependencies(null);
     } catch (error) {
+      const dependencies = errorDependencies(error);
+      if (dependencies) setDeleteDependencies(dependencies);
       toast.error(mutationMessage(error, "Unable to permanently delete quotation."));
+    }
+  };
+
+  const permanentDeleteDisabled = deleteConfirmation !== "DELETE" || permanentDeleteQuotation.isPending || checkingDependencies || Boolean(deleteDependencies?.links.length);
+
+  const loadPermanentDeleteDependencies = async (quotation: QuotationListItem) => {
+    setCheckingDependencies(true);
+    try {
+      const { data } = await apiClient.get<DeletionDependencies>(endpoints.crm.quotationDeletionDependencies(quotation.id), { timeout: 10000 });
+      setDeleteDependencies(data);
+    } catch (error) {
+      setDeleteDependencies({ has_dependencies: false, links: [] });
+      toast.error(mutationMessage(error, "Unable to load linked records."));
+    } finally {
+      setCheckingDependencies(false);
+    }
+  };
+
+  const openPermanentDelete = async (quotation: QuotationListItem) => {
+    setPermanentDeleteTarget(quotation);
+    setDeleteConfirmation("");
+    setDeleteDependencies(null);
+    await loadPermanentDeleteDependencies(quotation);
+  };
+
+  const deleteLinkedRecord = async (record: Record<string, unknown>) => {
+    const endpoint = dependencyPermanentDeleteEndpoint(record);
+    const id = record["id"] as string | number | undefined;
+    if (!endpoint || !id) {
+      toast.error("This linked record cannot be deleted from here.");
+      return;
+    }
+    setDeletingLinkedRecord(id);
+    try {
+      await apiClient.delete(endpoint);
+      toast.success(`${dependencyRecordLabel(record)} permanently deleted.`);
+      invalidateDashboardData(queryClient);
+      if (permanentDeleteTarget) await loadPermanentDeleteDependencies(permanentDeleteTarget);
+      refetch();
+    } catch (error) {
+      const dependencies = errorDependencies(error);
+      if (dependencies) setDeleteDependencies(dependencies);
+      toast.error(mutationMessage(error, "Unable to delete linked record."));
+    } finally {
+      setDeletingLinkedRecord(null);
     }
   };
 
@@ -289,7 +407,7 @@ function QuotationsPage() {
                       <RotateCcw className="size-4" /> Restore
                     </DropdownMenuItem>
                     {access.data?.is_super_admin && (
-                      <DropdownMenuItem className="text-danger" onClick={() => setPermanentDeleteTarget(r)}>
+                      <DropdownMenuItem className="text-danger" onClick={() => openPermanentDelete(r)}>
                         <Trash2 className="size-4" /> Permanently delete
                       </DropdownMenuItem>
                     )}
@@ -312,16 +430,88 @@ function QuotationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={permanentDeleteTarget !== null} onOpenChange={(open) => { if (!open) { setPermanentDeleteTarget(null); setDeleteConfirmation(""); } }}>
+      <AlertDialog open={permanentDeleteTarget !== null} onOpenChange={(open) => { if (!open) { setPermanentDeleteTarget(null); setDeleteConfirmation(""); setDeleteDependencies(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Permanently Delete {permanentDeleteTarget?.quotation_no}?</AlertDialogTitle>
             <AlertDialogDescription>This action cannot be undone. Type DELETE to confirm.</AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="rounded-lg border border-border bg-surface-muted p-3 text-sm">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="font-medium">Linked records</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!permanentDeleteTarget || checkingDependencies}
+                onClick={() => permanentDeleteTarget && loadPermanentDeleteDependencies(permanentDeleteTarget)}
+              >
+                Refresh
+              </Button>
+            </div>
+            {checkingDependencies ? (
+              <p className="text-muted-foreground">Checking linked records...</p>
+            ) : dependencyRecords.length ? (
+              <div className="space-y-3">
+                <p className="font-medium">
+                  {dependencyRecords.length} linked record{dependencyRecords.length === 1 ? "" : "s"}
+                </p>
+                <ul className="max-h-36 divide-y divide-border overflow-auto rounded-md border border-border bg-card text-xs">
+                  {dependencyRecords.map(({ link, record }) => (
+                    <li key={`${link.label}-${record["id"]}`} className="flex items-center justify-between gap-2 px-2 py-1.5">
+                      <span className="min-w-0">
+                        <span className="mr-2 rounded bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          {link.label}
+                        </span>
+                        <span className="text-foreground">
+                          {dependencyRecordLabel(record)}
+                          {record["status"] ? ` - ${String(record["status"])}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        {dependencyRecordPath(record) && (
+                          <Button asChild variant="ghost" size="sm" className="h-7 px-2">
+                            <Link to={dependencyRecordPath(record)!}>Open</Link>
+                          </Button>
+                        )}
+                        {dependencyPermanentDeleteEndpoint(record) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-danger hover:text-danger"
+                            disabled={deletingLinkedRecord === record["id"] || checkingDependencies}
+                            onClick={() => deleteLinkedRecord(record)}
+                          >
+                            {deletingLinkedRecord === record["id"] ? "Deleting..." : "Delete"}
+                          </Button>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+                  Delete the linked child records shown above, then retry permanent delete.
+                </div>
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No linked CRM records found.</p>
+            )}
+          </div>
           <Input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-danger text-primary-foreground hover:bg-danger/90" disabled={deleteConfirmation !== "DELETE" || permanentDeleteQuotation.isPending} onClick={confirmPermanentDelete}>Permanently Delete</AlertDialogAction>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={permanentDeleteDisabled}
+              onClick={() => {
+                if (permanentDeleteDisabled) return;
+                confirmPermanentDelete();
+              }}
+            >
+              Permanently Delete
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

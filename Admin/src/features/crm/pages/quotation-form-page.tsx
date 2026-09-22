@@ -49,6 +49,7 @@ import {
 } from "@/features/crm/quotations-hooks";
 import { GstRateDialog } from "@/features/crm/components/gst-rate-dialog";
 import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-quotation-payment-dialog";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
@@ -100,7 +101,10 @@ function QuotationFormPage() {
   const { data: existingQuotation, isLoading } = useQuotation(id);
   const { data: leadForPrefill } = useLead(!isEdit ? leadId : undefined);
   const { data: gstRates } = useCrmOptions("tax_setting");
+  const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: cakeProducts } = useCrmOptions("cake_product");
+  const { data: cakeFlavours } = useCrmOptions("cake_flavour");
+  const { data: productRates } = useCrmOptions("product_rate");
   const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: company } = useCompanyConfig();
 
@@ -120,12 +124,20 @@ function QuotationFormPage() {
   const [expandedVersions, setExpandedVersions] = useState<number[]>([]);
   const productOptions = useMemo(() => {
     const currentItems = isEdit ? form.items.map((item) => item.item_name) : [];
-    return optionsWithCurrentValues(cakeProducts, currentItems);
-  }, [cakeProducts, form.items, isEdit]);
+    return optionsWithCurrentValues([...(cakeTypes ?? []), ...(cakeProducts ?? [])], currentItems);
+  }, [cakeProducts, cakeTypes, form.items, isEdit]);
   const gstOptions = useMemo(() => {
     const currentRates = isEdit ? form.items.map((item) => String(item.gst_percentage ?? "")) : [];
     return optionsWithCurrentValues(gstRates, currentRates);
   }, [gstRates, form.items, isEdit]);
+  const flavourOptions = useMemo(() => {
+    const currentFlavours = isEdit ? form.items.map((item) => item.flavour ?? "") : [];
+    return optionsWithCurrentValues(cakeFlavours, currentFlavours);
+  }, [cakeFlavours, form.items, isEdit]);
+  const rateOptions = useMemo(() => {
+    const currentRates = isEdit ? form.items.map((item) => String(item.rate ?? "")) : [];
+    return optionsWithCurrentValues(productRates, currentRates);
+  }, [productRates, form.items, isEdit]);
 
   useEffect(() => {
     if (existingQuotation) {
@@ -701,16 +713,16 @@ function QuotationFormPage() {
         }
       >
         <div className="scroll-slim overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
+          <table className="w-full min-w-[1120px] table-fixed text-sm">
             <thead className="text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
-                <th className="py-2 pr-2">Cake / Product</th>
-                <th className="py-2 pr-2">Description</th>
-                <th className="py-2 pr-2">Flavour</th>
+                <th className="w-52 py-2 pr-2">Cake / Product</th>
+                <th className="w-48 py-2 pr-2">Description</th>
+                <th className="w-48 py-2 pr-2">Flavour</th>
                 <th className="py-2 pr-2 w-20">Qty</th>
                 <th className="py-2 pr-2 w-28">Unit</th>
-                <th className="py-2 pr-2 w-28">Rate</th>
-                <th className="py-2 pr-2 w-24">GST%</th>
+                <th className="py-2 pr-2 w-40">Rate</th>
+                <th className="py-2 pr-2 w-36">GST%</th>
                 <th className="py-2 pr-2 w-28 text-right">Amount</th>
                 <th className="w-10" />
               </tr>
@@ -721,11 +733,7 @@ function QuotationFormPage() {
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2">
-                      <Input
-                        value={item.item_name}
-                        list="quotation-products"
-                        onChange={(e) => setItem(i, { item_name: e.target.value })}
-                      />
+                      <OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} placeholder="Select or type product" />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -734,10 +742,7 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <Input
-                        value={item.flavour ?? ""}
-                        onChange={(e) => setItem(i, { flavour: e.target.value })}
-                      />
+                      <OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} placeholder="Select or type flavour" />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -755,22 +760,10 @@ function QuotationFormPage() {
                       </Select>
                     </td>
                     <td className="py-2 pr-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        value={item.rate}
-                        onChange={(e) => setItem(i, { rate: e.target.value })}
-                      />
+                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} placeholder="Select or type rate" />
                     </td>
                     <td className="py-2 pr-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        list="quotation-gst-rates"
-                        value={item.gst_percentage}
-                        onChange={(e) => setItem(i, { gst_percentage: e.target.value })}
-                      />
+                      <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} placeholder="Select or type GST" />
                     </td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right">
@@ -789,13 +782,6 @@ function QuotationFormPage() {
               })}
             </tbody>
           </table>
-          <datalist id="quotation-products">{productOptions.map((product) => <option key={product} value={product} />)}</datalist>
-          <datalist id="quotation-gst-rates">
-            {gstOptions
-              .map((v) => (
-                <option key={v} value={v} />
-              ))}
-          </datalist>
         </div>
         <Button variant="outline" size="sm" className="mt-3" onClick={addItem}>
           <Plus className="size-4" /> Add item

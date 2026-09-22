@@ -15,6 +15,7 @@ import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/order
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
 
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", gst_percentage: "" };
 
@@ -23,11 +24,15 @@ function DirectOrderPage() {
   const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: occasions } = useCrmOptions("occasion");
   const { data: cakeProducts } = useCrmOptions("cake_product");
+  const { data: cakeFlavours } = useCrmOptions("cake_flavour");
+  const { data: productRates } = useCrmOptions("product_rate");
   const { data: gstRates } = useCrmOptions("tax_setting");
   const { data: livePaymentMethods } = useCrmOptions("payment_method");
   const cakeTypeOptions = configuredOptions(cakeTypes);
   const occasionOptions = configuredOptions(occasions);
-  const productOptions = configuredOptions(cakeProducts);
+  const productOptions = configuredOptions([...(cakeTypes ?? []), ...(cakeProducts ?? [])]);
+  const flavourOptions = configuredOptions(cakeFlavours);
+  const rateOptions = configuredOptions(productRates);
   const gstOptions = configuredOptions(gstRates);
   const paymentMethods = configuredOptions(livePaymentMethods);
   const navigate = useNavigate();
@@ -139,15 +144,11 @@ function DirectOrderPage() {
       <SectionCard title="Order details">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Cake type" required error={errors["cake_type"]}>
-            <Select value={cakeType} onValueChange={setCakeType}>
-              <SelectTrigger><SelectValue placeholder="Select cake type" /></SelectTrigger>
-              <SelectContent>{cakeTypeOptions.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent>
-            </Select>
+            <OptionCombobox value={cakeType} options={cakeTypeOptions} onChange={setCakeType} placeholder="Select or type cake type" />
             {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Occasion">
-            <Input value={occasion} list="direct-order-occasions" onChange={(e) => setOccasion(e.target.value)} />
-            <datalist id="direct-order-occasions">{occasionOptions.map((value) => <option key={value} value={value} />)}</datalist>
+            <OptionCombobox value={occasion} options={occasionOptions} onChange={setOccasion} placeholder="Select or type occasion" />
           </Field>
           <Field label="Event date"><Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} /></Field>
         </div>
@@ -155,21 +156,21 @@ function DirectOrderPage() {
 
       <SectionCard title="Items" description={errors["items"]}>
         <div className="scroll-slim overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[980px] table-fixed text-sm">
             <thead className="text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr><th className="py-2 pr-2">Item</th><th className="py-2 pr-2">Flavour</th><th className="py-2 pr-2 w-20">Qty</th><th className="py-2 pr-2 w-28">Unit</th><th className="py-2 pr-2 w-28">Rate</th><th className="py-2 pr-2 w-24">GST%</th><th className="py-2 pr-2 w-28 text-right">Amount</th><th className="w-10" /></tr>
+              <tr><th className="w-56 py-2 pr-2">Item</th><th className="w-52 py-2 pr-2">Flavour</th><th className="py-2 pr-2 w-20">Qty</th><th className="py-2 pr-2 w-28">Unit</th><th className="py-2 pr-2 w-40">Rate</th><th className="py-2 pr-2 w-36">GST%</th><th className="py-2 pr-2 w-28 text-right">Amount</th><th className="w-10" /></tr>
             </thead>
             <tbody>
               {items.map((item, i) => {
                 const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
-                    <td className="py-2 pr-2"><Input value={item.item_name} list="direct-order-products" onChange={(e) => setItem(i, { item_name: e.target.value })} /></td>
-                    <td className="py-2 pr-2"><Input value={item.flavour ?? ""} onChange={(e) => setItem(i, { flavour: e.target.value })} /></td>
+                    <td className="py-2 pr-2"><OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} placeholder="Select or type product" /></td>
+                    <td className="py-2 pr-2"><OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} placeholder="Select or type flavour" /></td>
                     <td className="py-2 pr-2"><Input type="number" min={quantityMin(item.unit_type)} step={quantityStep(item.unit_type)} value={item.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></td>
                     <td className="py-2 pr-2"><Select value={item.unit_type} onValueChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent></Select></td>
-                    <td className="py-2 pr-2"><Input type="number" min={0} value={item.rate} onChange={(e) => setItem(i, { rate: e.target.value })} /></td>
-                    <td className="py-2 pr-2"><Input type="number" min={0} max={100} list="direct-order-gst-rates" value={item.gst_percentage} onChange={(e) => setItem(i, { gst_percentage: e.target.value })} /></td>
+                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} placeholder="Select or type rate" /></td>
+                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} placeholder="Select or type GST" /></td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right"><Button variant="ghost" size="icon" className="size-8" disabled={items.length === 1} onClick={() => removeItem(i)}><Trash2 className="size-4" /></Button></td>
                   </tr>
@@ -177,8 +178,6 @@ function DirectOrderPage() {
               })}
             </tbody>
           </table>
-          <datalist id="direct-order-products">{productOptions.map((value) => <option key={value} value={value} />)}</datalist>
-          <datalist id="direct-order-gst-rates">{gstOptions.map((value) => <option key={value} value={value} />)}</datalist>
         </div>
         <Button variant="outline" size="sm" className="mt-3" onClick={addItem}><Plus className="size-4" /> Add item</Button>
       </SectionCard>

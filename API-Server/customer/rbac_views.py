@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from .models import AccessPermission, AccessRole, Customer
 from .rbac import effective_permissions, is_super_admin
 from .rbac_serializers import PermissionSerializer, RoleSerializer, StaffUserSerializer
+from crm.models import CRMDelivery, CRMInvoice, CRMOrder, Lead, Quotation
 
 logger = logging.getLogger("cakery")
 
@@ -65,31 +66,68 @@ class StaffUserViewSet(viewsets.ModelViewSet):
             {
                 "label": "Assigned leads",
                 "count": user.assigned_crm_leads.count(),
-                "records": list(user.assigned_crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "leads"}
+                    for record in user.assigned_crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Created quotations",
                 "count": user.created_crm_quotations.count(),
-                "records": list(user.created_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "quotations"}
+                    for record in user.created_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Assigned quotations",
                 "count": user.assigned_crm_quotations.count(),
-                "records": list(user.assigned_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "quotations"}
+                    for record in user.assigned_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Assigned orders",
                 "count": user.assigned_crm_orders.count(),
-                "records": list(user.assigned_crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "orders"}
+                    for record in user.assigned_crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]
+                ],
             },
             {
                 "label": "Generated invoices",
                 "count": user.generated_crm_invoices.count(),
-                "records": list(user.generated_crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]),
+                "records": [
+                    {**record, "record_type": "invoices"}
+                    for record in user.generated_crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]
+                ],
             },
         ]
         links = [link for link in links if link["count"]]
         return {"has_dependencies": bool(links), "links": links}
+
+    @staticmethod
+    def protected_error_dependencies(exc):
+        protected = list(getattr(exc, "protected_objects", []) or [])
+        records = []
+        for obj in protected[:20]:
+            record = {"id": getattr(obj, "pk", None), "message": str(obj)}
+            if isinstance(obj, Lead):
+                record.update({"lead_no": obj.lead_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "leads"})
+            elif isinstance(obj, Quotation):
+                record.update({"quotation_no": obj.quotation_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "quotations"})
+            elif isinstance(obj, CRMOrder):
+                record.update({"order_no": obj.order_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "orders"})
+            elif isinstance(obj, CRMInvoice):
+                record.update({"invoice_no": obj.invoice_no, "customer_name": obj.customer_name, "status": obj.status, "record_type": "invoices"})
+            elif isinstance(obj, CRMDelivery):
+                record.update({"delivery_no": obj.delivery_no, "customer_name": obj.recipient_name, "status": obj.delivery_status, "record_type": "deliveries"})
+            records.append(record)
+        return {
+            "has_dependencies": bool(records),
+            "links": [{"label": "Protected related records", "count": len(protected), "records": records}] if records else [],
+        }
 
     @action(detail=True, methods=["get"], url_path="deletion-dependencies")
     def deletion_dependencies_action(self, request, pk=None):
@@ -131,8 +169,11 @@ class StaffUserViewSet(viewsets.ModelViewSet):
             }, status=409)
         try:
             user.delete()
-        except ProtectedError:
-            return Response({"message": "User cannot be permanently deleted because protected business records reference it. Archive it instead."}, status=409)
+        except ProtectedError as exc:
+            return Response({
+                "message": "User cannot be permanently deleted because protected business records reference it. Clear linked CRM records first.",
+                "dependencies": self.protected_error_dependencies(exc),
+            }, status=409)
         return Response(status=204)
 
 

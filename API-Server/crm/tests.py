@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from customer.models import CustomerAddress
 from django.utils import timezone
 from rest_framework.test import APIClient
-from .models import CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationItem, QuotationPayment, QuotationVersion
+from .models import CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment, QuotationVersion
 from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer, create_quotation_version
 from .uploads import validate_image_upload
 
@@ -112,6 +112,28 @@ class CRMCustomerImportExportTests(TestCase):
         self.assertEqual(rows[0]["Email"], "export@example.com")
         self.assertEqual(rows[0]["Address"], "99 Export Road")
         self.assertEqual(rows[0]["Customer Status"], "Active")
+
+    def test_customer_analytics_total_matches_active_customer_management_count(self):
+        first = get_user_model().objects.create_user(
+            username="9876543217", phone="9876543217", first_name="First"
+        )
+        second = get_user_model().objects.create_user(
+            username="9876543218", phone="9876543218", first_name="Second"
+        )
+        archived = get_user_model().objects.create_user(
+            username="9876543219", phone="9876543219", first_name="Archived", is_active=False
+        )
+
+        response = self.client.get("/crm/customers/analytics/", {
+            "from_date": timezone.localdate().isoformat(),
+            "to_date": timezone.localdate().isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        ids = {row["id"] for row in response.data}
+        self.assertIn(first.id, ids)
+        self.assertIn(second.id, ids)
+        self.assertNotIn(archived.id, ids)
 
     def test_customer_import_export_require_customer_data_permissions(self):
         unauthenticated = APIClient()
@@ -1250,6 +1272,136 @@ class LeadDeleteTests(TestCase):
         response = admin_client.delete(f"/crm/leads/{lead.id}/permanent-delete/")
         self.assertEqual(response.status_code, 409, response.data)
         self.assertIn("related quotation", response.data["message"])
+
+    def test_super_admin_can_permanently_delete_archived_lead_with_owned_history(self):
+        lead = self.make_lead("9876500208")
+        LeadActivity.objects.create(lead=lead, action="Lead Created", staff=self.staff)
+        LeadReferenceImage.objects.create(
+            lead=lead, file_name="11111111-1111-1111-1111-111111111111",
+            file_ext="jpg", original_name="reference.jpg", uploaded_by=self.staff,
+        )
+        self.client.delete(f"/crm/leads/{lead.id}/")
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+        response = admin_client.delete(f"/crm/leads/{lead.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(Lead.objects.filter(id=lead.id).exists())
+
+    def test_super_admin_can_permanently_delete_archived_quotation_with_owned_history(self):
+        quotation = Quotation.objects.create(
+            customer_name="Delete Quote", phone="9876500209", cake_type="Cake",
+            quantity=1, rate="100.00", total_amount="100.00",
+        )
+        QuotationPayment.objects.create(
+            quotation=quotation, amount="10.00", payment_date=timezone.localdate(),
+            payment_method="Cash", collected_by=self.staff,
+        )
+        QuotationActivity.objects.create(quotation=quotation, action="Quotation Created", staff=self.staff)
+        QuotationVersion.objects.create(
+            quotation=quotation, version_number=1, snapshot={"quotation_no": quotation.quotation_no},
+            total_amount=quotation.total_amount, generated_by=self.staff,
+        )
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+        admin_client.delete(f"/crm/quotations/{quotation.id}/")
+        response = admin_client.delete(f"/crm/quotations/{quotation.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(Quotation.objects.filter(id=quotation.id).exists())
+
+    def test_super_admin_can_permanently_delete_archived_order_invoice_and_delivery_leaf_records(self):
+        quotation = Quotation.objects.create(
+            customer_name="Delete Flow", phone="9876500210", cake_type="Cake",
+            quantity=1, rate="100.00", total_amount="100.00",
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name="Delete Flow", phone="9876500210",
+            total_amount="100.00", advance_paid="50.00", status="Completed",
+        )
+        CRMOrderItem.objects.create(
+            order=order, item_name="Cake", quantity=1, unit_type="kg",
+            rate="100.00", gst_percentage=0, amount="100.00",
+        )
+        invoice = CRMInvoice.objects.create(
+            order=order, customer_name="Delete Flow", phone="9876500210",
+            subtotal="100.00", total_amount="100.00", amount_paid="50.00",
+            balance_amount="50.00", status="Issued",
+        )
+        delivery = CRMDelivery.objects.create(
+            order=order, delivery_status="Delivered Successfully",
+            recipient_name="Delete Flow", recipient_phone="9876500210",
+        )
+        CRMDeliveryDamageImage.objects.create(
+            delivery=delivery, file_name="22222222-2222-2222-2222-222222222222",
+            file_ext="png", original_name="damage.png", uploaded_by=self.staff,
+        )
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+
+        admin_client.delete(f"/crm/deliveries/{delivery.id}/")
+        response = admin_client.delete(f"/crm/deliveries/{delivery.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(CRMDelivery.objects.filter(id=delivery.id).exists())
+
+        admin_client.delete(f"/crm/invoices/{invoice.id}/")
+        response = admin_client.delete(f"/crm/invoices/{invoice.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(CRMInvoice.objects.filter(id=invoice.id).exists())
+
+        admin_client.delete(f"/crm/orders/{order.id}/")
+        response = admin_client.delete(f"/crm/orders/{order.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 204, response.data)
+        self.assertFalse(CRMOrder.objects.filter(id=order.id).exists())
+
+    def test_crm_deletion_dependencies_report_linked_child_records(self):
+        lead = self.make_lead("9876500211")
+        quotation = Quotation.objects.create(
+            lead=lead, customer_name=lead.customer_name, phone=lead.phone,
+            cake_type="Cake", quantity=1, rate="100.00", total_amount="100.00",
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name=lead.customer_name, phone=lead.phone,
+            total_amount="100.00", status="Completed",
+        )
+        invoice = CRMInvoice.objects.create(
+            order=order, customer_name=lead.customer_name, phone=lead.phone,
+            subtotal="100.00", total_amount="100.00", balance_amount="100.00",
+        )
+        delivery = CRMDelivery.objects.create(
+            order=order, delivery_status="Pending",
+            recipient_name=lead.customer_name, recipient_phone=lead.phone,
+        )
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+
+        lead_dependencies = admin_client.get(f"/crm/leads/{lead.id}/deletion-dependencies/")
+        self.assertEqual(lead_dependencies.status_code, 200, lead_dependencies.data)
+        self.assertTrue(lead_dependencies.data["has_dependencies"])
+        self.assertEqual(lead_dependencies.data["links"][0]["records"][0]["record_type"], "quotations")
+
+        quotation_dependencies = admin_client.get(f"/crm/quotations/{quotation.id}/deletion-dependencies/")
+        self.assertEqual(quotation_dependencies.status_code, 200, quotation_dependencies.data)
+        self.assertEqual(quotation_dependencies.data["links"][0]["records"][0]["record_type"], "orders")
+
+        quotation.is_archived = True
+        quotation.status = "Order Confirmed"
+        quotation.save(update_fields=("is_archived", "status", "updated_on"))
+        blocked_delete = admin_client.delete(f"/crm/quotations/{quotation.id}/permanent-delete/")
+        self.assertEqual(blocked_delete.status_code, 409, blocked_delete.data)
+        self.assertTrue(blocked_delete.data["dependencies"]["has_dependencies"])
+        self.assertEqual(blocked_delete.data["dependencies"]["links"][0]["records"][0]["id"], order.id)
+
+        order_dependencies = admin_client.get(f"/crm/orders/{order.id}/deletion-dependencies/")
+        self.assertEqual(order_dependencies.status_code, 200, order_dependencies.data)
+        record_types = {record["record_type"] for link in order_dependencies.data["links"] for record in link["records"]}
+        self.assertEqual(record_types, {"invoices", "deliveries"})
+
+        invoice_dependencies = admin_client.get(f"/crm/invoices/{invoice.id}/deletion-dependencies/")
+        self.assertEqual(invoice_dependencies.status_code, 200, invoice_dependencies.data)
+        self.assertFalse(invoice_dependencies.data["has_dependencies"])
+
+        delivery_dependencies = admin_client.get(f"/crm/deliveries/{delivery.id}/deletion-dependencies/")
+        self.assertEqual(delivery_dependencies.status_code, 200, delivery_dependencies.data)
+        self.assertFalse(delivery_dependencies.data["has_dependencies"])
 
 
 class NullBillingAddressResilienceTests(TestCase):

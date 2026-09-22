@@ -88,12 +88,17 @@ class CRMAnalyticsReport(APIView):
         search = request.query_params.get("search", "").strip()
         status_filter = request.query_params.get("status", "").strip()
         module_filter = request.query_params.get("module", "").strip().lower()
-        leads = Lead.objects.filter(created_on__date__range=(start, end))
-        quotations = Quotation.objects.filter(created_on__date__range=(start, end))
-        orders = CRMOrder.objects.filter(confirmed_on__date__range=(start, end))
-        invoices = CRMInvoice.objects.filter(generated_on__date__range=(start, end))
-        deliveries = CRMDelivery.objects.filter(created_on__date__range=(start, end))
-        payments = QuotationPayment.objects.filter(payment_date__range=(start, end))
+        leads = Lead.objects.filter(is_archived=False, created_on__date__range=(start, end))
+        quotations = Quotation.objects.filter(is_archived=False, created_on__date__range=(start, end))
+        orders = CRMOrder.objects.filter(is_archived=False, confirmed_on__date__range=(start, end))
+        invoices = CRMInvoice.objects.filter(is_archived=False, generated_on__date__range=(start, end))
+        deliveries = CRMDelivery.objects.filter(is_archived=False, created_on__date__range=(start, end))
+        payments = QuotationPayment.objects.filter(
+            payment_date__range=(start, end),
+            quotation__is_archived=False,
+        ).filter(
+            Q(quotation__crm_order__isnull=True) | Q(quotation__crm_order__is_archived=False)
+        )
         if search:
             customer_q = Q(customer_name__icontains=search) | Q(phone__icontains=search)
             leads = leads.filter(customer_q | Q(lead_no__icontains=search))
@@ -125,14 +130,16 @@ class CRMAnalyticsReport(APIView):
         # truth before and after an invoice exists; payment endpoints keep
         # advance_paid synchronized as payments are recorded.
         today_orders = CRMOrder.objects.filter(
-            confirmed_on__date=timezone.localdate()
+            is_archived=False,
+            confirmed_on__date=timezone.localdate(),
         ).exclude(status="Cancelled").count()
-        pending_orders = CRMOrder.objects.exclude(status="Cancelled").annotate(
-            balance_due=F("total_amount") - F("advance_paid")
-        ).filter(balance_due__gt=0)
-        payments_pending_amount = pending_orders.aggregate(value=Sum("balance_due"))["value"] or Decimal("0")
+        pending_invoices = CRMInvoice.objects.filter(
+            is_archived=False,
+            balance_amount__gt=0,
+        ).exclude(status__in=["Cancelled", "Paid"])
+        payments_pending_amount = pending_invoices.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
         payments_pending = {
-            "count": pending_orders.count(),
+            "count": pending_invoices.count(),
             "amount": Decimal(payments_pending_amount).quantize(Decimal("0.01")),
         }
         # payment_date is already a plain DateField (day granularity), so no
@@ -147,8 +154,14 @@ class CRMAnalyticsReport(APIView):
         sources = list(leads.values("lead_source").annotate(value=Count("id")).order_by("-value")[:12])
         delivery_methods = list(deliveries.values("delivery_type").annotate(value=Count("id")).order_by("-value"))
 
-        lead_events = LeadActivity.objects.filter(created_on__date__range=(start, end)).select_related("lead", "staff")
-        quotation_events = QuotationActivity.objects.filter(created_on__date__range=(start, end)).select_related("quotation", "staff")
+        lead_events = LeadActivity.objects.filter(
+            lead__is_archived=False,
+            created_on__date__range=(start, end),
+        ).select_related("lead", "staff")
+        quotation_events = QuotationActivity.objects.filter(
+            quotation__is_archived=False,
+            created_on__date__range=(start, end),
+        ).select_related("quotation", "staff")
         if search:
             lead_events = lead_events.filter(Q(lead__customer_name__icontains=search) | Q(lead__phone__icontains=search))
             quotation_events = quotation_events.filter(Q(quotation__customer_name__icontains=search) | Q(quotation__phone__icontains=search))

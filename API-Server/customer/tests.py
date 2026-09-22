@@ -1,7 +1,7 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
-from crm.models import CRMDelivery, CRMInvoice, CRMOrder, CRMOrderItem, Quotation
+from crm.models import CRMDelivery, CRMInvoice, CRMOrder, CRMOrderItem, Lead, Quotation
 from .models import AccessPermission, AccessRole, Customer
 from .rbac import all_permission_codes, effective_permissions, required_permission
 
@@ -150,6 +150,73 @@ class SuperAdminAuthorizationTests(TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["delivery_no"], delivery.delivery_no)
         self.assertEqual(rows[0]["order_no"], order.order_no)
+
+    def test_archived_user_delete_dependencies_are_returned_for_dialog(self):
+        super_admin = Customer.objects.create_superuser(username="archive-user-admin", password="password")
+        staff = Customer.objects.create_user(username="archive-linked-staff", password="password", is_staff=True, is_active=False)
+        lead = Lead.objects.create(
+            customer_name="Linked User Lead", phone="9876543210", cake_type="Cake",
+            quantity=1, assigned_to=staff,
+        )
+        quotation = Quotation.objects.create(
+            customer_name="Linked User Quote", phone="9876543211",
+            cake_type="Cake", quantity=1, rate=100, created_by=staff,
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name="Linked User Order", phone="9876543211",
+            total_amount=100, assigned_staff=staff,
+        )
+        invoice = CRMInvoice.objects.create(
+            order=order, customer_name="Linked User Invoice", phone="9876543211",
+            subtotal=100, total_amount=100, balance_amount=100, generated_by=staff,
+        )
+        client = self.jwt_client(super_admin)
+
+        dependencies = client.get(f"/customer/rbac/users/{staff.id}/deletion-dependencies/")
+        self.assertEqual(dependencies.status_code, 200, dependencies.data)
+        record_types = {record["record_type"] for link in dependencies.data["links"] for record in link["records"]}
+        self.assertTrue({"leads", "quotations", "orders", "invoices"}.issubset(record_types))
+
+        blocked = client.delete(f"/customer/rbac/users/{staff.id}/permanent-delete/")
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.assertTrue(blocked.data["dependencies"]["has_dependencies"])
+        self.assertIn(lead.id, [record["id"] for link in blocked.data["dependencies"]["links"] for record in link["records"]])
+        self.assertEqual(invoice.generated_by_id, staff.id)
+
+    def test_archived_customer_delete_dependencies_are_returned_for_dialog(self):
+        super_admin = Customer.objects.create_superuser(username="archive-customer-admin", password="password")
+        customer = Customer.objects.create_user(
+            username="9876543212", phone="9876543212", first_name="Linked", is_active=False,
+        )
+        lead = Lead.objects.create(
+            customer=customer, customer_name="Linked Customer Lead", phone="9876543212",
+            cake_type="Cake", quantity=1,
+        )
+        quotation = Quotation.objects.create(
+            customer=customer, customer_name="Linked Customer Quote", phone="9876543212",
+            cake_type="Cake", quantity=1, rate=100,
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer=customer, customer_name="Linked Customer Order",
+            phone="9876543212", total_amount=100,
+        )
+        invoice = CRMInvoice.objects.create(
+            order=order, customer=customer, customer_name="Linked Customer Invoice",
+            phone="9876543212", subtotal=100, total_amount=100, balance_amount=100,
+        )
+        delivery = CRMDelivery.objects.create(order=order, recipient_name="Linked Customer")
+        client = self.jwt_client(super_admin)
+
+        dependencies = client.get(f"/crm/customers/{customer.id}/deletion-dependencies/")
+        self.assertEqual(dependencies.status_code, 200, dependencies.data)
+        record_types = {record["record_type"] for link in dependencies.data["links"] for record in link["records"]}
+        self.assertEqual(record_types, {"leads", "quotations", "orders", "invoices", "deliveries"})
+
+        blocked = client.delete(f"/crm/customers/{customer.id}/permanent-delete/")
+        self.assertEqual(blocked.status_code, 409, blocked.data)
+        self.assertTrue(blocked.data["dependencies"]["has_dependencies"])
+        self.assertIn(delivery.id, [record["id"] for link in blocked.data["dependencies"]["links"] for record in link["records"]])
+        self.assertEqual(lead.customer_id, customer.id)
 
 
 class SaveCustomerAddressTests(TestCase):

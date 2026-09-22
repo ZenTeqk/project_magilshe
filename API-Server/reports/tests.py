@@ -1,8 +1,10 @@
+from decimal import Decimal
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 from django.utils import timezone
 
-from crm.models import CRMInvoice, CRMOrder, Lead, Quotation
+from crm.models import CRMInvoice, CRMOrder, Lead, Quotation, QuotationPayment
 from customer.models import Customer
 
 
@@ -58,9 +60,14 @@ class CRMAnalyticsReportTests(TestCase):
             )
 
         make_order("11", "1000.00", "1000.00")
-        make_order("12", "1500.00", "500.00")
+        invoice_order = make_order("12", "1500.00", "500.00")
         make_order("13", "2000.00", "1000.00")
         make_order("14", "5000.00", "0.00", status="Cancelled")
+        CRMInvoice.objects.create(
+            order=invoice_order, customer_name=invoice_order.customer_name,
+            phone=invoice_order.phone, subtotal="1500.00", total_amount="1500.00",
+            amount_paid="500.00", balance_amount="1000.00",
+        )
 
         response = self.client.get("/reports/crm-analytics", {
             "from_date": "2000-01-01", "to_date": "2000-01-02",
@@ -68,5 +75,61 @@ class CRMAnalyticsReportTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["current"]["today_orders"], 3)
-        self.assertEqual(response.data["current"]["payments_pending"]["count"], 2)
-        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "2000.00")
+        self.assertEqual(response.data["current"]["payments_pending"]["count"], 1)
+        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "1000.00")
+
+    def test_archived_crm_records_are_excluded_from_dashboard_analytics(self):
+        active_quotation = Quotation.objects.create(
+            customer_name="Active Customer", phone="9000000021",
+            cake_type="Cake", quantity=1, rate="1000.00", total_amount="1000.00",
+        )
+        active_order = CRMOrder.objects.create(
+            quotation=active_quotation, customer_name=active_quotation.customer_name,
+            phone=active_quotation.phone, total_amount="1000.00", advance_paid="400.00",
+        )
+        CRMInvoice.objects.create(
+            order=active_order, customer_name=active_order.customer_name, phone=active_order.phone,
+            subtotal="1000.00", total_amount="1000.00", amount_paid="400.00",
+            balance_amount="600.00",
+        )
+        QuotationPayment.objects.create(
+            quotation=active_quotation, amount="400.00", payment_date=timezone.localdate(),
+            payment_method="Cash",
+        )
+
+        archived_lead = Lead.objects.create(
+            customer_name="Archived Lead", phone="9000000022", status="Open", is_archived=True,
+        )
+        archived_quotation = Quotation.objects.create(
+            lead=archived_lead, customer_name="Archived Customer", phone="9000000023",
+            cake_type="Cake", quantity=1, rate="5000.00", total_amount="5000.00",
+            is_archived=True,
+        )
+        archived_order = CRMOrder.objects.create(
+            quotation=archived_quotation, customer_name=archived_quotation.customer_name,
+            phone=archived_quotation.phone, total_amount="5000.00", advance_paid="2000.00",
+            is_archived=True,
+        )
+        CRMInvoice.objects.create(
+            order=archived_order, customer_name=archived_order.customer_name, phone=archived_order.phone,
+            subtotal="5000.00", total_amount="5000.00", amount_paid="2000.00",
+            balance_amount="3000.00", is_archived=True,
+        )
+        QuotationPayment.objects.create(
+            quotation=archived_quotation, amount="2000.00", payment_date=timezone.localdate(),
+            payment_method="Cash",
+        )
+
+        response = self.client.get("/reports/crm-analytics", {
+            "from_date": "2000-01-01", "to_date": "2100-01-01",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["totals"]["leads"], 1)
+        self.assertEqual(response.data["totals"]["quotations"], 1)
+        self.assertEqual(response.data["totals"]["orders"], 1)
+        self.assertEqual(response.data["totals"]["invoices"], 1)
+        self.assertEqual(Decimal(str(response.data["revenue"]["collected"])), Decimal("400.00"))
+        self.assertEqual(Decimal(str(response.data["revenue"]["outstanding"])), Decimal("600.00"))
+        self.assertEqual(response.data["current"]["today_orders"], 1)
+        self.assertEqual(response.data["current"]["payments_pending"]["count"], 1)
