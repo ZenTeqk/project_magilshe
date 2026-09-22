@@ -50,6 +50,7 @@ import {
 import { GstRateDialog } from "@/features/crm/components/gst-rate-dialog";
 import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-quotation-payment-dialog";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
@@ -114,6 +115,7 @@ function QuotationFormPage() {
   const convertLead = useConvertLead();
   const workflowAction = useQuotationWorkflowAction();
   const confirmOrder = useConfirmQuotationOrder();
+  const createOption = useCreateCrmOptionFromText();
 
   const [form, setForm] = useState(blank);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -733,7 +735,7 @@ function QuotationFormPage() {
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2">
-                      <OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} placeholder="Select or type product" />
+                      <OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -742,7 +744,7 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} placeholder="Select or type flavour" />
+                      <OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -760,10 +762,10 @@ function QuotationFormPage() {
                       </Select>
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} placeholder="Select or type rate" />
+                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} placeholder="Select or type GST" />
+                      <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" />
                     </td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right">

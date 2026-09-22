@@ -9,6 +9,7 @@ type OptionComboboxProps = {
   value: string;
   options: string[];
   onChange: (value: string) => void;
+  onCreateOption?: (value: string) => void;
   placeholder?: string;
   type?: "text" | "number";
   min?: number;
@@ -21,6 +22,7 @@ export function OptionCombobox({
   value,
   options,
   onChange,
+  onCreateOption,
   placeholder,
   type = "text",
   min,
@@ -40,6 +42,14 @@ export function OptionCombobox({
     if (!query) return cleaned;
     return cleaned.filter((option) => option.toLowerCase().includes(query));
   }, [options, value]);
+  const optionExists = (candidate: string) => (
+    options.some((option) => option.trim().toLowerCase() === candidate.trim().toLowerCase())
+  );
+  const persistTypedOption = () => {
+    const typed = String(value ?? "").trim();
+    if (!typed || optionExists(typed)) return;
+    onCreateOption?.(typed);
+  };
 
   const scheduleClose = () => {
     closeTimer.current = window.setTimeout(() => setOpen(false), 120);
@@ -102,7 +112,15 @@ export function OptionCombobox({
   ) : null;
 
   return (
-    <div ref={rootRef} className={cn("relative min-w-0", className)} onBlur={scheduleClose} onFocus={cancelClose}>
+    <div
+      ref={rootRef}
+      className={cn("relative min-w-0", className)}
+      onBlur={() => {
+        persistTypedOption();
+        scheduleClose();
+      }}
+      onFocus={cancelClose}
+    >
       <Input
         type={type}
         min={min}
@@ -114,6 +132,12 @@ export function OptionCombobox({
         onChange={(event) => {
           onChange(event.target.value);
           openMenu();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            persistTypedOption();
+            setOpen(false);
+          }
         }}
         className="w-full pr-10"
       />

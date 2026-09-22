@@ -19,11 +19,14 @@ import {
   CalendarClock,
   ChevronRight,
   FileText,
+  Gift,
+  Send,
   ShoppingBag,
   Target,
   TrendingUp,
   Truck,
 } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Surface, SurfaceHeading as Heading } from "@/components/shared/command-surface";
 import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
@@ -36,6 +39,7 @@ import { lastNDays } from "@/features/reports/reports-hooks";
 import { useCrmAnalytics } from "@/features/dashboard/hooks";
 import { useCrmDashboard, useFollowUps, useLeads } from "@/features/crm/hooks";
 import { useAttentionCenter } from "@/features/attention/use-attention-center";
+import { useSendCustomerReminder, useUpcomingCustomerEvents } from "@/features/customers/hooks";
 
 const stageColors = [
   "var(--accent)",
@@ -51,6 +55,8 @@ const statusColors: Record<string, string> = {
   Won: "var(--success)",
   Lost: "var(--danger)",
 };
+const date = (value: string | null) =>
+  value ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "-";
 
 export default function CrmCommandCentrePage() {
   const [range, setRange] = useState(lastNDays(0));
@@ -59,6 +65,8 @@ export default function CrmCommandCentrePage() {
   const leads = useLeads(range);
   const analytics = useCrmAnalytics(range);
   const attention = useAttentionCenter();
+  const events = useUpcomingCustomerEvents(30);
+  const sendReminder = useSendCustomerReminder();
   const stages = crm.data
     ? [
         { label: "Leads", value: crm.data.funnel.total_leads },
@@ -157,6 +165,7 @@ export default function CrmCommandCentrePage() {
                   }
                   className="relative flex min-h-36 flex-col justify-between overflow-hidden rounded-lg bg-surface-muted/55 p-3 transition-colors hover:bg-accent-soft"
                 >
+                  <span className="absolute inset-x-0 top-0 h-1" style={{ background: stageColors[index] }} />
                   <div>
                     <span className="text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
                       {stage.label}
@@ -324,6 +333,54 @@ export default function CrmCommandCentrePage() {
               </ResponsiveContainer>
             </div>
           </div>
+        </Surface>
+        <Surface className="xl:col-span-4">
+          <Heading
+            eyebrow="Customer reminders"
+            title="Occasion follow-ups"
+            detail={`${events.data?.length ?? 0} upcoming customer moments`}
+            action={
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/crm/customers">Open</Link>
+              </Button>
+            }
+          />
+          {events.isLoading ? (
+            <div className="p-4"><CardSkeleton /></div>
+          ) : !events.data?.length ? (
+            <EmptyState title="No reminders due" />
+          ) : (
+            <div className="divide-y divide-border px-4">
+              {events.data.slice(0, 6).map((event) => (
+                <div key={event.id} className="flex items-center gap-3 py-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-info-soft text-info">
+                    <Gift className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <Link to={`/crm/customers/${event.customer_id}`} className="block truncate text-sm font-medium hover:underline">
+                      {event.customer_name}
+                    </Link>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {event.event_type} on {date(event.next_occurrence)}
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2"
+                    disabled={sendReminder.isPending}
+                    onClick={() => sendReminder.mutate(
+                      { customerId: event.customer_id, eventId: event.id },
+                      { onSuccess: (data) => toast.success(data.message ?? "Reminder logged.") },
+                    )}
+                  >
+                    <Send className="size-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </Surface>
       </div>
 

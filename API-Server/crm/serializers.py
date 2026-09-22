@@ -32,14 +32,15 @@ class CRMOptionSerializer(serializers.ModelSerializer):
 
 
 def validate_sale_quantity(unit_type, quantity):
-    """Defaults are kg/piece; active CRM settings may add more sale units."""
+    """CRM Settings units are the source of truth when configured."""
     unit_type = str(unit_type or "").strip()
     blocked_aliases = {"gram", "grams", "g"}
-    configured = CRMOption.objects.filter(
-        option_type="sale_unit", name__iexact=unit_type, is_active=True
-    ).exists()
-    if unit_type.casefold() in blocked_aliases or (unit_type not in ("kg", "piece") and not configured):
-        raise serializers.ValidationError({"unit_type": "Select kg, piece, or an active unit from CRM Settings."})
+    active_units = CRMOption.objects.filter(option_type="sale_unit", is_active=True)
+    configured = active_units.filter(name__iexact=unit_type).exists()
+    has_configured_units = active_units.exists()
+    allowed_default = unit_type in ("kg", "piece") and not has_configured_units
+    if unit_type.casefold() in blocked_aliases or not (configured or allowed_default):
+        raise serializers.ValidationError({"unit_type": "Select an active unit from CRM Settings."})
     if quantity is None:
         return
     if unit_type == "kg" and quantity < 0.5:

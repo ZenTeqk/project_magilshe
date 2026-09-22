@@ -28,6 +28,7 @@ import { CustomerMatchPicker } from "./customer-match-picker";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 const emptyQuickLead = {
   customer_id: null as number | null,
@@ -64,6 +65,7 @@ export function QuickCreateLeadDialog({
   const cakeTypeOptions = configuredOptions(cakeTypes);
   const flavourOptions = configuredOptions(flavours);
   const productRateOptions = configuredOptions(productRates);
+  const createOption = useCreateCrmOptionFromText();
   const createLead = useCreateLead();
 
   useEffect(() => {
@@ -159,15 +161,15 @@ export function QuickCreateLeadDialog({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Occasion" required error={errors["occasion"]}>
-                <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => setForm((f) => ({ ...f, occasion: v }))} placeholder="Select or type occasion" />
+                <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => setForm((f) => ({ ...f, occasion: v }))} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" />
                 {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
               </Field>
               <Field label="Cake type" required error={errors["cake_type"]}>
-                <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => setForm((f) => ({ ...f, cake_type: v }))} placeholder="Select or type cake type" />
+                <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => setForm((f) => ({ ...f, cake_type: v }))} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" />
                 {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
               </Field>
               <Field label="Flavour">
-                <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => setForm((f) => ({ ...f, flavour: v }))} placeholder="Select or type flavour" />
+                <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => setForm((f) => ({ ...f, flavour: v }))} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
               </Field>
               <Field label="Quantity" required>
                 <Input
@@ -187,7 +189,7 @@ export function QuickCreateLeadDialog({
                 </Select>
               </Field>
               <Field label="Rate">
-                <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, estimated_amount: v }))} placeholder="Select or type rate" />
+                <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, estimated_amount: v }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" />
               </Field>
               <Field label="Amount"><Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} /></Field>
               <Field label="Event date" required error={errors["event_date"]}>

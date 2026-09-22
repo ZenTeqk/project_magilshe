@@ -20,11 +20,13 @@ import {
   IndianRupee,
   PackageCheck,
   ReceiptText,
+  Send,
   ShoppingBag,
   Target,
   Truck,
   Users,
 } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Surface, SurfaceHeading as SurfaceTitle } from "@/components/shared/command-surface";
 import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
@@ -38,7 +40,7 @@ import { useCrmAnalytics } from "@/features/dashboard/hooks";
 import { useCrmDashboard } from "@/features/crm/hooks";
 import { displayOrderStatus, useOrders } from "@/features/crm/orders-hooks";
 import { useDeliveries } from "@/features/crm/deliveries-hooks";
-import { useUpcomingCustomerEvents } from "@/features/customers/hooks";
+import { useSendCustomerReminder, useUpcomingCustomerEvents } from "@/features/customers/hooks";
 import { useCurrentAccess } from "@/features/auth/rbac";
 import {
   useAttentionCenter,
@@ -62,6 +64,7 @@ function HomeCommandCentrePage() {
   const orders = useOrders();
   const deliveries = useDeliveries();
   const events = useUpcomingCustomerEvents(30);
+  const sendReminder = useSendCustomerReminder();
   const attention = useAttentionCenter();
 
   const pendingDeliveries = (deliveries.data ?? []).filter((delivery) =>
@@ -200,11 +203,15 @@ function HomeCommandCentrePage() {
             tone: "text-info",
           },
         ].map((metric, index) => (
-          <Link
-            key={metric.label}
-            to={metric.to}
-            className="group flex min-h-24 items-center gap-3 bg-card px-4 py-3 transition-colors hover:bg-surface-muted"
+            <Link
+              key={metric.label}
+              to={metric.to}
+            className="group relative flex min-h-24 items-center gap-3 overflow-hidden bg-card px-4 py-3 transition-colors hover:bg-surface-muted"
           >
+            <span
+              className="absolute inset-x-0 top-0 h-1"
+              style={{ background: ["var(--primary)", "var(--success)", "var(--accent)", "var(--warning)", "var(--info)"][index] }}
+            />
             <span
               className={`grid size-9 shrink-0 place-items-center rounded-lg ${["bg-primary-soft", "bg-success-soft", "bg-accent-soft", "bg-warning-soft", "bg-info-soft"][index]} ${metric.tone}`}
             >
@@ -603,9 +610,8 @@ function HomeCommandCentrePage() {
           ) : (
             <div className="grid border-t border-border sm:grid-cols-2">
               {events.data.slice(0, 6).map((event) => (
-                <Link
+                <div
                   key={event.id}
-                  to={`/crm/customers/${event.customer_id}`}
                   className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-3 border-b border-border p-4 transition-colors hover:bg-surface-muted sm:odd:border-r"
                 >
                   <span className="flex h-12 flex-col items-center justify-center rounded-lg bg-warning-soft text-warning">
@@ -617,16 +623,31 @@ function HomeCommandCentrePage() {
                     </span>
                   </span>
                   <span className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-sm font-semibold text-warning">
+                    <Link to={`/crm/customers/${event.customer_id}`} className="flex items-center gap-1.5 text-sm font-semibold text-warning hover:underline">
                       <Gift className="size-3.5 shrink-0" /> {event.event_type}
-                    </span>
+                    </Link>
                     <strong className="mt-1 block truncate text-sm">{event.customer_name}</strong>
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                       {event.notes || `${event.event_type} reminder`}
                     </span>
-                    <span className="mt-1 block text-[10px] font-medium text-info">{event.status}</span>
+                    <span className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-medium text-info">{event.status}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={sendReminder.isPending}
+                        onClick={() => sendReminder.mutate(
+                          { customerId: event.customer_id, eventId: event.id },
+                          { onSuccess: (data) => toast.success(data.message ?? "Reminder logged.") },
+                        )}
+                      >
+                        <Send className="size-3" /> Send
+                      </Button>
+                    </span>
                   </span>
-                </Link>
+                </div>
               ))}
             </div>
           )}

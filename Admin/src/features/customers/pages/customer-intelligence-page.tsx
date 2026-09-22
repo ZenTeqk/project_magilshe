@@ -12,7 +12,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowUpRight, Gift, IndianRupee, Repeat, UserCheck, UserPlus, Users } from "lucide-react";
+import { ArrowUpRight, Gift, IndianRupee, Repeat, Send, UserCheck, UserPlus, Users } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { DateRangeToolbar } from "@/components/shared/date-range-toolbar";
 import { Surface, SurfaceHeading as Heading } from "@/components/shared/command-surface";
@@ -22,7 +23,7 @@ import { CardSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
 import { lastNDays } from "@/features/reports/reports-hooks";
-import { useCrmCustomerAnalytics, useUpcomingCustomerEvents } from "@/features/customers/hooks";
+import { useCrmCustomerAnalytics, useSendCustomerReminder, useUpcomingCustomerEvents } from "@/features/customers/hooks";
 const month = (value: string) =>
   new Date(value).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
 const chartColors = [
@@ -41,6 +42,7 @@ export default function CustomerIntelligencePage() {
   const [range, setRange] = useState(lastNDays(0));
   const customers = useCrmCustomerAnalytics(range);
   const events = useUpcomingCustomerEvents(30);
+  const sendReminder = useSendCustomerReminder();
   const stats = useMemo(() => {
     const rows = customers.data ?? [];
     const cutoff = Date.now() - 30 * 86400000;
@@ -181,8 +183,12 @@ export default function CustomerIntelligencePage() {
             color: "text-warning",
             bg: "bg-warning-soft",
           },
-        ].map((item) => (
-          <div key={item.label} className="flex min-h-24 items-center gap-3 bg-card p-4">
+        ].map((item, index) => (
+          <div key={item.label} className="relative flex min-h-24 items-center gap-3 overflow-hidden bg-card p-4">
+            <span
+              className="absolute inset-x-0 top-0 h-1"
+              style={{ background: chartColors[index % chartColors.length] }}
+            />
             <span
               className={`grid size-10 shrink-0 place-items-center rounded-lg ${item.bg} ${item.color}`}
             >
@@ -511,24 +517,38 @@ export default function CustomerIntelligencePage() {
             ) : (
               <div className="divide-y divide-border px-5">
                 {events.data.slice(0, 6).map((event) => (
-                  <Link
+                  <div
                     key={event.id}
-                    to={`/crm/customers/${event.customer_id}`}
                     className="flex items-center gap-3 py-3"
                   >
                     <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-warning-soft text-warning">
                       <Gift className="size-4" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
+                      <Link to={`/crm/customers/${event.customer_id}`} className="block truncate text-sm font-medium hover:underline">
                         {event.event_type} · {event.customer_name}
-                      </span>
+                      </Link>
                       <span className="block text-xs text-muted-foreground">
                         {date(event.next_occurrence)} · reminder {date(event.reminder_date)}
                       </span>
                     </span>
-                    <StatusChip status={event.status} />
-                  </Link>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <StatusChip status={event.status} />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2"
+                        disabled={sendReminder.isPending}
+                        onClick={() => sendReminder.mutate(
+                          { customerId: event.customer_id, eventId: event.id },
+                          { onSuccess: (data) => toast.success(data.message ?? "Reminder logged.") },
+                        )}
+                      >
+                        <Send className="size-3.5" />
+                      </Button>
+                    </span>
+                  </div>
                 ))}
               </div>
             )}

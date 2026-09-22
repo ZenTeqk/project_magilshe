@@ -359,6 +359,22 @@ export function useCompleteCustomerEvent() {
   });
 }
 
+export function useSendCustomerReminder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { customerId: string | number; eventId?: number }) => {
+      const { data } = await apiClient.post(endpoints.crm.customerSendReminder(payload.customerId), {
+        event_id: payload.eventId,
+      });
+      return data as { message?: string };
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["crm", "customer", variables.customerId] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers", "upcoming-events"] });
+    },
+  });
+}
+
 export type UpcomingCustomerEvent = CustomerRecurringEvent & {
   customer_id: number;
   customer_name: string;

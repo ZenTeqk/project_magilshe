@@ -36,6 +36,7 @@ import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/featur
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 const blank = {
   customer_id: null as number | null,
@@ -97,6 +98,7 @@ function LeadFormPage() {
   const uploadImages = useUploadLeadReferenceImages();
   const deleteImage = useDeleteLeadReferenceImage();
   const convertLead = useConvertLead();
+  const createOption = useCreateCrmOptionFromText();
   const access = useCurrentAccess();
 
   const [form, setForm] = useState<typeof blank>({ ...blank, ...(draft ?? {}) });
@@ -348,7 +350,7 @@ function LeadFormPage() {
       <SectionCard title="Event Details">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Occasion" required error={errors["occasion"]}>
-            <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => set("occasion", v)} placeholder="Select or type occasion" />
+            <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => set("occasion", v)} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" />
             {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
           </Field>
           <Field label="Event date" required error={errors["event_date"]}>
@@ -365,11 +367,11 @@ function LeadFormPage() {
       <SectionCard title="Cake Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Cake type" required error={errors["cake_type"]}>
-            <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => set("cake_type", v)} placeholder="Select or type cake type" />
+            <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => set("cake_type", v)} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" />
             {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Flavour">
-            <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => set("flavour", v)} placeholder="Select or type flavour" />
+            <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => set("flavour", v)} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
           </Field>
           <Field label="Shape">
             <Input value={form.shape} onChange={(e) => set("shape", e.target.value)} />
@@ -485,7 +487,7 @@ function LeadFormPage() {
             />
           </Field>
           <Field label="Rate">
-            <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => set("estimated_amount", v)} placeholder="Select or type rate" />
+            <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => set("estimated_amount", v)} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" />
           </Field>
           <Field label="Amount">
             <Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} />
@@ -584,7 +586,7 @@ function LeadFormPage() {
       <SectionCard title="Sales Information">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Lead source">
-            <OptionCombobox value={form.lead_source} options={leadSourceOptions} onChange={(v) => set("lead_source", v)} placeholder="Select or type source" />
+            <OptionCombobox value={form.lead_source} options={leadSourceOptions} onChange={(v) => set("lead_source", v)} onCreateOption={createOption("lead_source", leadSourceOptions)} placeholder="Select or type source" />
             {!leadSourceOptions.length && <p className="text-xs text-warning">Add an active lead source in CRM Settings.</p>}
           </Field>
           <Field label="Lead source details">

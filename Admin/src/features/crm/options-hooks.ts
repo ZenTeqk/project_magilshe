@@ -80,3 +80,18 @@ export function useDeleteCrmOption() {
     },
   });
 }
+
+export function useCreateCrmOptionFromText() {
+  const saveOption = useSaveCrmOption();
+  return (optionType: string, existingOptions: string[] = []) => (value: string) => {
+    const name = value.trim();
+    if (!name) return;
+    if (existingOptions.some((option) => option.trim().toLowerCase() === name.toLowerCase())) return;
+    saveOption.mutate({
+      option_type: optionType,
+      name,
+      sort_order: existingOptions.length,
+      is_active: true,
+    });
+  };
+}

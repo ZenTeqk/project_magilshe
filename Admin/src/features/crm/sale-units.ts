@@ -26,7 +26,9 @@ export function useSaleUnits() {
       .filter((row) => row.is_active)
       .map((row) => row.name.trim())
       .filter((name) => name && !["gram", "grams", "g"].includes(name.toLowerCase()));
-    return [...new Map([...DEFAULT_SALE_UNITS, ...configured].map((name) => [name.toLowerCase(), name])).values()];
+    return configured.length
+      ? [...new Map(configured.map((name) => [name.toLowerCase(), name])).values()]
+      : [...DEFAULT_SALE_UNITS];
   }, [query.data]);
   return { ...query, units };
 }
