@@ -91,7 +91,8 @@ jobs:
       - name: Health check
         run: |
           sleep 3
-          STATUS=$(ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
+          HEALTH_HOST="$(echo '${{ secrets.ALLOWED_HOSTS }}' | cut -d',' -f1 | xargs)"
+          STATUS=$(ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "curl -s -H 'Host: ${HEALTH_HOST}' -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/")
           echo "API responded with HTTP $STATUS"
           if [[ "$STATUS" != "200" && "$STATUS" != "401" && "$STATUS" != "403" ]]; then
             echo "Health check failed - service did not come back up cleanly"
