@@ -43,7 +43,7 @@ jobs:
         run: |
           ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "cat > ~/api/cakery/.env" <<EOF
           DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
-          # ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+          ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
           # CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
           # CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
           DB_HOST=${{ secrets.DB_HOST }}
