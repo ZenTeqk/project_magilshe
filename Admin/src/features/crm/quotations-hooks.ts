@@ -133,13 +133,14 @@ export type QuotationVersion = {
   generated_on: string;
 };
 
-export type QuotationListParams = { search?: string; status?: string };
+export type QuotationListParams = { search?: string; status?: string; archived?: boolean };
 
-export function useQuotations() {
+export function useQuotations(params: QuotationListParams = {}) {
+  const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== "" && v !== false));
   return useQuery({
-    queryKey: ["crm", "quotations"],
+    queryKey: ["crm", "quotations", cleaned],
     queryFn: async () => {
-      const { data } = await apiClient.get(endpoints.crm.quotations);
+      const { data } = await apiClient.get(endpoints.crm.quotations, { params: cleaned });
       return unwrapList<QuotationListItem>(data);
     },
   });
@@ -199,6 +200,39 @@ export function useUpdateQuotation() {
       return data;
     },
     onSuccess: (data) => invalidateQuotation(queryClient, data.id),
+  });
+}
+
+export function useArchiveQuotation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.quotation(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateQuotation(queryClient, id),
+  });
+}
+
+export function useRestoreQuotation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.post(endpoints.crm.quotationRestore(id));
+      return id;
+    },
+    onSuccess: (_data, id) => invalidateQuotation(queryClient, id),
+  });
+}
+
+export function usePermanentDeleteQuotation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.quotationPermanentDelete(id));
+      return id;
+    },
+    onSuccess: () => invalidateQuotation(queryClient),
   });
 }
 
