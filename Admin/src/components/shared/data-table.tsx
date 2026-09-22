@@ -50,6 +50,7 @@ export type DataTableProps<T> = {
   emptyDescription?: string;
   selectable?: boolean;
   exportName?: string;
+  onExport?: (rows: T[]) => void;
 };
 
 export function DataTable<T>({
@@ -68,6 +69,7 @@ export function DataTable<T>({
   emptyDescription,
   selectable = true,
   exportName = "export",
+  onExport,
 }: DataTableProps<T>) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -163,11 +165,15 @@ export function DataTable<T>({
               variant="outline"
               size="sm"
               className="rounded-xl"
-              onClick={() =>
+              onClick={() => {
+                if (onExport) {
+                  onExport(filtered);
+                  return;
+                }
                 toast.success(`${filtered.length} rows queued for export`, {
                   description: `${exportName}.csv will download shortly.`,
-                })
-              }
+                });
+              }}
             >
               <Download className="size-4" /> Export
             </Button>

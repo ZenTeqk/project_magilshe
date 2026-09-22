@@ -176,7 +176,6 @@ function MenuItemPreview() {
     let requestData = {
       "id": 0,
       "cake_price": selectedCakePrice?.id || null,
-      "price": selectedPrice || 0,
       "qty": quantity || 1,
       "type": formData?.type || "",
       "date": formData?.delivery_date || "",

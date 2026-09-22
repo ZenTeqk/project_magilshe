@@ -14,11 +14,15 @@ class PermissionSerializer(serializers.ModelSerializer):
 class RoleSerializer(serializers.ModelSerializer):
     permission_codes = serializers.SlugRelatedField(source="permissions", slug_field="code", queryset=AccessPermission.objects.all(), many=True, required=False)
     users_count = serializers.IntegerField(source="users.count", read_only=True)
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AccessRole
-        fields = ("id", "name", "description", "is_active", "is_super_admin", "permission_codes", "users_count", "created_on", "updated_on")
-        read_only_fields = ("is_super_admin", "created_on", "updated_on")
+        fields = ("id", "name", "description", "is_active", "is_super_admin", "permission_codes", "users_count", "created_on", "updated_on", "archived_at", "archived_by", "archived_by_name")
+        read_only_fields = ("is_super_admin", "created_on", "updated_on", "archived_at", "archived_by", "archived_by_name")
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
     def validate(self, attrs):
         if self.instance and self.instance.is_super_admin and attrs.get("is_active") is False:
@@ -38,14 +42,18 @@ class StaffUserSerializer(serializers.ModelSerializer):
     role = serializers.PrimaryKeyRelatedField(queryset=AccessRole.objects.filter(is_active=True), allow_null=False)
     password = serializers.CharField(write_only=True, required=False, min_length=8)
     permissions = serializers.SerializerMethodField()
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
-        fields = ("id", "username", "first_name", "last_name", "email", "phone", "role", "role_name", "is_active", "is_staff", "date_joined", "last_login", "password", "permissions")
-        read_only_fields = ("is_staff", "date_joined", "last_login", "permissions")
+        fields = ("id", "username", "first_name", "last_name", "email", "phone", "role", "role_name", "is_active", "is_staff", "date_joined", "last_login", "password", "permissions", "archived_at", "archived_by", "archived_by_name")
+        read_only_fields = ("is_staff", "date_joined", "last_login", "permissions", "archived_at", "archived_by", "archived_by_name")
 
     def get_permissions(self, obj):
         return sorted(effective_permissions(obj))
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
     def validate_role(self, role):
         actor = self.context["request"].user

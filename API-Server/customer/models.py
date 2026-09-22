@@ -11,6 +11,11 @@ class Customer(AbstractUser):
     profile_picture_name = models.UUIDField(null=True, blank=True)
     profile_picture_ext = models.CharField(max_length=10, blank=True, null=True)
     role = models.ForeignKey("AccessRole", null=True, blank=True, on_delete=models.SET_NULL, related_name="users")
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_customers",
+    )
 
     class Meta:
         verbose_name_plural = "Customer"
@@ -65,6 +70,11 @@ class AccessRole(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_access_roles",
+    )
     is_super_admin = models.BooleanField(default=False)
     permissions = models.ManyToManyField(AccessPermission, blank=True, related_name="roles")
     created_on = models.DateTimeField(auto_now_add=True)

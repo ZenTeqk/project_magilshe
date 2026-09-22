@@ -209,6 +209,7 @@ export type LeadListParams = {
   from_date?: string;
   to_date?: string;
   action_required?: boolean;
+  archived?: boolean;
 };
 
 export function useLeads(params: LeadListParams = {}) {
@@ -297,6 +298,32 @@ export function useDeleteLead() {
   return useMutation({
     mutationFn: async (id: string | number) => {
       await apiClient.delete(endpoints.crm.lead(id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm", "leads"] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+    },
+  });
+}
+
+export function useRestoreLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.post(endpoints.crm.leadRestore(id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm", "leads"] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "dashboard"] });
+    },
+  });
+}
+
+export function usePermanentDeleteLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.leadPermanentDelete(id));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crm", "leads"] });

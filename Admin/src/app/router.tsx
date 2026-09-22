@@ -29,6 +29,7 @@ const CustomerProfilePage = lazy(() => import("@/features/customers/pages/custom
 
 const UsersPage = lazy(() => import("@/features/users/pages/users-page"));
 const RolesPage = lazy(() => import("@/features/users/pages/roles-page"));
+const ArchivedRecordsPage = lazy(() => import("@/features/users/pages/archived-records-page"));
 
 const CategoriesPage = lazy(() => import("@/features/catalog/pages/categories-page"));
 const SubCategoriesPage = lazy(() => import("@/features/catalog/pages/subcategories-page"));
@@ -106,6 +107,7 @@ export function AppRouter() {
 
             <Route path="/users" element={<UsersPage />} />
             <Route path="/roles" element={<RolesPage />} />
+            <Route path="/archived-records" element={<ArchivedRecordsPage />} />
 
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/subcategories" element={<SubCategoriesPage />} />

@@ -32,7 +32,7 @@ from django.core.files.storage import FileSystemStorage
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, Throttled, ValidationError
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
@@ -53,11 +53,18 @@ logger = logging.getLogger('cakery')
 
 from authentication.token_generator import get_tokens_for_user
 
-import http.client
 import re
-import random
-import requests
 from .models import OTP
+from .otp_security import (
+    client_ip,
+    enforce_otp_request_limits,
+    enforce_otp_verify_limits,
+    normalize_phone,
+    record_otp_verify_failure,
+    reset_otp_verify_limits,
+    secure_otp,
+    send_msg91_otp,
+)
 # import requests
 # Create your views here.
 
@@ -131,36 +138,41 @@ class UserSignup(APIView):
     authentication_classes = []
     def post(self, request):
         try:
-            print("SIGNUP")
             data = check_instance(request.data)
-            phone = data['phone']
-            email = data['email']
-            if phone:
-                if(customer_model.Customer.objects.filter(phone__iexact=phone).exists()):
-                    raise APIException('Phone Number Already Taken')
-                elif(customer_model.Customer.objects.filter(email__iexact=email).exists()):
-                    raise APIException('Email Already Taken')
-                else:
-                    if "password" in data:
-                        password = data['password']
-                    else:
-                        password = None
-                    user = customer_model.Customer.objects.create_user(username = phone,password=password)
-                    user.first_name = data['name']
-                    user.email = email
-                    user.phone = phone
-                    user.save()
-            else:
-                raise APIException('Invalid Username')
+            name = data.get('name')
+            phone = data.get('phone')
+            email = data.get('email')
+
+            errors = {}
+            if not name:
+                errors['name'] = 'This field is required.'
+            if not phone:
+                errors['phone'] = 'This field is required.'
+            if not email:
+                errors['email'] = 'This field is required.'
+            if errors:
+                raise ValidationError(errors)
+
+            if customer_model.Customer.objects.filter(phone__iexact=phone).exists():
+                raise ValidationError({'phone': 'Phone Number Already Taken'})
+            if customer_model.Customer.objects.filter(email__iexact=email).exists():
+                raise ValidationError({'email': 'Email Already Taken'})
+
+            password = data.get('password') or None
+            user = customer_model.Customer.objects.create_user(username=phone, password=password)
+            user.first_name = name
+            user.email = email
+            user.phone = phone
+            user.save()
             return Response({'message' : 'Signedup Success'})
 
-        except APIException as api_exception:
-            raise APIException({'message': api_exception})
+        except APIException:
+            raise
 
         except Exception as e:
             print("User Sign Up Error - {}".format(e))
             logger.exception(f"Signup Error - {str(e)}")
-            raise APIException({'message' : e})
+            raise APIException({'message' : custom_error_message})
 
 
 
@@ -202,7 +214,7 @@ class OTPRequestView(APIView):
                         raise APIException("Invalid Username")
                 elif re.match(phone_regex, username):
                     try:
-                        print("PHONE PHONE PHONE")
+                        username = normalize_phone(username)
                         userdetail = customer_model.Customer.objects.get(username=username)
                         if customer_model.Customer.objects.filter(username = username).exists():
                             if "skip_otp" in data and data['skip_otp'] == True:
@@ -220,35 +232,11 @@ class OTPRequestView(APIView):
                             else:
                                 user = customer_model.Customer.objects.get(username = username)
                                 if user.is_active:
-                                    otp = random.randint(100000, 999999)                              
-
-                                    # Send OTP via MSG91
-                                    conn = http.client.HTTPSConnection("control.msg91.com")
-                                    payload = json.dumps({"OTP": otp})
-                                    headers = {'Content-Type': "application/JSON"}
-
-                                    endpoint = f"/api/v5/otp?otp_expiry=1&template_id={settings.MSG91_TEMPLATE_ID}&mobile=91{username}&authkey={settings.MSG91_API_KEY}&realTimeResponse=1"
-                                    conn.request("POST", endpoint, payload, headers)
-
-                                    # Get response
-                                    res = conn.getresponse()
-                                    status_code = res.status
-                                    response_data = res.read().decode("utf-8")
-
-                                    # Check if HTTP request was successful
-                                    if status_code != 200:
-                                        raise APIException(f"HTTP Request failed with status code: {status_code}")
-
-                                    # Parse the response body
-                                    response_json = json.loads(response_data)
-                                    if response_json.get("type") != "success":
-                                        raise APIException(f"Failed to send OTP: {response_json.get('message', 'Unknown error')}")
-
-
-                                    # Save user and OTP to database
-                                    
+                                    enforce_otp_request_limits(username, client_ip(request))
+                                    otp = secure_otp()
+                                    send_msg91_otp(username, otp)
+                                    OTP.objects.filter(user=user).delete()
                                     OTP.objects.create(user=user, otp=otp)
-                                    print("OTP sent and saved successfully!")
 
                                     return Response({"message": "OTP sent successfully!",'login_redirect' : False }, status=200)
                                 else:
@@ -261,14 +249,16 @@ class OTPRequestView(APIView):
                     raise APIException("Invalid Username")
             
         
+        except Throttled:
+            raise
         except APIException as api_exception:
             raise APIException({'message': api_exception})
+        except ValidationError:
+            raise
         
         except Exception as e:
-            # Handle unexpected errors
-            print(f"Error in OTPRequestView: {str(e)}")
-            logger.exception(f"Error in OTPRequestView: {str(e)}")
-            raise APIException({'message' : e})
+            logger.exception("Error in OTPRequestView")
+            raise APIException({'message' : custom_error_message})
 
 
 
@@ -276,8 +266,11 @@ class OTPVerifyView(APIView):
     permission_classes = []
     authentication_classes = []
     def post(self, request):
-        username = request.data.get('username')
-        otp = request.data.get('otp')
+        try:
+            username = normalize_phone(request.data.get('username'))
+        except ValidationError:
+            raise ValidationError({'message': 'Invalid Username'})
+        otp = str(request.data.get('otp') or '').strip()
 
         if not username or not otp:
             raise APIException("Username and OTP are required")
@@ -285,27 +278,33 @@ class OTPVerifyView(APIView):
         try:
             try:
                 user = customer_model.Customer.objects.get(username=username)
+                ip_address = client_ip(request)
+                enforce_otp_verify_limits(username, ip_address)
                 otp_entry = OTP.objects.filter(user=user, otp=otp).last()
 
                 if otp_entry and otp_entry.is_valid():
-                    otp_entry.delete()  # Invalidate OTP after use
+                    OTP.objects.filter(user=user).delete()
+                    reset_otp_verify_limits(username, ip_address)
                     user.save()
                     login(request, user)
                     tokens = get_tokens_for_user(user)
 
                     return Response({'message': 'Logged in successfully','login_redirect' : True , 'tokens': tokens})
-                raise APIException("Invalid or expired OTP")
+                record_otp_verify_failure(username, ip_address)
+                raise ValidationError({"message": "Invalid or expired OTP"})
             except customer_model.Customer.DoesNotExist:
-                raise APIException("Invalid Username")
+                raise ValidationError({"message": "Invalid Username"})
 
         
+        except Throttled:
+            raise
         except APIException as api_exception:
             raise APIException({'message': api_exception})
 
 
         except Exception as e:
-            logger.exception(f"OTP Verify Error - {str(e)}")
-            raise APIException({"message": str(e)})
+            logger.exception("OTP Verify Error")
+            raise APIException({"message": custom_error_message})
 
 
 
@@ -365,7 +364,6 @@ def validate_otp_view(request):
 class CreateManualCustomer(APIView):
     def post(self, request):
         try:
-            print("Create Manual Customer API")
             data = validate_request(request, request.data)
 
             if "customer_id" in data:
@@ -397,7 +395,8 @@ class CreateManualCustomer(APIView):
                     elif(customer_model.Customer.objects.filter(email__iexact=email).exists()):
                         raise APIException('Email Already Taken')
                     else:
-                        user = customer_model.Customer.objects.create_user(username = data['phone'],password="Welcome@321")
+                        user = customer_model.Customer(username=data['phone'])
+                        user.set_unusable_password()
                         user.first_name = data['name']
                         user.email = data['email']
                         user.phone = phone

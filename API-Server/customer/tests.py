@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 from crm.models import CRMDelivery, CRMInvoice, CRMOrder, CRMOrderItem, Quotation
 from .models import AccessPermission, AccessRole, Customer
-from .rbac import all_permission_codes, effective_permissions
+from .rbac import all_permission_codes, effective_permissions, required_permission
 
 class SuperAdminAuthorizationTests(TestCase):
     major_read_endpoints = (
@@ -30,6 +30,10 @@ class SuperAdminAuthorizationTests(TestCase):
         )
         self.assertEqual(effective_permissions(user), set(all_permission_codes()))
         self.assert_major_modules_load(user)
+        access = self.jwt_client(user).get("/customer/rbac/me/")
+        self.assertEqual(access.status_code, 200, access.data)
+        self.assertTrue(access.data["is_super_admin"])
+        self.assertEqual(set(access.data["permissions"]), set(all_permission_codes()))
 
     def test_active_super_admin_role_has_every_permission_and_module(self):
         role = AccessRole.objects.create(
@@ -53,6 +57,54 @@ class SuperAdminAuthorizationTests(TestCase):
         permission = AccessPermission.objects.get(code="crm.delivery.view")
         role.permissions.add(permission)
         self.assertEqual(client.get("/crm/deliveries/").status_code, 200)
+
+    def test_dashboard_home_requires_crm_dashboard_permission(self):
+        # dashboard/home/ previously had no RBAC mapping at all and was
+        # reachable by any authenticated user, including plain customers.
+        role = AccessRole.objects.create(name="No Dashboard Staff", is_active=True)
+        staff = Customer.objects.create_user(username="no-dashboard-staff", password="password", is_staff=True, role=role)
+        client = self.jwt_client(staff)
+        self.assertEqual(client.get("/dashboard/home/").status_code, 403)
+
+        role.permissions.add(AccessPermission.objects.get(code="crm.dashboard.view"))
+        self.assertEqual(client.get("/dashboard/home/").status_code, 200)
+
+        plain_customer = Customer.objects.create_user(username="9000099911", password="password")
+        self.assertEqual(self.jwt_client(plain_customer).get("/dashboard/home/").status_code, 403)
+
+    def test_customer_data_permission_can_access_crm_customers(self):
+        role = AccessRole.objects.create(name="Customer Data Staff", is_active=True)
+        role.permissions.add(AccessPermission.objects.get(code="customers.data.view"))
+        user = Customer.objects.create_user(
+            username="customer-data-staff", password="password", is_staff=True, role=role
+        )
+        Customer.objects.create_user(username="9876543210", phone="9876543210")
+
+        response = self.jwt_client(user).get("/crm/customers/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_customer_analytics_permission_alone_cannot_access_customer_records(self):
+        role = AccessRole.objects.create(name="Customer Analytics Staff", is_active=True)
+        role.permissions.add(AccessPermission.objects.get(code="customers.analytics.view"))
+        user = Customer.objects.create_user(
+            username="customer-analytics-staff", password="password", is_staff=True, role=role
+        )
+
+        client = self.jwt_client(user)
+
+        self.assertEqual(client.get("/crm/customers/").status_code, 403)
+        self.assertEqual(client.get("/crm/customers/analytics/").status_code, 200)
+
+    def test_customer_route_permission_mapping_uses_data_domain(self):
+        class View:
+            action = "list"
+
+        class Request:
+            path = "/crm/customers/"
+            method = "GET"
+
+        self.assertEqual(required_permission(Request(), View()), "customers.data.view")
 
     def test_super_admin_can_load_a_real_delivery_after_fresh_authentication(self):
         role = AccessRole.objects.create(
@@ -98,3 +150,39 @@ class SuperAdminAuthorizationTests(TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["delivery_no"], delivery.delivery_no)
         self.assertEqual(rows[0]["order_no"], order.order_no)
+
+
+class SaveCustomerAddressTests(TestCase):
+    def setUp(self):
+        self.customer = Customer.objects.create_user(username="9000012345", password="password")
+        self.client = APIClient()
+        self.client.force_authenticate(self.customer)
+
+    def valid_payload(self, **overrides):
+        payload = {
+            "title": "Home", "address": "1 Test Street", "city": "Nagercoil",
+            "pincode": "629001", "is_primary": True,
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_create_address_without_id_field_succeeds(self):
+        # The real frontend always sends id: 0 for a new address, but the
+        # endpoint must not 500 just because a client omits it entirely.
+        response = self.client.post("/customer/save-address/", self.valid_payload())
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["message"], "Address Created Successfully")
+
+    def test_create_address_with_explicit_id_zero_succeeds(self):
+        response = self.client.post("/customer/save-address/", self.valid_payload(id=0))
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_update_address_with_id_succeeds(self):
+        create = self.client.post("/customer/save-address/", self.valid_payload())
+        address_id = create.data["data"]["id"]
+        response = self.client.post(
+            "/customer/save-address/", self.valid_payload(id=address_id, city="Chennai"),
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["message"], "Address Updated Successfully")
+        self.assertEqual(response.data["data"]["city"], "Chennai")

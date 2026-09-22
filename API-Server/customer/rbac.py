@@ -5,7 +5,7 @@ PERMISSION_DEFINITIONS = {
     "crm.dashboard": ("CRM", "Dashboard", ("view",)),
     "crm.leads": ("CRM", "Leads", ("view", "create", "edit", "delete", "import", "process")),
     "crm.quotations": ("CRM", "Quotations", ("view", "create", "edit", "delete", "process", "record_payment")),
-    "crm.orders": ("CRM", "Orders", ("view", "create", "edit", "process", "cancel")),
+    "crm.orders": ("CRM", "Orders", ("view", "create", "edit", "process", "cancel", "record_payment")),
     "crm.invoices": ("CRM", "Invoices", ("view", "edit", "process", "record_payment")),
     "crm.delivery": ("CRM", "Delivery", ("view", "edit", "process")),
     "crm.settings": ("CRM", "CRM Settings", ("view", "configure")),
@@ -58,11 +58,16 @@ def required_permission(request, view):
         "workflow_action": "process", "convert": "process", "confirm_order": "process",
         "generate_invoice": "process", "move_to_delivery": "process", "payment_completed": "process",
         "record_payment": "record_payment",
+        "damage_images": "process", "delete_damage_image": "process",
         "import_file": "import", "cancel_order": "cancel", "partial_update": "edit", "update": "edit",
     }
     permission_action = custom.get(action, method_action)
     if action == "analytics":
         return "customers.analytics.view"
+    if path.startswith("crm/customers") and action == "import_file":
+        return "customers.data.create"
+    if path.startswith("crm/customers") and action == "export_file":
+        return "customers.data.view"
     if action == "customer_search":
         return "customers.data.view"
     if action == "save_customer_address":
@@ -73,6 +78,7 @@ def required_permission(request, view):
         ("crm/leads", "crm.leads"), ("crm/quotations", "crm.quotations"), ("crm/orders", "crm.orders"),
         ("crm/invoices", "crm.invoices"), ("crm/deliveries", "crm.delivery"), ("crm/options", "crm.settings"),
         ("crm/customers", "customers.data"), ("crm/customer-events", "customers.data"), ("crm", "crm.dashboard"),
+        ("dashboard", "crm.dashboard"),
         ("reports", "reports"), ("configuration", "configuration"),
         ("cake", "catalog"), ("category", "catalog"), ("tag", "catalog"), ("gallery", "catalog"),
         ("unit", "catalog"), ("kg", "catalog"), ("items", "catalog"),

@@ -32,7 +32,7 @@ from django.core.files.storage import FileSystemStorage
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
@@ -46,7 +46,7 @@ from cakery.common import custom_error_message, aws_domain_name
 
 from cart.serializers import cart_serializer, my_cart_serializer
 from cart.models import Cart
-from cake import models as cake_model
+from cart.pricing import calculate_cart_line, money_to_model_int
 from kg.models import Kg
 from customer.models import Customer
 from occasion.models import Occasion
@@ -108,29 +108,32 @@ class CreateCart(APIView):
     def post(self, request):
         try:
             data = validate_request(request, request.data)
+            line = calculate_cart_line(data.get('cake_price'), data.get('qty'))
 
             db_param = {
-                "cake_price" : cake_model.CakePrice.objects.get(id=int(data['cake_price'])),
+                "cake_price" : line["cake_price"],
                 "customer" : request.user,
-                "price" : data["price"],
-                "qty" : data["qty"],
-                "greeting_text" : data["greeting_text"],
+                "price" : money_to_model_int(line["unit_price"]),
+                "qty" : line["qty"],
+                "greeting_text" : data.get("greeting_text", ""),
             }
 
-            c_id = str(data['id'])
+            c_id = str(data.get('id', 0))
 
             if c_id and c_id.isdigit() and c_id != '0':
                 db_param['updated_on'] = datetime.now()
-                Cart.objects.filter(id=int(c_id)).update(**db_param)
-                cart = Cart.objects.get(id=int(c_id))
+                updated = Cart.objects.filter(id=int(c_id), customer=request.user, status=True).update(**db_param)
+                if not updated:
+                    return Response({'message': 'Cart item not found.'}, status=status.HTTP_404_NOT_FOUND)
+                cart = Cart.objects.get(id=int(c_id), customer=request.user)
                 response = cart_serializer(cart)
                 return Response({'message' : 'Cart Updated Successfully !!!!!', 'data' : response})
 
             else:
                 occ_db_param = {
-                    "type" : data['type'],
-                    "date" : data['date'],
-                    "person_name" : data['person_name']
+                    "type" : data.get('type', ''),
+                    "date" : data.get('date') or None,
+                    "person_name" : data.get('person_name', '')
                 }
 
                 if "is_subscribed" in data:
@@ -144,10 +147,12 @@ class CreateCart(APIView):
                 response = cart_serializer(cart)
                 return Response({'message' : 'Cart Added Successfully !!!!!', 'data' : response})
 
+        except ValidationError:
+            raise
         except Exception as e:
             print("Create Cart Error - {}".format(e))
             logger.exception("Create Cart Error - {}".format(e))
-            raise APIException({'message' : e})
+            raise APIException({'message' : custom_error_message})
         
 
 class DeleteCartItem(APIView):
@@ -155,7 +160,9 @@ class DeleteCartItem(APIView):
     def delete(self, request, id):
         try:
             cartId = id            
-            Cart.objects.filter(id=int(cartId)).delete()
+            deleted, _ = Cart.objects.filter(id=int(cartId), customer=request.user).delete()
+            if not deleted:
+                return Response({'message': 'Cart item not found.'}, status=status.HTTP_404_NOT_FOUND)
 
             CartObj = Cart.objects.filter(customer=request.user.id, status=True).all()
             cart_data = [cart_serializer(ht) for ht in CartObj]
@@ -192,12 +199,13 @@ class AddManualCart(APIView):
 
                 occasion = Occasion.objects.create(**occ_db_param)
 
+                line = calculate_cart_line(ht.get('cake_price'), ht.get('qty'))
                 cart_db_param = {
-                    "cake_price" : cake_model.CakePrice.objects.get(id=int(ht['cake_price'])),
+                    "cake_price" : line["cake_price"],
                     "customer" : customer,
-                    "price" : ht["price"],
-                    "qty" : ht["qty"],
-                    "greeting_text" : ht["greeting_text"],
+                    "price" : money_to_model_int(line["unit_price"]),
+                    "qty" : line["qty"],
+                    "greeting_text" : ht.get("greeting_text", ""),
                     "occasion" : occasion,
                     "created_on" : datetime.now()
                 }
@@ -209,6 +217,8 @@ class AddManualCart(APIView):
             return Response({'data' : response})
 
 
+        except ValidationError:
+            raise
         except APIException as api_exception:
             raise APIException({'message': api_exception})    
 

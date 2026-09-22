@@ -33,12 +33,13 @@ from django.core.files.storage import FileSystemStorage
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
 
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 
 from cakery.check_instance import check_instance
 from cakery.validators import validate_request
@@ -239,7 +240,10 @@ class CreateCake(APIView):
                                     print("image", image)
                                     if (image != None and image != "null"):
                                         file_name = str(uuid.uuid4())
-                                        ext = image.name.split('.')[-1]
+                                        try:
+                                            ext = validate_image_upload(image)
+                                        except ValueError as error:
+                                            raise ValidationError({"message": str(error)})
                                         if put_image_to_s3(image, "{}/cake/{}/{}.{}".format(aws_domain_name, str(cake_id), file_name, ext)):
                                             
                                             ck_db_param = {
@@ -257,6 +261,8 @@ class CreateCake(APIView):
                                                 ck_db_param['updated_on'] = datetime.now()
                                                 cake_model.CakeImages.objects.filter(id=int(img_id)).update(**ck_db_param)
 
+                except APIException:
+                    raise
                 except Exception as e:
                     print("Upload Cake Image Error - {}".format(e))
                     raise APIException(custom_error_message)
@@ -323,7 +329,7 @@ class CreateCake(APIView):
         
         except APIException as api_exception:
             logger.exception(f"Create Cake Error - {api_exception}")
-            raise APIException({'message': api_exception})
+            raise api_exception
 
         except Exception as e:
             print("Create Cake Exception - {}".format(e))
@@ -360,7 +366,10 @@ class AddCakeOffer(APIView):
                 image = data['image']
                 if image and isinstance(image, object) and hasattr(image, 'name') and image != "null" and image != "":
                     file_name = str(uuid.uuid4())
-                    ext = image.name.split('.')[-1]
+                    try:
+                        ext = validate_image_upload(image)
+                    except ValueError as error:
+                        return Response({"message": str(error)}, status=400)
                     if put_image_to_s3(image, "{}/offer/banner/{}.{}".format(aws_domain_name, file_name, ext)):
                         db_param["image_name"] = file_name
                         db_param["image_ext"] = ext

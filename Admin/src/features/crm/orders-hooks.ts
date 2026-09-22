@@ -143,7 +143,7 @@ export function useGenerateInvoice() {
   });
 }
 
-export type DirectOrderItem = { item_name: string; description?: string; flavour?: string; weight?: string; quantity: number | string; unit_type: import("@/features/crm/sale-units").SaleUnit; rate: number; gst_percentage: number };
+export type DirectOrderItem = { item_name: string; description?: string; flavour?: string; weight?: string; quantity: number | string; unit_type: import("@/features/crm/sale-units").SaleUnit; rate: number | string; gst_percentage: number | string };
 
 export type CreateDirectOrderInput = {
   customer?: number | undefined;

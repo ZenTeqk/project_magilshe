@@ -1,17 +1,138 @@
 from datetime import date, timedelta
+import csv
+from io import BytesIO, StringIO
 from decimal import Decimal
-from io import BytesIO
 from unittest.mock import patch
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
-from PIL import Image
 from django.contrib.auth import get_user_model
 from customer.models import CustomerAddress
 from django.utils import timezone
 from rest_framework.test import APIClient
-from .models import CRMDelivery, CRMInvoice, CRMOption, CRMOrder, CustomerRecurringEvent, Lead, LeadReferenceImage, Quotation, QuotationItem, QuotationPayment, QuotationVersion
+from .models import CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationItem, QuotationPayment, QuotationVersion
 from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer, create_quotation_version
 from .uploads import validate_image_upload
+
+
+class CRMCustomerImportExportTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(
+            username="customer-import-export-admin", password="password"
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def csv_upload(self, content, name="customers.csv"):
+        return SimpleUploadedFile(name, content.encode("utf-8"), content_type="text/csv")
+
+    def test_valid_csv_import_creates_persists_and_lists_customers(self):
+        upload = self.csv_upload(
+            "Customer Name,Phone Number,Email Address,Address,City,Pincode\n"
+            "Imported Customer,9876543210,imported@example.com,12 Baker St,Chennai,600001\n"
+        )
+        response = self.client.post("/crm/customers/import/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["created"], 1)
+        customer = get_user_model().objects.get(phone="9876543210", is_staff=False)
+        self.assertEqual(customer.first_name, "Imported")
+        self.assertEqual(customer.last_name, "Customer")
+        self.assertEqual(customer.email, "imported@example.com")
+        address = customer.customeraddress_set.get()
+        self.assertEqual(address.address, "12 Baker St")
+        self.assertEqual(address.city, "Chennai")
+        directory = self.client.get("/crm/customers/", {"search": "9876543210"})
+        self.assertEqual(directory.status_code, 200, directory.data)
+        self.assertTrue(any(row["id"] == customer.id for row in directory.data))
+
+    def test_valid_xlsx_import_creates_customer(self):
+        from openpyxl import Workbook
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["Name", "Phone", "Email"])
+        sheet.append(["Excel Customer", "9876543211", "excel@example.com"])
+        payload = BytesIO()
+        workbook.save(payload)
+        payload.seek(0)
+        upload = SimpleUploadedFile(
+            "customers.xlsx",
+            payload.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response = self.client.post("/crm/customers/import/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["created"], 1)
+        self.assertTrue(get_user_model().objects.filter(phone="9876543211", email="excel@example.com").exists())
+
+    def test_import_updates_duplicate_phone_and_reports_invalid_rows(self):
+        customer = get_user_model().objects.create_user(
+            username="9876543212", phone="9876543212", first_name="Old", email="old@example.com"
+        )
+        upload = self.csv_upload(
+            "Name,Phone,Email,Unknown Column\n"
+            "Updated Customer,9876543212,updated@example.com,ignored\n"
+        )
+        unknown = self.client.post("/crm/customers/import/", {"file": upload}, format="multipart")
+        self.assertEqual(unknown.status_code, 400)
+        self.assertIn("Unknown Column", unknown.data["unknown_columns"])
+
+        upload = self.csv_upload(
+            "Name,Phone,Email\n"
+            "Updated Customer,9876543212,updated@example.com\n"
+            ",9876543213,missing-name@example.com\n"
+            "Bad Phone,12345,bad-phone@example.com\n"
+        )
+        response = self.client.post("/crm/customers/import/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["updated"], 1)
+        self.assertEqual(response.data["created"], 0)
+        self.assertEqual(response.data["failed"], 2)
+        customer.refresh_from_db()
+        self.assertEqual(customer.first_name, "Updated")
+        self.assertEqual(customer.last_name, "Customer")
+        self.assertEqual(customer.email, "updated@example.com")
+        self.assertTrue(any(error["row"] == 3 and "Missing customer name" in error["reason"] for error in response.data["errors"]))
+        self.assertTrue(any(error["row"] == 4 and "valid 10-digit" in error["reason"] for error in response.data["errors"]))
+
+    def test_export_returns_database_customer_data(self):
+        customer = get_user_model().objects.create_user(
+            username="9876543214", phone="9876543214", first_name="Export", last_name="Customer",
+            email="export@example.com",
+        )
+        CustomerAddress.objects.create(
+            customer=customer, title="Primary", address="99 Export Road",
+            city="Chennai", pincode="600002", is_primary=True,
+        )
+        response = self.client.get("/crm/customers/export/", {"ids": str(customer.id)})
+        self.assertEqual(response.status_code, 200)
+        rows = list(csv.DictReader(StringIO(response.content.decode("utf-8"))))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Customer ID"], str(customer.id))
+        self.assertEqual(rows[0]["Name"], "Export Customer")
+        self.assertEqual(rows[0]["Phone"], "9876543214")
+        self.assertEqual(rows[0]["Email"], "export@example.com")
+        self.assertEqual(rows[0]["Address"], "99 Export Road")
+        self.assertEqual(rows[0]["Customer Status"], "Active")
+
+    def test_customer_import_export_require_customer_data_permissions(self):
+        unauthenticated = APIClient()
+        self.assertIn(unauthenticated.get("/crm/customers/export/").status_code, (401, 403))
+        upload = self.csv_upload("Name,Phone\nBlocked Customer,9876543215\n")
+        self.assertIn(
+            unauthenticated.post("/crm/customers/import/", {"file": upload}, format="multipart").status_code,
+            (401, 403),
+        )
+
+        from customer.models import AccessPermission, AccessRole
+        role = AccessRole.objects.create(name="Customer Export Only")
+        role.permissions.add(AccessPermission.objects.get(code="customers.data.view"))
+        staff = get_user_model().objects.create_user(
+            username="customer-export-only", password="password", is_staff=True, role=role
+        )
+        client = APIClient()
+        client.force_authenticate(staff)
+        self.assertEqual(client.get("/crm/customers/export/").status_code, 200)
+        upload = self.csv_upload("Name,Phone\nBlocked Customer,9876543216\n")
+        self.assertEqual(client.post("/crm/customers/import/", {"file": upload}, format="multipart").status_code, 403)
 
 
 class CRMStatusSummaryAndCancellationTests(TestCase):
@@ -58,6 +179,419 @@ class CRMStatusSummaryAndCancellationTests(TestCase):
         self.assertEqual(after.data["actionable"]["deliveries"], 0)
 
 
+class CRMPaymentConcurrencyAndCancellationTests(TransactionTestCase):
+    reset_sequences = True
+    # TransactionTestCase flushes the whole DB after each test; without this,
+    # the RBAC roles/permissions seeded by data migrations only survive the
+    # first test in the class and every test after it gets a role-less user.
+    serialized_rollback = True
+
+    def setUp(self):
+        from customer.models import AccessRole
+        User = get_user_model()
+        finance_role = AccessRole.objects.filter(name="Accounts / Finance").first()
+        self.user = User.objects.create_user(
+            username="crm-finance-staff", password="password", is_staff=True, role=finance_role,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def make_invoice(self, total="1000.00", paid="0.00", status="Generated", order_status="Invoice Pending"):
+        quotation = Quotation.objects.create(
+            customer_name="Finance Customer", phone="9876543201",
+            cake_type="Cake", quantity=1, rate=total, total_amount=total,
+            advance_received=Decimal(paid) > 0, advance_amount=paid,
+            status="Advance Received" if Decimal(paid) > 0 else "Order Confirmed",
+        )
+        order = CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name,
+            phone=quotation.phone, total_amount=total, advance_paid=paid,
+            status=order_status,
+        )
+        return CRMInvoice.objects.create(
+            order=order, customer_name=order.customer_name, phone=order.phone,
+            total_amount=total, amount_paid=paid,
+            balance_amount=Decimal(total) - Decimal(paid), status=status,
+        )
+
+    def payment_payload(self, amount, reference=None):
+        payload = {
+            "amount": amount,
+            "payment_method": "Cash",
+            "payment_date": timezone.localdate().isoformat(),
+        }
+        if reference:
+            payload["transaction_reference"] = reference
+        return payload
+
+    def test_invoice_payment_rejects_overpayment_and_keeps_totals(self):
+        invoice = self.make_invoice(total="1000.00", paid="400.00")
+        response = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("700.00"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        invoice.refresh_from_db()
+        invoice.order.refresh_from_db()
+        self.assertEqual(str(invoice.amount_paid), "400.00")
+        self.assertEqual(str(invoice.balance_amount), "600.00")
+        self.assertEqual(str(invoice.order.advance_paid), "400.00")
+        self.assertEqual(QuotationPayment.objects.filter(quotation=invoice.order.quotation).count(), 0)
+
+    def test_invoice_payment_exact_balance_marks_paid(self):
+        invoice = self.make_invoice(total="1000.00", paid="400.00")
+        response = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("600.00", "EXACT-1"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(str(invoice.amount_paid), "1000.00")
+        self.assertEqual(str(invoice.balance_amount), "0.00")
+        self.assertEqual(invoice.status, "Paid")
+
+    def test_invoice_payment_rejects_duplicate_transaction_reference(self):
+        invoice = self.make_invoice(total="1000.00", paid="200.00")
+        first = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("300.00", "UPI-123"),
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        second = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("100.00", "UPI-123"),
+            format="json",
+        )
+        self.assertEqual(second.status_code, 400, second.data)
+        self.assertEqual(QuotationPayment.objects.filter(quotation=invoice.order.quotation).count(), 1)
+
+    def test_two_payments_cannot_exceed_locked_remaining_balance(self):
+        invoice = self.make_invoice(total="1000.00", paid="0.00")
+        first = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("700.00", "RACE-1"),
+            format="json",
+        )
+        second = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("700.00", "RACE-2"),
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 400, second.data)
+        invoice.refresh_from_db()
+        self.assertEqual(str(invoice.amount_paid), "700.00")
+        self.assertEqual(str(invoice.balance_amount), "300.00")
+
+    def test_payment_creation_failure_rolls_back_invoice_and_order(self):
+        invoice = self.make_invoice(total="1000.00", paid="400.00")
+        with patch("crm.serializers.QuotationPaymentSerializer.create", side_effect=Exception("payment failed")):
+            with self.assertRaises(Exception):
+                self.client.post(
+                    f"/crm/invoices/{invoice.id}/record-payment/",
+                    self.payment_payload("100.00"),
+                    format="json",
+                )
+        invoice.refresh_from_db()
+        invoice.order.refresh_from_db()
+        self.assertEqual(str(invoice.amount_paid), "400.00")
+        self.assertEqual(str(invoice.balance_amount), "600.00")
+        self.assertEqual(str(invoice.order.advance_paid), "400.00")
+
+    def test_unpaid_invoice_cancellation_blocks_delivery_without_payments(self):
+        invoice = self.make_invoice()
+        response = self.client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        invoice.refresh_from_db()
+        invoice.order.refresh_from_db()
+        self.assertEqual(invoice.status, "Cancelled")
+        self.assertEqual(invoice.order.status, "Ready")
+        self.assertEqual(QuotationPayment.objects.filter(quotation=invoice.order.quotation).count(), 0)
+        delivery = self.client.post(f"/crm/invoices/{invoice.id}/move-to-delivery/", {}, format="json")
+        self.assertEqual(delivery.status_code, 400)
+
+    def test_partially_paid_invoice_cancellation_preserves_payment_history(self):
+        invoice = self.make_invoice(total="1000.00", paid="400.00")
+        QuotationPayment.objects.create(
+            quotation=invoice.order.quotation, amount="400.00",
+            payment_method="Cash", payment_date=timezone.localdate(), collected_by=self.user,
+        )
+        response = self.client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, "Cancelled")
+        self.assertEqual(str(invoice.amount_paid), "400.00")
+        self.assertEqual(str(invoice.balance_amount), "600.00")
+        self.assertEqual(QuotationPayment.objects.filter(quotation=invoice.order.quotation).count(), 1)
+
+    def test_fully_paid_invoice_cannot_be_cancelled_without_reversal_workflow(self):
+        invoice = self.make_invoice(total="1000.00", paid="1000.00", status="Paid")
+        response = self.client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, "Paid")
+
+    def test_cancelled_invoice_cannot_receive_new_payment_or_be_marked_paid(self):
+        invoice = self.make_invoice()
+        self.client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        pay = self.client.post(
+            f"/crm/invoices/{invoice.id}/record-payment/",
+            self.payment_payload("100.00"),
+            format="json",
+        )
+        complete = self.client.post(f"/crm/invoices/{invoice.id}/payment-completed/", {}, format="json")
+        self.assertEqual(pay.status_code, 400, pay.data)
+        self.assertEqual(complete.status_code, 400, complete.data)
+
+    def test_invoice_cancellation_cancels_pending_delivery_but_preserves_completed_delivery(self):
+        pending_invoice = self.make_invoice(total="1000.00", paid="400.00")
+        pending_delivery = CRMDelivery.objects.create(order=pending_invoice.order, delivery_status="Pending")
+        response = self.client.post(f"/crm/invoices/{pending_invoice.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        pending_delivery.refresh_from_db()
+        self.assertEqual(pending_delivery.delivery_status, "Cancelled")
+
+        completed_invoice = self.make_invoice(total="1000.00", paid="400.00", status="Generated")
+        completed_delivery = CRMDelivery.objects.create(order=completed_invoice.order, delivery_status="Delivered Successfully")
+        blocked = self.client.post(f"/crm/invoices/{completed_invoice.id}/cancel/", {}, format="json")
+        self.assertEqual(blocked.status_code, 400, blocked.data)
+        completed_invoice.refresh_from_db()
+        completed_delivery.refresh_from_db()
+        self.assertEqual(completed_invoice.status, "Generated")
+        self.assertEqual(completed_delivery.delivery_status, "Delivered Successfully")
+
+    def test_unauthenticated_invoice_cancellation_is_rejected(self):
+        invoice = self.make_invoice()
+        client = APIClient()
+        response = client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        self.assertIn(response.status_code, (401, 403))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, "Generated")
+
+    def test_cancellation_rolls_back_if_downstream_delivery_update_fails(self):
+        invoice = self.make_invoice(total="1000.00", paid="400.00")
+        CRMDelivery.objects.create(order=invoice.order, delivery_status="Pending")
+        with patch.object(CRMDelivery, "save", side_effect=Exception("delivery update failed")):
+            with self.assertRaises(Exception):
+                self.client.post(f"/crm/invoices/{invoice.id}/cancel/", {}, format="json")
+        invoice.refresh_from_db()
+        invoice.order.refresh_from_db()
+        self.assertEqual(invoice.status, "Generated")
+        self.assertEqual(invoice.order.status, "Invoice Pending")
+
+
+class CRMOrderRecordPaymentPermissionTests(TestCase):
+    """crm.orders.record_payment was unreachable: the endpoint required it but no
+    role could ever be granted it. Covers the corrected permission definition."""
+
+    def make_order(self, total="1000.00", advance="0.00"):
+        quotation = Quotation.objects.create(
+            customer_name="Order Payment Customer", phone="9876543202",
+            cake_type="Cake", quantity=1, rate=total, total_amount=total,
+            advance_received=Decimal(advance) > 0, advance_amount=advance,
+            status="Advance Received" if Decimal(advance) > 0 else "Order Confirmed",
+        )
+        return CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name,
+            phone=quotation.phone, total_amount=total, advance_paid=advance,
+            status="Confirmed",
+        )
+
+    def make_role(self, name, codes):
+        from customer.models import AccessPermission, AccessRole
+        role = AccessRole.objects.create(name=name, is_active=True)
+        role.permissions.set(AccessPermission.objects.filter(code__in=codes))
+        return role
+
+    def client_for(self, username, role):
+        User = get_user_model()
+        staff = User.objects.create_user(username=username, password="password", is_staff=True, role=role)
+        client = APIClient()
+        client.force_authenticate(staff)
+        return client
+
+    def payment_payload(self, amount="500.00", reference=None):
+        payload = {"amount": amount, "payment_method": "Cash", "payment_date": timezone.localdate().isoformat()}
+        if reference:
+            payload["transaction_reference"] = reference
+        return payload
+
+    def test_role_with_orders_record_payment_can_record_a_payment(self):
+        role = self.make_role("Order Payment Tester", ["crm.orders.view", "crm.orders.record_payment"])
+        client = self.client_for("orders-record-payment-staff", role)
+        order = self.make_order()
+        response = client.post(f"/crm/orders/{order.id}/record-payment/", self.payment_payload(), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.advance_paid, Decimal("500.00"))
+
+    def test_role_missing_record_payment_is_forbidden(self):
+        role = self.make_role("Order Viewer Only", ["crm.orders.view", "crm.orders.edit", "crm.orders.process"])
+        client = self.client_for("orders-view-only-staff", role)
+        order = self.make_order()
+        response = client.post(f"/crm/orders/{order.id}/record-payment/", self.payment_payload(), format="json")
+        self.assertEqual(response.status_code, 403, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.advance_paid, Decimal("0.00"))
+
+    def test_unauthenticated_request_is_rejected(self):
+        order = self.make_order()
+        response = APIClient().post(f"/crm/orders/{order.id}/record-payment/", self.payment_payload(), format="json")
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_duplicate_transaction_reference_still_rejected_for_authorized_role(self):
+        role = self.make_role("Order Payment Tester Dup", ["crm.orders.view", "crm.orders.record_payment"])
+        client = self.client_for("orders-dup-ref-staff", role)
+        order = self.make_order(total="2000.00")
+        first = client.post(
+            f"/crm/orders/{order.id}/record-payment/", self.payment_payload("500.00", reference="TXN-1"), format="json"
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        second = client.post(
+            f"/crm/orders/{order.id}/record-payment/", self.payment_payload("500.00", reference="TXN-1"), format="json"
+        )
+        self.assertEqual(second.status_code, 400, second.data)
+
+    def test_super_admin_can_record_a_payment_without_explicit_role_grant(self):
+        admin = get_user_model().objects.create_superuser(username="orders-payment-admin", password="password")
+        client = APIClient()
+        client.force_authenticate(admin)
+        order = self.make_order()
+        response = client.post(f"/crm/orders/{order.id}/record-payment/", self.payment_payload(), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_orders_record_payment_does_not_grant_invoice_payment_access(self):
+        role = self.make_role("Order Payment Only", ["crm.orders.view", "crm.orders.record_payment"])
+        client = self.client_for("orders-only-staff", role)
+        order = self.make_order()
+        invoice = CRMInvoice.objects.create(
+            order=order, customer_name=order.customer_name, phone=order.phone,
+            total_amount=order.total_amount, amount_paid="0.00",
+            balance_amount=order.total_amount, status="Generated",
+        )
+        response = client.post(f"/crm/invoices/{invoice.id}/record-payment/", self.payment_payload(), format="json")
+        self.assertEqual(response.status_code, 403, response.data)
+
+
+class CRMDeliveryDamageImagePermissionTests(TestCase):
+    """crm.delivery had no 'create' action, so damage-images POST/DELETE (which
+    fell through to the generic create/delete permission mapping) could never
+    be granted to any non-super-admin role. Fixed by mapping both actions to
+    the existing 'process' permission (matching workflow_action/cancel), not
+    by inventing a new permission or broadening any role."""
+
+    def make_role(self, name, codes):
+        from customer.models import AccessPermission, AccessRole
+        role = AccessRole.objects.create(name=name, is_active=True)
+        role.permissions.set(AccessPermission.objects.filter(code__in=codes))
+        return role
+
+    def client_for(self, username, role):
+        User = get_user_model()
+        staff = User.objects.create_user(username=username, password="password", is_staff=True, role=role)
+        client = APIClient()
+        client.force_authenticate(staff)
+        return client
+
+    def make_delivery(self, client, phone):
+        lead = Lead.objects.create(
+            customer_name="Damage Perm Customer", phone=phone, occasion="Birthday",
+            event_date=timezone.localdate() + timedelta(days=2), cake_type="Theme Cake",
+            quantity=1, status="Won",
+        )
+        quotation = Quotation.objects.create(
+            lead=lead, customer_name=lead.customer_name, phone=lead.phone,
+            cake_type="Theme Cake", quantity=1, rate="1000.00", total_amount="1000.00",
+            advance_received=True, advance_amount="1000.00", status="Advance Received",
+        )
+        confirmed = client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        order_id = confirmed.data["data"]["id"]
+        client.post(f"/crm/orders/{order_id}/workflow-action/", {"action": "start_processing"}, format="json")
+        client.post(f"/crm/orders/{order_id}/workflow-action/", {"action": "mark_ready"}, format="json")
+        invoice_id = client.post(f"/crm/orders/{order_id}/generate-invoice/", {}, format="json").data["data"]["id"]
+        client.post(f"/crm/invoices/{invoice_id}/record-payment/", {
+            "amount": "1000.00", "payment_method": "Cash", "payment_date": timezone.localdate().isoformat(),
+        }, format="json")
+        client.post(f"/crm/invoices/{invoice_id}/payment-completed/", {}, format="json")
+        delivery_id = client.post(f"/crm/invoices/{invoice_id}/move-to-delivery/", {}, format="json").data["data"]["id"]
+        return CRMDelivery.objects.get(pk=delivery_id)
+
+    def test_role_with_delivery_process_can_upload_damage_image(self):
+        role = self.make_role("Delivery Process Tester", [
+            "crm.leads.view", "crm.leads.create", "crm.leads.edit", "crm.leads.process",
+            "crm.quotations.view", "crm.quotations.create", "crm.quotations.edit", "crm.quotations.process",
+            "crm.orders.view", "crm.orders.create", "crm.orders.edit", "crm.orders.process", "crm.orders.record_payment",
+            "crm.invoices.view", "crm.invoices.edit", "crm.invoices.process", "crm.invoices.record_payment",
+            "crm.delivery.view", "crm.delivery.edit", "crm.delivery.process",
+        ])
+        client = self.client_for("delivery-process-staff", role)
+        delivery = self.make_delivery(client, phone="9876500101")
+        with patch("crm.views.put_image_to_s3", return_value=True):
+            upload = SimpleUploadedFile("damage.png", PNG_BYTES, content_type="image/png")
+            response = client.post(f"/crm/deliveries/{delivery.id}/damage-images/", {"images": [upload]}, format="multipart")
+        self.assertEqual(response.status_code, 201, response.data)
+        image_id = response.data["data"][0]["id"]
+
+        with patch("crm.views.get_s3_session") as mock_session:
+            mock_session.return_value.resource.return_value.Object.return_value.delete.return_value = None
+            delete_response = client.delete(f"/crm/deliveries/{delivery.id}/damage-images/{image_id}/")
+        self.assertEqual(delete_response.status_code, 204)
+
+    def test_role_with_only_delivery_view_is_forbidden_from_uploading(self):
+        setup_role = self.make_role("Damage Perm Setup", [
+            "crm.leads.view", "crm.leads.create", "crm.leads.edit", "crm.leads.process",
+            "crm.quotations.view", "crm.quotations.create", "crm.quotations.edit", "crm.quotations.process",
+            "crm.orders.view", "crm.orders.create", "crm.orders.edit", "crm.orders.process", "crm.orders.record_payment",
+            "crm.invoices.view", "crm.invoices.edit", "crm.invoices.process", "crm.invoices.record_payment",
+            "crm.delivery.view", "crm.delivery.edit", "crm.delivery.process",
+        ])
+        setup_client = self.client_for("damage-perm-setup-staff", setup_role)
+        delivery = self.make_delivery(setup_client, phone="9876500102")
+
+        view_only_role = self.make_role("Delivery View Only", ["crm.delivery.view"])
+        view_only_client = self.client_for("delivery-view-only-staff", view_only_role)
+
+        upload = SimpleUploadedFile("damage.png", PNG_BYTES, content_type="image/png")
+        response = view_only_client.post(
+            f"/crm/deliveries/{delivery.id}/damage-images/", {"images": [upload]}, format="multipart",
+        )
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(CRMDeliveryDamageImage.objects.filter(delivery=delivery).count(), 0)
+
+        # view-only must also still be able to read the delivery (GET untouched by this fix)
+        detail = view_only_client.get(f"/crm/deliveries/{delivery.id}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+
+    def test_delivery_edit_alone_does_not_grant_damage_image_upload(self):
+        # Confirms no privilege escalation: crm.delivery.edit must not implicitly
+        # cover the damage-images action now mapped to crm.delivery.process.
+        setup_role = self.make_role("Damage Perm Setup 2", [
+            "crm.leads.view", "crm.leads.create", "crm.leads.edit", "crm.leads.process",
+            "crm.quotations.view", "crm.quotations.create", "crm.quotations.edit", "crm.quotations.process",
+            "crm.orders.view", "crm.orders.create", "crm.orders.edit", "crm.orders.process", "crm.orders.record_payment",
+            "crm.invoices.view", "crm.invoices.edit", "crm.invoices.process", "crm.invoices.record_payment",
+            "crm.delivery.view", "crm.delivery.edit", "crm.delivery.process",
+        ])
+        setup_client = self.client_for("damage-perm-setup-staff-2", setup_role)
+        delivery = self.make_delivery(setup_client, phone="9876500103")
+
+        edit_only_role = self.make_role("Delivery Edit Only", ["crm.delivery.view", "crm.delivery.edit"])
+        edit_only_client = self.client_for("delivery-edit-only-staff", edit_only_role)
+
+        upload = SimpleUploadedFile("damage.png", PNG_BYTES, content_type="image/png")
+        response = edit_only_client.post(
+            f"/crm/deliveries/{delivery.id}/damage-images/", {"images": [upload]}, format="multipart",
+        )
+        self.assertEqual(response.status_code, 403, response.data)
+
+    def test_unauthenticated_upload_is_rejected(self):
+        response = APIClient().post("/crm/deliveries/1/damage-images/", {}, format="multipart")
+        self.assertIn(response.status_code, (401, 403))
+
+
 class QuotationVersionSnapshotTests(TestCase):
     def test_edit_preserves_generated_snapshot_until_explicit_regeneration(self):
         user = get_user_model().objects.create_superuser(
@@ -100,6 +634,244 @@ class QuotationVersionSnapshotTests(TestCase):
         self.assertEqual(regenerate.data["current_version"]["version_number"], 2)
         self.assertEqual(regenerate.data["current_version"]["snapshot"]["total_amount"], "2500.00")
         self.assertEqual(QuotationVersion.objects.filter(quotation=quotation).count(), 2)
+
+    def test_multiple_versions_keep_historical_values(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-version-history-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Version Customer", phone="9876543210",
+            cake_type="Custom Cake", quantity=1, rate="1000.00",
+        )
+        QuotationItem.objects.create(
+            quotation=quotation, item_name="Custom Cake", quantity=1,
+            unit_type="piece", rate="1000.00", gst_percentage=0,
+        )
+        quotation.calculate_totals()
+        quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
+        v1 = create_quotation_version(quotation, user)
+
+        v2_response = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 1000, "gst_percentage": 0}]},
+            format="json",
+        )
+        v3_response = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 3,
+                        "unit_type": "piece", "rate": 1000, "gst_percentage": 0}]},
+            format="json",
+        )
+
+        self.assertEqual(v2_response.status_code, 200, v2_response.data)
+        self.assertEqual(v3_response.status_code, 200, v3_response.data)
+        v1.refresh_from_db()
+        versions = list(QuotationVersion.objects.filter(quotation=quotation).order_by("version_number"))
+        self.assertEqual([str(version.total_amount) for version in versions], ["1000.00", "2000.00", "3000.00"])
+        self.assertEqual(v1.snapshot["total_amount"], "1000.00")
+        self.assertEqual(v3_response.data["current_version"]["snapshot"]["total_amount"], "3000.00")
+
+    def test_v1_and_v2_snapshots_remain_unchanged_after_v3(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-version-regression-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Regression Customer", phone="9876543210",
+            cake_type="Custom Cake", quantity=1, rate="1000.00",
+        )
+        QuotationItem.objects.create(
+            quotation=quotation, item_name="Custom Cake", quantity=1,
+            unit_type="piece", rate="1000.00", gst_percentage=0,
+        )
+        quotation.calculate_totals()
+        quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
+        v1 = create_quotation_version(quotation, user)
+
+        v2_response = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 750, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(v2_response.status_code, 200, v2_response.data)
+        v2 = QuotationVersion.objects.get(quotation=quotation, version_number=2)
+        self.assertEqual(str(v2.total_amount), "1500.00")
+        self.assertEqual(v2.snapshot["total_amount"], "1500.00")
+        self.assertEqual(v2.snapshot["items"][0]["quantity"], "2.000")
+        self.assertEqual(v2.snapshot["items"][0]["rate"], "750.00")
+
+        v3_response = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 3,
+                        "unit_type": "piece", "rate": 800, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(v3_response.status_code, 200, v3_response.data)
+
+        v1.refresh_from_db()
+        v2.refresh_from_db()
+        v3 = QuotationVersion.objects.get(quotation=quotation, version_number=3)
+        self.assertEqual(str(v1.total_amount), "1000.00")
+        self.assertEqual(v1.snapshot["total_amount"], "1000.00")
+        self.assertEqual(v1.snapshot["items"][0]["quantity"], "1.000")
+        self.assertEqual(v1.snapshot["items"][0]["rate"], "1000.00")
+        self.assertEqual(str(v2.total_amount), "1500.00")
+        self.assertEqual(v2.snapshot["total_amount"], "1500.00")
+        self.assertEqual(v2.snapshot["items"][0]["quantity"], "2.000")
+        self.assertEqual(v2.snapshot["items"][0]["rate"], "750.00")
+        self.assertEqual(str(v3.total_amount), "2400.00")
+        self.assertEqual(v3.snapshot["total_amount"], "2400.00")
+        self.assertEqual(v3.snapshot["items"][0]["quantity"], "3.000")
+        self.assertEqual(v3.snapshot["items"][0]["rate"], "800.00")
+        self.assertEqual(v3_response.data["current_version"]["version_number"], 3)
+        self.assertEqual(v3_response.data["current_version"]["snapshot"]["total_amount"], "2400.00")
+
+    def test_edit_before_finalization_drives_order_invoice_and_payment_values(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-downstream-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Downstream Customer", phone="9876543210",
+            cake_type="Custom Cake", quantity=1, rate="1000.00", status="Accepted",
+        )
+        QuotationItem.objects.create(
+            quotation=quotation, item_name="Custom Cake", quantity=1,
+            unit_type="piece", rate="1000.00", gst_percentage=0,
+        )
+        quotation.calculate_totals()
+        quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
+
+        payment = client.post(
+            f"/crm/quotations/{quotation.id}/record-payment/",
+            {"amount": "300.00", "payment_date": timezone.localdate().isoformat(), "payment_method": "Cash"},
+            format="json",
+        )
+        self.assertEqual(payment.status_code, 201, payment.data)
+        edit = client.patch(
+            f"/crm/quotations/{quotation.id}/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 600, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(edit.status_code, 200, edit.data)
+        self.assertEqual(edit.data["total_amount"], "1200.00")
+        self.assertEqual(edit.data["balance_amount"], "900.00")
+
+        confirmed = client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order = CRMOrder.objects.get(quotation=quotation)
+        self.assertEqual(str(order.total_amount), "1200.00")
+        self.assertEqual(str(order.advance_paid), "300.00")
+        self.assertEqual(str(order.balance_amount), "900.00")
+
+        order.status = "Ready"
+        order.save(update_fields=("status", "updated_on"))
+        invoice_response = client.post(f"/crm/orders/{order.id}/generate-invoice/", {}, format="json")
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.data)
+        invoice = CRMInvoice.objects.get(order=order)
+        self.assertEqual(str(invoice.total_amount), "1200.00")
+        self.assertEqual(str(invoice.amount_paid), "300.00")
+        self.assertEqual(str(invoice.balance_amount), "900.00")
+
+    def test_finalized_confirmed_quotation_rejects_edits_and_new_versions(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-lock-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        quotation = Quotation.objects.create(
+            customer_name="Locked Customer", phone="9876543210",
+            cake_type="Custom Cake", quantity=1, rate="1000.00",
+            total_amount="1000.00", advance_received=True,
+            advance_amount="300.00", status="Advance Received",
+        )
+        confirmed = client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+
+        edit = client.patch(
+            f"/crm/quotations/{quotation.id}/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 600, "gst_percentage": 0}]},
+            format="json",
+        )
+        version = client.post(
+            f"/crm/quotations/{quotation.id}/generate-version/",
+            {"items": [{"item_name": "Custom Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 600, "gst_percentage": 0}]},
+            format="json",
+        )
+        quotation.refresh_from_db()
+
+        self.assertEqual(edit.status_code, 400, edit.data)
+        self.assertEqual(version.status_code, 400, version.data)
+        self.assertEqual(str(quotation.total_amount), "1000.00")
+
+    def test_new_quotation_can_be_created_after_original_is_finalized(self):
+        user = get_user_model().objects.create_superuser(
+            username="quotation-new-after-final-admin", password="password"
+        )
+        client = APIClient(); client.force_authenticate(user)
+        original = Quotation.objects.create(
+            customer_name="Final Customer", phone="9876543210",
+            cake_type="Original Cake", quantity=1, rate="1000.00",
+            total_amount="1000.00", advance_received=True,
+            advance_amount="300.00", status="Advance Received",
+        )
+        confirmed = client.post(f"/crm/quotations/{original.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        original_order = CRMOrder.objects.get(quotation=original)
+
+        locked_edit = client.patch(
+            f"/crm/quotations/{original.id}/",
+            {"items": [{"item_name": "Original Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 600, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(locked_edit.status_code, 400, locked_edit.data)
+
+        created = client.post(
+            "/crm/quotations/",
+            {
+                "customer_name": "Final Customer",
+                "phone": "9876543211",
+                "items": [{"item_name": "New Cake", "quantity": 1,
+                           "unit_type": "piece", "rate": 800, "gst_percentage": 0}],
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        new_quotation_id = created.data["id"]
+
+        edited = client.patch(
+            f"/crm/quotations/{new_quotation_id}/",
+            {"items": [{"item_name": "New Cake", "quantity": 3,
+                        "unit_type": "piece", "rate": 300, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(edited.data["total_amount"], "900.00")
+
+        new_version = client.post(
+            f"/crm/quotations/{new_quotation_id}/generate-version/",
+            {"items": [{"item_name": "New Cake", "quantity": 2,
+                        "unit_type": "piece", "rate": 500, "gst_percentage": 0}]},
+            format="json",
+        )
+        self.assertEqual(new_version.status_code, 200, new_version.data)
+        self.assertEqual(new_version.data["current_version"]["version_number"], 2)
+        self.assertEqual(new_version.data["current_version"]["snapshot"]["total_amount"], "1000.00")
+
+        original.refresh_from_db()
+        original_order.refresh_from_db()
+        self.assertEqual(original.status, "Order Confirmed")
+        self.assertEqual(str(original.total_amount), "1000.00")
+        self.assertEqual(str(original.advance_amount), "300.00")
+        self.assertEqual(str(original_order.total_amount), "1000.00")
+        self.assertEqual(str(original_order.advance_paid), "300.00")
+        self.assertEqual(str(original_order.balance_amount), "700.00")
 
 
 class QuotationAdvanceActionStateTests(TestCase):
@@ -256,11 +1028,18 @@ class SaleUnitAmountCalculationTests(TestCase):
         self.assertEqual(quotation.subtotal, Decimal("5850.00"))
         self.assertEqual(quotation.total_amount, Decimal("5850.00"))
 
+PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02"
+    b"\x00\x00\x00\x02\x08\x02\x00\x00\x00\xfd\xd4\x9as"
+    b"\x00\x00\x00\x13IDATx\x9cc\xfc\xff\xff?\x03\x03\x03"
+    b"\x13\x03\x18\x00\x00$\x06\x03\x01]\xa2N\x88"
+    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
 class ImageUploadValidationTests(SimpleTestCase):
     def test_accepts_a_real_supported_image(self):
-        content = BytesIO()
-        Image.new("RGB", (1, 1), "white").save(content, format="PNG")
-        upload = SimpleUploadedFile("proof.png", content.getvalue(), content_type="image/png")
+        upload = SimpleUploadedFile("proof.png", PNG_BYTES, content_type="image/png")
         self.assertEqual(validate_image_upload(upload), "png")
 
     def test_rejects_a_non_image_with_an_image_extension(self):
@@ -318,9 +1097,7 @@ class PersistentUploadFlowTests(TestCase):
 
     @staticmethod
     def image(name="proof.png"):
-        content = BytesIO()
-        Image.new("RGB", (2, 2), "white").save(content, format="PNG")
-        return SimpleUploadedFile(name, content.getvalue(), content_type="image/png")
+        return SimpleUploadedFile(name, PNG_BYTES, content_type="image/png")
 
     @patch("crm.views.put_image_to_s3", return_value=True)
     @patch("crm.serializers.get_s3_file_url", side_effect=lambda key: f"https://files.example/{key}")
@@ -379,6 +1156,200 @@ class PersistentUploadFlowTests(TestCase):
         refreshed = self.client.get(f"/crm/invoices/{invoice.id}/")
         self.assertEqual(refreshed.status_code, 200, refreshed.data)
         self.assertIn("crm/quotation/payment-proof", refreshed.data["payments"][0]["proof"])
+
+
+class LeadDeleteTests(TestCase):
+    """Normal lead delete archives; only Super Admin can permanently delete."""
+
+    def setUp(self):
+        from customer.models import AccessRole
+        User = get_user_model()
+        self.role = AccessRole.objects.filter(name="CRM Manager").first()
+        self.staff = User.objects.create_user(
+            username="lead-delete-staff", password="password", is_staff=True, role=self.role,
+        )
+        self.super_admin = User.objects.create_superuser(
+            username="lead-lifecycle-admin", password="password",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.staff)
+
+    def make_lead(self, phone):
+        return Lead.objects.create(
+            customer_name="Delete Test", phone=phone, occasion="Birthday",
+            event_date=timezone.localdate() + timedelta(days=2), cake_type="Theme Cake",
+            quantity=1, status="Open",
+        )
+
+    def test_lead_without_quotation_is_archived(self):
+        lead = self.make_lead("9876500201")
+        response = self.client.delete(f"/crm/leads/{lead.id}/")
+        self.assertEqual(response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertTrue(lead.is_archived)
+        self.assertIsNotNone(lead.archived_at)
+        self.assertEqual(lead.archived_by, self.staff)
+
+    def test_lead_with_quotation_archives_and_preserves_relationship(self):
+        lead = self.make_lead("9876500202")
+        quotation = Quotation.objects.create(lead=lead, customer_name=lead.customer_name, phone=lead.phone)
+        response = self.client.delete(f"/crm/leads/{lead.id}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        lead.refresh_from_db()
+        quotation.refresh_from_db()
+        self.assertTrue(lead.is_archived)
+        self.assertEqual(quotation.lead_id, lead.id)
+
+    def test_archived_lead_hidden_from_normal_list_and_visible_to_super_admin_archive_filter(self):
+        lead = self.make_lead("9876500205")
+        self.client.delete(f"/crm/leads/{lead.id}/")
+        self.assertNotContains(self.client.get("/crm/leads/"), lead.lead_no)
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+        response = admin_client.get("/crm/leads/", {"archived": "true"})
+        self.assertContains(response, lead.lead_no)
+
+    def test_super_admin_can_restore_archived_lead(self):
+        lead = self.make_lead("9876500206")
+        self.client.delete(f"/crm/leads/{lead.id}/")
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+        response = admin_client.post(f"/crm/leads/{lead.id}/restore/")
+        self.assertEqual(response.status_code, 200, response.data)
+        lead.refresh_from_db()
+        self.assertFalse(lead.is_archived)
+        self.assertIsNone(lead.archived_at)
+
+    def test_unauthorized_role_cannot_delete_lead(self):
+        from customer.models import AccessRole
+        restricted_role = AccessRole.objects.create(name="No Lead Delete", is_active=True)
+        User = get_user_model()
+        restricted_staff = User.objects.create_user(
+            username="lead-delete-restricted", password="password", is_staff=True, role=restricted_role,
+        )
+        client = APIClient()
+        client.force_authenticate(restricted_staff)
+        lead = self.make_lead("9876500203")
+        response = client.delete(f"/crm/leads/{lead.id}/")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Lead.objects.filter(id=lead.id).exists())
+
+    def test_archive_preserves_activities(self):
+        lead = self.make_lead("9876500204")
+        LeadActivity.objects.create(lead=lead, action="Lead Created", staff=self.staff)
+        response = self.client.delete(f"/crm/leads/{lead.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(LeadActivity.objects.filter(lead_id=lead.id).count(), 1)
+
+    def test_permanent_delete_blocked_when_lead_has_quotation(self):
+        lead = self.make_lead("9876500207")
+        Quotation.objects.create(lead=lead, customer_name=lead.customer_name, phone=lead.phone)
+        self.client.delete(f"/crm/leads/{lead.id}/")
+        admin_client = APIClient()
+        admin_client.force_authenticate(self.super_admin)
+        response = admin_client.delete(f"/crm/leads/{lead.id}/permanent-delete/")
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertIn("related quotation", response.data["message"])
+
+
+class NullBillingAddressResilienceTests(TestCase):
+    """A null quotation.billing_address must never crash the CRM lifecycle.
+    Covers quotation -> order -> invoice -> payment -> delivery with no
+    billing address, plus the aggregate dashboard/report endpoints that
+    read across all quotations."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_superuser(username="null-billing-admin", password="password")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_quotation_serializer_handles_null_billing_address(self):
+        quotation = Quotation.objects.create(
+            customer_name="Null Billing", phone="9876500301", cake_type="Cake",
+            quantity=1, rate="1000.00", billing_address=None, address=None,
+        )
+        response = self.client.get(f"/crm/quotations/{quotation.id}/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data["billing_address"])
+
+    def test_full_lifecycle_survives_null_billing_address(self):
+        quotation = Quotation.objects.create(
+            customer_name="Null Billing Flow", phone="9876500302", cake_type="Cake",
+            quantity=1, rate="1000.00", total_amount="1000.00",
+            advance_received=True, advance_amount="500.00", status="Advance Received",
+            billing_address=None, address=None,
+        )
+        confirmed = self.client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order_id = confirmed.data["data"]["id"]
+
+        self.assertEqual(
+            self.client.post(f"/crm/orders/{order_id}/workflow-action/", {"action": "start_processing"}, format="json").status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.post(f"/crm/orders/{order_id}/workflow-action/", {"action": "mark_ready"}, format="json").status_code,
+            200,
+        )
+        invoice_response = self.client.post(f"/crm/orders/{order_id}/generate-invoice/", {}, format="json")
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.data)
+        invoice_id = invoice_response.data["data"]["id"]
+
+        self.assertEqual(self.client.get(f"/crm/invoices/{invoice_id}/").status_code, 200)
+        payment = self.client.post(f"/crm/invoices/{invoice_id}/record-payment/", {
+            "amount": "500.00", "payment_method": "Cash", "payment_date": timezone.localdate().isoformat(),
+        }, format="json")
+        self.assertEqual(payment.status_code, 201, payment.data)
+        self.assertEqual(self.client.post(f"/crm/invoices/{invoice_id}/payment-completed/", {}, format="json").status_code, 200)
+        delivery = self.client.post(f"/crm/invoices/{invoice_id}/move-to-delivery/", {}, format="json")
+        self.assertEqual(delivery.status_code, 201, delivery.data)
+
+    def test_aggregate_endpoints_tolerate_null_billing_address(self):
+        Quotation.objects.create(
+            customer_name="Null Billing Aggregate", phone="9876500303", cake_type="Cake",
+            quantity=1, rate="1000.00", billing_address=None, address=None,
+        )
+        self.assertEqual(self.client.get("/crm/leads/crm-dashboard/").status_code, 200)
+        self.assertEqual(self.client.get("/reports/crm-analytics").status_code, 200)
+        self.assertEqual(self.client.get("/crm/quotations/").status_code, 200)
+
+    def test_invoice_uses_delivery_address_when_billing_address_is_null(self):
+        quotation = Quotation.objects.create(
+            customer_name="Delivery Fallback", phone="9876500304", cake_type="Cake",
+            quantity=1, rate="1000.00", total_amount="1000.00",
+            advance_received=True, advance_amount="500.00", status="Advance Received",
+            billing_address=None, address="Delivery Road",
+        )
+        confirmed = self.client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order = CRMOrder.objects.get(id=confirmed.data["data"]["id"])
+        order.status = "Ready"
+        order.save(update_fields=("status", "updated_on"))
+
+        invoice_response = self.client.post(f"/crm/orders/{order.id}/generate-invoice/", {}, format="json")
+
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.data)
+        self.assertEqual(CRMInvoice.objects.get(id=invoice_response.data["data"]["id"]).address, "Delivery Road")
+
+    def test_invoice_uses_billing_address_as_last_address_fallback(self):
+        quotation = Quotation.objects.create(
+            customer_name="Billing Fallback", phone="9876500305", cake_type="Cake",
+            quantity=1, rate="1000.00", total_amount="1000.00",
+            advance_received=True, advance_amount="500.00", status="Advance Received",
+            billing_address="Billing Road", address=None,
+        )
+        confirmed = self.client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order = CRMOrder.objects.get(id=confirmed.data["data"]["id"])
+        order.delivery_address = None
+        order.status = "Ready"
+        order.save(update_fields=("delivery_address", "status", "updated_on"))
+
+        invoice_response = self.client.post(f"/crm/orders/{order.id}/generate-invoice/", {}, format="json")
+
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.data)
+        self.assertEqual(CRMInvoice.objects.get(id=invoice_response.data["data"]["id"]).address, "Billing Road")
 
 
 class LeadSerializerTests(TestCase):
@@ -466,8 +1437,12 @@ class QuotationTests(TestCase):
         self.assertEqual(data["phone"], "9876543210")
 
     def test_confirm_order_is_duplicate_safe(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="order-staff", password="password")
+        staff = User.objects.create_user(
+            username="order-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         quotation = Quotation.objects.create(
@@ -485,8 +1460,12 @@ class QuotationTests(TestCase):
         self.assertEqual(listed.data[0]["quotation"], quotation.id)
 
     def test_confirm_order_requires_accepted_quotation_and_advance(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="validation-staff", password="password")
+        staff = User.objects.create_user(
+            username="validation-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         quotation = Quotation.objects.create(
@@ -682,15 +1661,20 @@ class LeadCustomerLinkingTests(TestCase):
         self.assertEqual(detail.status_code, 200, detail.data)
         self.assertIn("payments", detail.data["history"])
 
-    def test_unmatched_lead_does_not_create_authentication_customer(self):
+    def test_new_lead_creates_customer_and_appears_in_customer_management(self):
         Customer = get_user_model()
         before = Customer.objects.count()
 
         response = self.client.post("/crm/leads/", self.lead_data("9123456780"), format="json")
 
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertIsNone(Lead.objects.get(id=response.data["id"]).customer)
-        self.assertEqual(Customer.objects.count(), before)
+        lead = Lead.objects.get(id=response.data["id"])
+        self.assertIsNotNone(lead.customer)
+        self.assertEqual(lead.customer.phone, "9123456780")
+        self.assertEqual(Customer.objects.count(), before + 1)
+        directory = self.client.get("/crm/customers/", {"search": "9123456780"})
+        self.assertEqual(directory.status_code, 200, directory.data)
+        self.assertTrue(any(row["id"] == lead.customer_id for row in directory.data))
 
     def test_ambiguous_phone_match_is_not_linked(self):
         Customer = get_user_model()
@@ -701,6 +1685,59 @@ class LeadCustomerLinkingTests(TestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertIsNone(Lead.objects.get(id=response.data["id"]).customer)
+
+    def test_new_quotation_creates_customer(self):
+        Customer = get_user_model()
+        before = Customer.objects.filter(is_staff=False).count()
+        payload = {
+            "customer_name": "Manual Quote Customer",
+            "phone": "9123456781",
+            "email": "manual.quote@example.com",
+            "billing_address": "44 Quote Road",
+            "shipping_same_as_billing": True,
+            "cake_type": "Theme Cake",
+            "quantity": "1",
+            "rate": "1000.00",
+            "event_date": (timezone.localdate() + timedelta(days=2)).isoformat(),
+        }
+
+        response = self.client.post("/crm/quotations/", payload, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        quotation = Quotation.objects.get(id=response.data["id"])
+        self.assertIsNotNone(quotation.customer)
+        self.assertEqual(quotation.customer.phone, "9123456781")
+        self.assertEqual(Customer.objects.filter(is_staff=False).count(), before + 1)
+
+    def test_lead_to_quotation_to_order_reuses_same_customer(self):
+        response = self.client.post("/crm/leads/", self.lead_data("9123456782"), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        lead = Lead.objects.get(id=response.data["id"])
+
+        converted = self.client.post(f"/crm/leads/{lead.id}/convert/", {"mark_won": True}, format="json")
+        self.assertEqual(converted.status_code, 200, converted.data)
+        quotation = Quotation.objects.get(lead=lead)
+        item = quotation.items.get()
+        item.rate = 1000
+        item.save(update_fields=("rate",))
+        quotation.status = "Accepted"
+        quotation.calculate_totals()
+        quotation.save(update_fields=("status", "subtotal", "gst_amount", "total_amount", "updated_on"))
+        payment = self.client.post(f"/crm/quotations/{quotation.id}/record-payment/", {
+            "amount": "500.00",
+            "payment_date": timezone.localdate().isoformat(),
+            "payment_method": "Cash",
+        }, format="json")
+        self.assertEqual(payment.status_code, 201, payment.data)
+        confirmed = self.client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order = CRMOrder.objects.get(pk=confirmed.data["data"]["id"])
+
+        lead.refresh_from_db()
+        quotation.refresh_from_db()
+        self.assertEqual(lead.customer_id, quotation.customer_id)
+        self.assertEqual(order.customer_id, lead.customer_id)
+        self.assertEqual(get_user_model().objects.filter(phone="9123456782", is_staff=False).count(), 1)
 
 
 class PhaseThreeWorkflowTests(TestCase):
@@ -716,8 +1753,12 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertEqual(quotation.address, quotation.billing_address)
 
     def test_order_to_invoice_to_delivery_closes_linked_workflow(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="phase-three-staff", password="password")
+        staff = User.objects.create_user(
+            username="phase-three-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         lead = Lead.objects.create(
@@ -773,8 +1814,12 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertEqual(dashboard.data["workflows"][0]["status"], "Delivered Successfully")
 
     def test_delivery_start_requires_type_specific_fields(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="delivery-validation-staff", password="password")
+        staff = User.objects.create_user(
+            username="delivery-validation-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         delivery = self._make_delivery(client, phone="9876500001")
@@ -783,8 +1828,12 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertIn("delivery_person", response.data.get("fields", []))
 
     def test_magilshe_delivery_flow_reaches_delivered_successfully(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="magilshe-flow-staff", password="password")
+        staff = User.objects.create_user(
+            username="magilshe-flow-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         from delivery_person.models import DeliveryPerson
         delivery_person = DeliveryPerson.objects.create(name="Ravi", phone="9000011111", status=True)
         client = APIClient()
@@ -801,9 +1850,13 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertEqual(delivery.delivery_status, "Delivered Successfully")
 
     def test_switching_delivery_type_preserves_inactive_assignment_fields(self):
+        from customer.models import AccessRole
         User = get_user_model()
         from delivery_person.models import DeliveryPerson, DeliveryPlatform
-        staff = User.objects.create_user(username="delivery-switch-staff", password="password")
+        staff = User.objects.create_user(
+            username="delivery-switch-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         internal = DeliveryPerson.objects.create(name="Ravi", phone="9000011112", status=True)
         platform = DeliveryPlatform.objects.create(name="Porter", status=True)
         client = APIClient(); client.force_authenticate(staff)
@@ -831,9 +1884,13 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertIsNotNone(delivery.porter_time)
 
     def test_porter_delivery_can_be_marked_damaged_with_description(self):
+        from customer.models import AccessRole
         User = get_user_model()
         from delivery_person.models import DeliveryPlatform
-        staff = User.objects.create_user(username="porter-damage-staff", password="password")
+        staff = User.objects.create_user(
+            username="porter-damage-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         platform = DeliveryPlatform.objects.create(name="Rapido", status=True)
         client = APIClient()
         client.force_authenticate(staff)
@@ -855,8 +1912,12 @@ class PhaseThreeWorkflowTests(TestCase):
         self.assertEqual(delivery.damage_description, "Box crushed in transit")
 
     def test_delivery_marked_failed_records_reason(self):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="delivery-failed-staff", password="password")
+        staff = User.objects.create_user(
+            username="delivery-failed-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         delivery = self._make_delivery(client, phone="9876500004")
@@ -875,13 +1936,17 @@ class PhaseThreeWorkflowTests(TestCase):
 
     def test_damage_image_upload_and_delete(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username="damage-image-staff", password="password")
+        staff = User.objects.create_user(
+            username="damage-image-staff", password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         delivery = self._make_delivery(client, phone="9876500005")
         with patch("crm.views.put_image_to_s3", return_value=True):
-            upload = SimpleUploadedFile("damage.jpg", b"fake-bytes", content_type="image/jpeg")
+            upload = SimpleUploadedFile("damage.png", PNG_BYTES, content_type="image/png")
             response = client.post(f"/crm/deliveries/{delivery.id}/damage-images/", {"images": [upload]}, format="multipart")
         self.assertEqual(response.status_code, 201, response.data)
         image_id = response.data["data"][0]["id"]
@@ -921,8 +1986,12 @@ class PhaseThreeWorkflowTests(TestCase):
 
 class OrderDirectCreationAndCancellationTests(TestCase):
     def _client(self, username):
+        from customer.models import AccessRole
         User = get_user_model()
-        staff = User.objects.create_user(username=username, password="password")
+        staff = User.objects.create_user(
+            username=username, password="password", is_staff=True,
+            role=AccessRole.objects.filter(name="CRM Manager").first(),
+        )
         client = APIClient()
         client.force_authenticate(staff)
         return client, staff
@@ -949,6 +2018,9 @@ class OrderDirectCreationAndCancellationTests(TestCase):
         self.assertEqual(order.items.count(), 1)
         self.assertIsNotNone(order.quotation_id)
         self.assertIsNone(order.quotation.lead_id)
+        self.assertIsNotNone(order.customer_id)
+        self.assertEqual(order.customer.phone, "9876511111")
+        self.assertEqual(get_user_model().objects.filter(phone="9876511111", is_staff=False).count(), 1)
 
     def test_direct_order_links_an_existing_customer_by_phone(self):
         client, _ = self._client("direct-order-existing-customer-staff")

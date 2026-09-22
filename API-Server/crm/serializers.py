@@ -17,6 +17,14 @@ from .recurring_events import recurring_event_status
 from .uploads import validate_image_upload
 
 
+def is_quotation_locked(quotation):
+    return bool(
+        quotation
+        and quotation.status in {"Order Confirmed", "Closed"}
+        and hasattr(quotation, "crm_order")
+    )
+
+
 class CRMOptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = CRMOption
@@ -225,6 +233,7 @@ class LeadSerializer(serializers.ModelSerializer):
     )
     cake_name = serializers.CharField(source="cake.name", read_only=True)
     assigned_to_name = serializers.SerializerMethodField()
+    archived_by_name = serializers.SerializerMethodField()
     quotation_id = serializers.IntegerField(source="quotation.id", read_only=True)
     activities = LeadActivitySerializer(many=True, read_only=True)
     reference_images = LeadReferenceImageSerializer(many=True, read_only=True)
@@ -232,7 +241,10 @@ class LeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lead
         exclude = ("customer",)
-        read_only_fields = ("lead_no", "created_on", "updated_on", "created_by", "updated_by")
+        read_only_fields = (
+            "lead_no", "created_on", "updated_on", "created_by", "updated_by",
+            "is_archived", "archived_at", "archived_by",
+        )
         extra_kwargs = {
             "customer_name": {"required": True},
             "phone": {"required": True},
@@ -244,6 +256,9 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def get_assigned_to_name(self, obj):
         return str(obj.assigned_to) if obj.assigned_to else None
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
     def validate_customer_name(self, value):
         if not value.strip():
@@ -375,6 +390,7 @@ class QuotationSerializer(serializers.ModelSerializer):
     order_id = serializers.IntegerField(source="crm_order.id", read_only=True, allow_null=True)
     current_version = serializers.SerializerMethodField()
     quotation_versions = serializers.SerializerMethodField()
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Quotation
@@ -390,10 +406,11 @@ class QuotationSerializer(serializers.ModelSerializer):
             "selected_address", "occasion", "delivery_date", "delivery_time",
             "delivery_type", "special_instructions", "discount_amount", "sales_staff", "order_id",
             "current_version", "quotation_versions",
+            "is_archived", "archived_at", "archived_by", "archived_by_name",
         )
         read_only_fields = (
             "quotation_no", "lead", "subtotal", "gst_amount",
-            "created_on", "updated_on",
+            "created_on", "updated_on", "is_archived", "archived_at", "archived_by",
         )
 
     def to_representation(self, instance):
@@ -430,6 +447,9 @@ class QuotationSerializer(serializers.ModelSerializer):
             "generated_on": version.generated_on,
         }
 
+    def get_archived_by_name(self, instance):
+        return str(instance.archived_by) if instance.archived_by else None
+
     def get_quotation_versions(self, instance):
         return [{
             "id": version.id, "version_number": version.version_number,
@@ -446,6 +466,10 @@ class QuotationSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        if self.instance and is_quotation_locked(self.instance):
+            raise serializers.ValidationError({
+                "message": "This quotation is finalized with a confirmed order and cannot be edited. Create a new quotation for changes."
+            })
         lead = attrs.get("lead", self.instance.lead if self.instance else None)
         same_address = attrs.get(
             "shipping_same_as_billing",
@@ -488,6 +512,16 @@ class QuotationSerializer(serializers.ModelSerializer):
             resulting_total = rate * quantity
             if gst_enabled:
                 resulting_total += resulting_total * gst_percentage / 100
+        if attrs.get("items"):
+            subtotal = sum(item["quantity"] * item["rate"] for item in attrs["items"])
+            gst = sum(
+                item["quantity"] * item["rate"] * (item.get("gst_percentage") or 0) / 100
+                for item in attrs["items"]
+            )
+            resulting_total = subtotal + gst - attrs.get(
+                "discount_amount",
+                self.instance.discount_amount if self.instance else 0,
+            )
         if resulting_advance and resulting_advance > resulting_total:
             raise serializers.ValidationError(
                 {"advance_amount": "Advance amount cannot exceed the quotation total."}
@@ -547,6 +581,7 @@ class QuotationListSerializer(serializers.ModelSerializer):
     """Compact serializer for fast quotation tables; detail APIs stay unchanged."""
     lead_no = serializers.CharField(source="lead.lead_no", read_only=True, allow_null=True)
     balance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Quotation
@@ -554,7 +589,11 @@ class QuotationListSerializer(serializers.ModelSerializer):
             "id", "quotation_no", "lead", "lead_no", "customer_name", "phone",
             "event_date", "cake_type", "total_amount", "advance_received",
             "advance_amount", "balance_amount", "status", "created_on", "updated_on",
+            "is_archived", "archived_at", "archived_by", "archived_by_name",
         )
+
+    def get_archived_by_name(self, instance):
+        return str(instance.archived_by) if instance.archived_by else None
 
 class CRMOrderItemSerializer(serializers.ModelSerializer):
     amount = serializers.SerializerMethodField()
@@ -583,6 +622,7 @@ class CRMOrderSerializer(serializers.ModelSerializer):
     reference_images = serializers.SerializerMethodField()
     timeline = QuotationActivitySerializer(source="quotation.activities", many=True, read_only=True)
     cancelled_by_name = serializers.SerializerMethodField()
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CRMOrder
@@ -592,6 +632,7 @@ class CRMOrderSerializer(serializers.ModelSerializer):
             "cake_type", "flavour", "quantity", "event_date", "total_amount",
             "advance_paid", "confirmed_by", "confirmed_on", "updated_on",
             "cancellation_reason", "cancelled_at", "cancelled_by",
+            "is_archived", "archived_at", "archived_by",
         )
 
     def get_assigned_staff_name(self, obj):
@@ -602,6 +643,9 @@ class CRMOrderSerializer(serializers.ModelSerializer):
 
     def get_cancelled_by_name(self, obj):
         return str(obj.cancelled_by) if obj.cancelled_by else None
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
     def get_reference_images(self, obj):
         lead = obj.quotation.lead
@@ -621,10 +665,15 @@ class CRMInvoiceSerializer(serializers.ModelSerializer):
         source="order.quotation.discount_amount", max_digits=12, decimal_places=2,
         read_only=True,
     )
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CRMInvoice
         fields = "__all__"
+        read_only_fields = ("is_archived", "archived_at", "archived_by")
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
 
 class CRMDeliveryDamageImageSerializer(serializers.ModelSerializer):
@@ -656,6 +705,7 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
     damage_images = CRMDeliveryDamageImageSerializer(many=True, read_only=True)
     timeline = QuotationActivitySerializer(source="order.quotation.activities", many=True, read_only=True)
     customer_addresses = serializers.SerializerMethodField()
+    archived_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CRMDelivery
@@ -663,10 +713,14 @@ class CRMDeliverySerializer(serializers.ModelSerializer):
         read_only_fields = (
             "delivery_no", "order", "delivery_status", "completed_at",
             "damage_description", "failure_reason", "created_by", "created_on", "updated_on",
+            "is_archived", "archived_at", "archived_by",
         )
 
     def get_scheduled_at(self, obj):
         return obj.scheduled_at
+
+    def get_archived_by_name(self, obj):
+        return str(obj.archived_by) if obj.archived_by else None
 
     def get_customer_addresses(self, obj):
         customer = obj.order.customer

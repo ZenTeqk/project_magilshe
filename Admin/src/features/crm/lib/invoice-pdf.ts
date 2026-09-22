@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import type { CrmInvoice } from "@/features/crm/invoices-hooks";
 import type { CompanyConfig } from "@/features/crm/quotations-hooks";
+import { addressOrFallback } from "./address-fallback";
 import {
   PDF, displayDate, displayUnit, drawBakeryMessage, drawDocumentHeader, drawFooter, drawInfoBlock, drawSectionLabel,
   drawTableHeader, drawTableRowBackground, drawTotalsPanel, loadBrandLogo, measureInfoBlockHeight, money,
@@ -20,7 +21,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
   const customerRows: Array<[string, unknown]> = [
     ["Name", invoice.customer_name], ["Phone", invoice.phone],
     ["Email", invoice.email],
-    ["Address", invoice.address || invoice.delivery_address],
+    ["Address", addressOrFallback(invoice.address, invoice.delivery_address)],
   ];
   const cardHeight = Math.max(
     measureInfoBlockHeight(doc, detailRows, 84),
@@ -39,9 +40,9 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
   y = drawTableHeader(doc, y, headers);
 
   (invoice.items || []).forEach((item, index) => {
-    const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 55).slice(0, 5);
-    const flavourLines = doc.splitTextToSize(String(item.flavour || "-"), 25).slice(0, 4);
-    const rowHeight = Math.max(14, Math.max(productLines.length, flavourLines.length) * 4.5 + 5);
+    const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 55).slice(0, 4);
+    const flavourLines = doc.splitTextToSize(String(item.flavour || "-"), 25).slice(0, 3);
+    const rowHeight = Math.max(11.5, Math.max(productLines.length, flavourLines.length) * 3.9 + 4.2);
     if (y + rowHeight > 267) {
       doc.addPage();
       y = drawDocumentHeader(doc, title, "Invoice No", invoice.invoice_no, invoice.generated_on, company, logo, true);
@@ -49,11 +50,11 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     }
     const quantity = Number(item.quantity) || 0;
     drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.3); doc.setTextColor(...PDF.ink);
-    doc.text(String(index + 1), 24, y + 6.5, { align: "center" }); doc.text(productLines, 31, y + 6.5); doc.text(flavourLines, 86, y + 6.5);
-    doc.text(String(quantity), 118, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6.5, { align: "center" });
-    doc.text(money(item.rate), 158, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "center" });
-    doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 190, y + 6.5, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(...PDF.ink);
+    doc.text(String(index + 1), 24, y + 6, { align: "center" }); doc.text(productLines, 31, y + 6); doc.text(flavourLines, 86, y + 6);
+    doc.text(String(quantity), 118, y + 6, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6, { align: "center" });
+    doc.text(money(item.rate), 158, y + 6, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 190, y + 6, { align: "right" });
     y += rowHeight;
   });
 
@@ -69,7 +70,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     { label: "Advance Received", value: invoice.amount_paid, kind: "advance" as const },
     { label: "Balance Due", value: invoice.balance_amount, kind: "balance" as const },
   ];
-  const totalsHeight = totalRows.reduce((sum, row) => sum + (row.kind === "grand" ? 13 : row.kind === "balance" ? 8 : 6.5), 5);
+  const totalsHeight = totalRows.reduce((sum, row) => sum + (row.kind === "grand" ? 11.5 : row.kind === "balance" ? 6.8 : 5.6), 4);
   const requiredHeight = Math.max(totalsHeight, paymentLines ? 17 + paymentLines * 5 : 38);
   if (y + requiredHeight > 267) {
     doc.addPage();
@@ -82,7 +83,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     invoice.payments.forEach((payment) => {
       doc.setFont("helvetica", "normal"); doc.setFontSize(7.3); doc.setTextColor(...PDF.ink);
       doc.text(`${displayDate(payment.payment_date)}  |  ${payment.payment_method || "Payment"}`, PDF.left, paymentY);
-      doc.setFont("helvetica", "bold"); doc.text(money(payment.amount), 94, paymentY, { align: "right" });
+      doc.setFont("helvetica", "bold"); doc.text(money(payment.amount), 78, paymentY, { align: "right" });
       paymentY += 5;
     });
   } else drawBakeryMessage(doc, y);

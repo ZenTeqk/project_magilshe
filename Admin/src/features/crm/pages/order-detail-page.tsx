@@ -10,13 +10,16 @@ import { StatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { inr } from "@/lib/data";
+import { formatTimeOfDay } from "@/lib/format-time";
 import {
   useOrder, useOrderWorkflowAction, useUpdateOrderNotes, useGenerateInvoice, displayOrderStatus,
 } from "@/features/crm/orders-hooks";
 import { CancelOrderDialog } from "@/features/crm/components/cancel-order-dialog";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-styles";
+import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
+import { addressOrFallback } from "@/features/crm/lib/address-fallback";
 
 const nonCancellable = new Set(["Delivery", "Out for Delivery", "Delivered", "Completed", "Closed", "Cancelled"]);
 
@@ -122,8 +125,8 @@ function OrderDetailPage() {
             <div className="flex justify-between sm:block"><dt className="text-muted-foreground">Recipient</dt><dd className="font-medium">{order.recipient_name ?? "—"}</dd></div>
             <div className="flex justify-between sm:block"><dt className="text-muted-foreground">Recipient phone</dt><dd className="tabular">{order.recipient_phone ?? "—"}</dd></div>
             <div className="flex justify-between sm:block"><dt className="text-muted-foreground">Method</dt><dd>{order.delivery_method ?? "—"}</dd></div>
-            <div className="flex justify-between sm:block"><dt className="text-muted-foreground">Date/time</dt><dd className="tabular">{order.delivery_date ?? "—"} {order.delivery_time ?? ""}</dd></div>
-            <div className="flex justify-between sm:block sm:col-span-2"><dt className="text-muted-foreground">Address</dt><dd>{order.delivery_address ?? "—"}</dd></div>
+            <div className="flex justify-between sm:block"><dt className="text-muted-foreground">Date/time</dt><dd className="tabular">{order.delivery_date ?? "—"} {formatTimeOfDay(order.delivery_time)}</dd></div>
+            <div className="flex justify-between sm:block sm:col-span-2"><dt className="text-muted-foreground">Address</dt><dd>{addressOrFallback(order.delivery_address)}</dd></div>
           </dl>
         </SectionCard>
       </div>
@@ -159,20 +162,7 @@ function OrderDetailPage() {
       )}
 
       <SectionCard title="History">
-        {order.timeline?.length ? (
-          <ol className="relative space-y-4 border-l border-border pl-5">
-            {order.timeline.map((a) => (
-              <li key={a.id} className="relative">
-                <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                <p className="text-sm"><span className="font-semibold">{a.staff_name}</span> <span className="text-muted-foreground">{a.action}</span></p>
-                {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
-                <p className="mt-0.5 text-[11px] text-muted-foreground/80">{new Date(a.created_on).toLocaleString("en-IN")}</p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <EmptyState title="No activity yet" />
-        )}
+        <CrmHistoryTimeline events={order.timeline} />
       </SectionCard>
 
       <CancelOrderDialog orderId={order.id} open={cancelOpen} onOpenChange={setCancelOpen} />

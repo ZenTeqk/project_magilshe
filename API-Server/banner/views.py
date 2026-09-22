@@ -39,6 +39,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
 
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 
 from cakery.check_instance import check_instance
 from cakery.validators import validate_request
@@ -80,7 +81,10 @@ class BannerApiView(APIView):
                 image = data['image']
                 if (image != None and image != "null"):
                     file_name = str(uuid.uuid4())
-                    ext = image.name.split('.')[-1]
+                    try:
+                        ext = validate_image_upload(image)
+                    except ValueError as error:
+                        return Response({"message": str(error)}, status=400)
                     if put_image_to_s3(image, "{}/banner/{}.{}".format(aws_domain_name, file_name, ext)):
                         db_param["image_name"] = file_name
                         db_param["image_ext"] = ext

@@ -1,14 +1,33 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Pencil, Plus, Repeat, UserRoundSearch } from "lucide-react";
+import { useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Archive, Download, MoreHorizontal, Pencil, Plus, Repeat, Upload, UserRoundSearch } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusChip } from "@/components/shared/status-chip";
 import { TableSkeleton } from "@/components/shared/skeletons";
 import { EmptyState } from "@/components/shared/empty-state";
 import { inr } from "@/lib/data";
-import { useCrmCustomers, type CrmCustomerSummary } from "@/features/customers/hooks";
+import {
+  useArchiveCustomer,
+  useCrmCustomers,
+  useExportCustomers,
+  useImportCustomers,
+  type CrmCustomerSummary,
+  type CustomerImportResult,
+} from "@/features/customers/hooks";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { EditCustomerDialog } from "@/features/customers/components/edit-customer-dialog";
 import { CreateCustomerDialog } from "@/features/customers/components/create-customer-dialog";
 import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
@@ -23,16 +42,128 @@ function CustomerManagementPage() {
   const access = useCurrentAccess();
   const { data: customers, isLoading, isError, refetch } = useCrmCustomers();
   const [editCustomer, setEditCustomer] = useState<CrmCustomerSummary | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<CrmCustomerSummary | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [importResult, setImportResult] = useState<CustomerImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const importCustomers = useImportCustomers();
+  const exportCustomers = useExportCustomers();
+  const archiveCustomer = useArchiveCustomer();
+  const canArchiveCustomers = hasPermission(access.data, "customers.data.delete");
+
+  const runImport = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const result = await importCustomers.mutateAsync(file);
+      setImportResult(result);
+      toast.success("Import completed", {
+        description: `Created ${result.created}, updated ${result.updated}, failed ${result.failed}.`,
+      });
+      await refetch();
+    } catch (err: unknown) {
+      const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      const errors = Array.isArray(response?.["errors"]) ? response["errors"] as CustomerImportResult["errors"] : [];
+      setImportResult({
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        failed: errors.length,
+        errors,
+        unknown_columns: Array.isArray(response?.["unknown_columns"]) ? response["unknown_columns"] as string[] : undefined,
+      });
+      toast.error(response?.["message"] ? String(response["message"]) : "Unable to import customers.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const runExport = async (rows: CrmCustomerSummary[]) => {
+    try {
+      const blob = await exportCustomers.mutateAsync(rows.map((row) => row.id));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "customers.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Customer export downloaded");
+    } catch {
+      toast.error("Unable to export customers.");
+    }
+  };
+
+  const confirmArchive = async () => {
+    if (!archiveTarget) return;
+    try {
+      await archiveCustomer.mutateAsync(archiveTarget.id);
+      toast.success("Customer archived");
+      setArchiveTarget(null);
+    } catch (error: unknown) {
+      const data = (error as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+      toast.error(data?.message || data?.detail || "Unable to archive customer.");
+    }
+  };
 
   return (
     <>
       <PageHeader
         title="Customer Management"
-        actions={hasPermission(access.data, "customers.data.create") ? <Button onClick={() => setCreateOpen(true)}><Plus className="size-4" /> New customer</Button> : undefined}
-        description="Search any customer, see what's happened, and act — open a profile for the full picture."
+        actions={
+          <>
+            {hasPermission(access.data, "customers.data.view") && (
+              <>
+                {access.data?.is_super_admin && (
+                  <Button variant="outline" asChild>
+                    <Link to="/archived-records"><Archive className="size-4" /> Archived</Link>
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => runExport(customers ?? [])} disabled={exportCustomers.isPending}>
+                  <Download className="size-4" /> Export
+                </Button>
+              </>
+            )}
+            {hasPermission(access.data, "customers.data.create") && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(event) => runImport(event.target.files?.[0])}
+                />
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importCustomers.isPending}>
+                  <Upload className="size-4" /> Import
+                </Button>
+                <Button onClick={() => setCreateOpen(true)}><Plus className="size-4" /> New customer</Button>
+              </>
+            )}
+          </>
+        }
+        description="Search any customer, see what's happened, and open a profile for the full picture."
       />
 
+      {importResult && (
+        <div className="rounded-xl border border-border bg-card p-4 text-sm shadow-soft">
+          <div className="flex flex-wrap gap-3">
+            <span>Created: <strong>{importResult.created}</strong></span>
+            <span>Updated: <strong>{importResult.updated}</strong></span>
+            <span>Skipped: <strong>{importResult.skipped}</strong></span>
+            <span>Failed: <strong>{importResult.failed}</strong></span>
+          </div>
+          {importResult.unknown_columns?.length ? (
+            <p className="mt-2 text-danger">Unknown columns: {importResult.unknown_columns.join(", ")}</p>
+          ) : null}
+          {importResult.errors.length ? (
+            <ul className="mt-2 space-y-1 text-danger">
+              {importResult.errors.slice(0, 8).map((error) => (
+                <li key={`${error.row}-${error.reason}`}>Row {error.row} - {error.reason}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
       {isError ? (
         <EmptyState
           title="Couldn't load customers"
@@ -53,6 +184,8 @@ function CustomerManagementPage() {
           onRowClick={(r) => navigate(`/crm/customers/${r.id}`)}
           emptyTitle="No customers yet"
           emptyDescription="Customers appear here once linked to a lead, quotation or order."
+          exportName="customers"
+          onExport={runExport}
           columns={[
             {
               key: "name",
@@ -134,14 +267,52 @@ function CustomerManagementPage() {
                 ),
             },
           ]}
-          rowActions={(customer) => <div className="flex items-center gap-1">
-            <Button size="icon" variant="ghost" className="size-8" aria-label={`Edit ${customer.name}`} onClick={(event) => { event.stopPropagation(); setEditCustomer(customer); }}><Pencil className="size-4" /></Button>
-            <UserRoundSearch className="size-4 text-muted-foreground" />
+          rowActions={(customer) => <div className="flex items-center justify-end gap-1">
+            <Button size="icon" variant="ghost" className="size-8" aria-label={`Open ${customer.name}`} onClick={(event) => { event.stopPropagation(); navigate(`/crm/customers/${customer.id}`); }}><UserRoundSearch className="size-4" /></Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="size-8" aria-label={`Actions for ${customer.name}`}>
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => navigate(`/crm/customers/${customer.id}`)}>
+                  <UserRoundSearch className="size-4" /> Open profile
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setEditCustomer(customer)}>
+                  <Pencil className="size-4" /> Edit customer
+                </DropdownMenuItem>
+                {canArchiveCustomers && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-danger" onClick={() => setArchiveTarget(customer)}>
+                      <Archive className="size-4" /> Archive customer
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>}
         />
       )}
       {editCustomer && <EditCustomerDialog open customer={editCustomer} onOpenChange={(open) => !open && setEditCustomer(null)} />}
       <CreateCustomerDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={(id) => navigate(`/crm/customers/${id}`)} />
+      <AlertDialog open={archiveTarget !== null} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive {archiveTarget?.name || archiveTarget?.username}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The customer will be hidden from active Customer Management and can be restored from Archived Records by Super Admin.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-danger text-primary-foreground hover:bg-danger/90" disabled={archiveCustomer.isPending} onClick={confirmArchive}>
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

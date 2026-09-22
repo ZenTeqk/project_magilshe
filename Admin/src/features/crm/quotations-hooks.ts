@@ -322,7 +322,7 @@ export type CompanyConfig = {
 
 export function useCompanyConfig() {
   return useQuery({
-    queryKey: ["configuration"],
+    queryKey: ["settings", "configuration"],
     queryFn: async () => {
       const { data } = await apiClient.get(endpoints.configuration.get);
       return (data?.data ?? data) as CompanyConfig;

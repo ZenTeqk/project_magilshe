@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  RotateCcw,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -36,14 +37,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useCrmDashboard } from "@/features/crm/hooks";
 import {
   useDeleteLead,
+  useCrmDashboard,
   useLeads,
+  usePermanentDeleteLead,
+  useRestoreLead,
   leadStatusOptions,
   type Lead,
   type LeadStatus,
 } from "@/features/crm/hooks";
+import { useCurrentAccess } from "@/features/auth/rbac";
 import { QuickCreateLeadDialog } from "@/features/crm/components/quick-create-lead-dialog";
 import { LeadStatusDialog } from "@/features/crm/components/lead-status-dialog";
 import { WonQuotationDialog } from "@/features/crm/components/won-quotation-dialog";
@@ -99,7 +103,11 @@ function LeadsPage() {
   const [statusTarget, setStatusTarget] = useState<{ lead: Lead; status: LeadStatus } | null>(null);
   const [wonLead, setWonLead] = useState<Lead | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Lead | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<Lead | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [archived, setArchived] = useState(false);
 
+  const { data: access } = useCurrentAccess();
   const { data: dashboard } = useCrmDashboard();
   const {
     data: leads,
@@ -113,8 +121,11 @@ function LeadsPage() {
     cake_type: cakeType,
     event_date: eventDate,
     created_date: createdDate,
+    archived,
   });
   const deleteLead = useDeleteLead();
+  const restoreLead = useRestoreLead();
+  const permanentDeleteLead = usePermanentDeleteLead();
 
   const rows = leads ?? [];
 
@@ -129,11 +140,26 @@ function LeadsPage() {
     if (!deleteTarget) return;
     try {
       await deleteLead.mutateAsync(deleteTarget.id);
-      toast.success("Lead deleted.");
-    } catch {
-      toast.error("Unable to delete lead.");
+      toast.success("Lead archived.");
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || "Unable to archive lead.");
     } finally {
       setDeleteTarget(null);
+    }
+  };
+
+  const confirmPermanentDelete = async () => {
+    if (!permanentDeleteTarget || deleteConfirmation !== "DELETE") return;
+    try {
+      await permanentDeleteLead.mutateAsync(permanentDeleteTarget.id);
+      toast.success("Lead permanently deleted.");
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || "Unable to permanently delete lead.");
+    } finally {
+      setPermanentDeleteTarget(null);
+      setDeleteConfirmation("");
     }
   };
 
@@ -194,6 +220,11 @@ function LeadsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {access?.is_super_admin && (
+          <Button variant={archived ? "default" : "outline"} size="sm" onClick={() => setArchived((v) => !v)}>
+            {archived ? "Archived" : "Active"}
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={() => setAdvancedOpen((v) => !v)}>
           <SlidersHorizontal className="size-4" /> More filters
         </Button>
@@ -265,9 +296,9 @@ function LeadsPage() {
           searchKeys={(r) =>
             `${r.lead_no} ${r.customer_name} ${r.phone} ${r.occasion} ${r.cake_type}`
           }
-          onRowClick={(r) => navigate(`/crm/leads/${r.id}/edit`)}
-          emptyTitle="No leads yet"
-          emptyDescription="Create your first lead to see it listed here."
+          onRowClick={(r) => !archived && navigate(`/crm/leads/${r.id}/edit`)}
+          emptyTitle={archived ? "No archived leads" : "No leads yet"}
+          emptyDescription={archived ? "Archived leads will appear here for Super Admin review." : "Create your first lead to see it listed here."}
           columns={[
             {
               key: "lead_no",
@@ -362,16 +393,31 @@ function LeadsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link to={`/crm/leads/${r.id}/edit`}>
-                    <Pencil className="size-4" /> Open lead
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => duplicate(r)}>Duplicate</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-danger" onClick={() => setDeleteTarget(r)}>
-                  <Trash2 className="size-4" /> Delete
-                </DropdownMenuItem>
+                {!archived ? (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link to={`/crm/leads/${r.id}/edit`}>
+                        <Pencil className="size-4" /> Open lead
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => duplicate(r)}>Duplicate</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-danger" onClick={() => setDeleteTarget(r)}>
+                      <Trash2 className="size-4" /> Archive
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <>
+                    <DropdownMenuItem onClick={() => restoreLead.mutate(r.id, { onSuccess: () => toast.success("Lead restored.") })}>
+                      <RotateCcw className="size-4" /> Restore
+                    </DropdownMenuItem>
+                    {access?.is_super_admin && (
+                      <DropdownMenuItem className="text-danger" onClick={() => setPermanentDeleteTarget(r)}>
+                        <Trash2 className="size-4" /> Permanently delete
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -405,8 +451,8 @@ function LeadsPage() {
       <AlertDialog open={deleteTarget !== null} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete lead for {deleteTarget?.customer_name}?</AlertDialogTitle>
-            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>Archive lead for {deleteTarget?.customer_name}?</AlertDialogTitle>
+            <AlertDialogDescription>The lead will be hidden from normal lists and can be restored by Super Admin.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -414,7 +460,27 @@ function LeadsPage() {
               className="bg-danger text-primary-foreground hover:bg-danger/90"
               onClick={confirmDelete}
             >
-              Delete
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={permanentDeleteTarget !== null} onOpenChange={(v) => { if (!v) { setPermanentDeleteTarget(null); setDeleteConfirmation(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently Delete {permanentDeleteTarget?.lead_no}?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone. Type DELETE to confirm.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteConfirmation !== "DELETE"}
+              className="bg-danger text-primary-foreground hover:bg-danger/90"
+              onClick={confirmPermanentDelete}
+            >
+              Permanently delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

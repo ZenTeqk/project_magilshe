@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 load_dotenv()
 
@@ -25,19 +26,64 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-local-development-key')
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _csv_env(name, default=None):
+    value = os.getenv(name)
+    if value is None:
+        return list(default or [])
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _required_env(name):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise ImproperlyConfigured(f"{name} must be configured.")
+    return value.strip()
+
+
+def _env_int(name, default):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        raise ImproperlyConfigured(f"{name} must be an integer.")
+
+
+DEBUG = _env_bool('DJANGO_DEBUG', False)
+
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-local-development-key'
+    else:
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be configured.')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = _csv_env('ALLOWED_HOSTS', ['localhost', '127.0.0.1'] if DEBUG else [])
+if not DEBUG and (not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS):
+    raise ImproperlyConfigured('ALLOWED_HOSTS must be configured without wildcards.')
 
-CORS_ORIGIN_ALLOW_ALL = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ORIGIN_ALLOW_ALL = False
 CORS_ALLOW_CREDENTIALS = False
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Add your frontend URL
-]
+CORS_ALLOWED_ORIGINS = _csv_env(
+    'CORS_ALLOWED_ORIGINS',
+    ['http://localhost:3000', 'http://127.0.0.1:3000'] if DEBUG else [],
+)
+if not DEBUG and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured('CORS_ALLOWED_ORIGINS must be configured.')
+
+CSRF_TRUSTED_ORIGINS = _csv_env('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS if DEBUG else [])
 
 # Application definition
 
@@ -196,24 +242,24 @@ LOGGING = {
 # Database
 # https://docs.djangoproject.com/en/4.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'HOST' : os.getenv('DB_HOST', '13.233.123.152'),    # 35.154.61.167
-        'PORT' : os.getenv('DB_PORT', 5432),
-        'NAME' : os.getenv('DB_NAME', 'magilshe_staging'),
-        'USER' : os.getenv('DB_USER', 'postgres'),
-        'PASSWORD' : os.getenv('DB_PASS', 'miracle'),
+if DEBUG and not any(os.getenv(name) for name in ('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS', 'DB_PORT')):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.postgresql_psycopg2',
-    #     'HOST' : 'localhost',
-    #     'PORT' : 5432,
-    #     'NAME' : 'cakery_local',
-    #     'USER' : 'postgres',
-    #     'PASSWORD' : 'fayas@321',
-    # }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql_psycopg2',
+            'HOST' : _required_env('DB_HOST'),
+            'PORT' : _required_env('DB_PORT'),
+            'NAME' : _required_env('DB_NAME'),
+            'USER' : _required_env('DB_USER'),
+            'PASSWORD' : _required_env('DB_PASS'),
+        }
+    }
 
 
 # Password validation
@@ -277,6 +323,16 @@ MSG91_TEMPLATE_ID = os.getenv('MSG91_TEMPLATE_ID')
 MSG91_SENDER_ID = os.getenv('MSG91_SENDER_ID')
 MSG91_ROUTE = os.getenv('MSG91_ROUTE')
 MSG91_COUNTRY_CODE = os.getenv('MSG91_COUNTRY_CODE')
+
+OTP_EXPIRY_SECONDS = _env_int('OTP_EXPIRY_SECONDS', 300)
+OTP_REQUEST_PHONE_LIMIT = _env_int('OTP_REQUEST_PHONE_LIMIT', 3)
+OTP_REQUEST_PHONE_WINDOW_SECONDS = _env_int('OTP_REQUEST_PHONE_WINDOW_SECONDS', 300)
+OTP_REQUEST_IP_LIMIT = _env_int('OTP_REQUEST_IP_LIMIT', 20)
+OTP_REQUEST_IP_WINDOW_SECONDS = _env_int('OTP_REQUEST_IP_WINDOW_SECONDS', 300)
+OTP_VERIFY_PHONE_LIMIT = _env_int('OTP_VERIFY_PHONE_LIMIT', 5)
+OTP_VERIFY_PHONE_WINDOW_SECONDS = _env_int('OTP_VERIFY_PHONE_WINDOW_SECONDS', 300)
+OTP_VERIFY_IP_LIMIT = _env_int('OTP_VERIFY_IP_LIMIT', 30)
+OTP_VERIFY_IP_WINDOW_SECONDS = _env_int('OTP_VERIFY_IP_WINDOW_SECONDS', 300)
 
 LOGIN_URL = '/admin/'
 LOGIN_REDIRECT_URL = '/'

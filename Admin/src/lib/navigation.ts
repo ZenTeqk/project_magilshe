@@ -37,6 +37,7 @@ import {
   Gauge,
   UserCog,
   UserRoundSearch,
+  Archive,
 } from "lucide-react";
 
 export type NavItem = {
@@ -83,6 +84,7 @@ export const navigation: NavEntry[] = [
     aliases: ["staff", "admin users", "team"],
   },
   { label: "Roles & Permissions", to: "/roles", icon: UserCog, aliases: ["rbac", "permissions", "profiles"] },
+  { label: "Archived Records", to: "/archived-records", icon: Archive, aliases: ["archive", "restore", "permanent delete"] },
   {
     label: "CRM Pipeline",
     icon: Target,

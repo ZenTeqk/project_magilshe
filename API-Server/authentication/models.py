@@ -10,5 +10,6 @@ class OTP(models.Model):
 
     def is_valid(self):
         from datetime import timedelta
+        from django.conf import settings
         from django.utils.timezone import now
-        return now() < self.created_at + timedelta(minutes=5)  # OTP valid for 5 minutes
+        return now() < self.created_at + timedelta(seconds=settings.OTP_EXPIRY_SECONDS)

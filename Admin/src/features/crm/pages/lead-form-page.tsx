@@ -30,8 +30,10 @@ import {
 import { WonQuotationDialog } from "@/features/crm/components/won-quotation-dialog";
 import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
 import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 
 const blank = {
   customer_id: null as number | null,
@@ -106,6 +108,7 @@ function LeadFormPage() {
   const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: flavours } = useCrmOptions("cake_flavour");
   const { data: leadSources } = useCrmOptions("lead_source");
+  const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: winningReasons } = useCrmOptions("winning_reason");
   const { data: lossReasons } = useCrmOptions("loss_reason");
 
@@ -484,10 +487,13 @@ function LeadFormPage() {
           </Field>
           <Field label="Delivery time">
             <Input
-              type="time"
-              value={form.delivery_time}
-              onChange={(e) => set("delivery_time", e.target.value)}
+              type="text"
+              list="lead-delivery-time-slots"
+              placeholder="Select or type a time"
+              value={formatTimeOfDay(form.delivery_time)}
+              onChange={(e) => set("delivery_time", normalizeTimeOfDayInput(e.target.value))}
             />
+            <datalist id="lead-delivery-time-slots">{(deliveryTimeSlots ?? []).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
           </Field>
         </div>
       </SectionCard>
@@ -639,23 +645,9 @@ function LeadFormPage() {
         </div>
       </SectionCard>
 
-      {isEdit && existingLead?.activities && existingLead.activities.length > 0 && (
+      {isEdit && (
         <SectionCard title="Activity">
-          <ol className="relative space-y-4 border-l border-border pl-5">
-            {existingLead.activities.map((a) => (
-              <li key={a.id} className="relative">
-                <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                <p className="text-sm">
-                  <span className="font-semibold">{a.staff_name}</span>{" "}
-                  <span className="text-muted-foreground">{a.action}</span>
-                </p>
-                {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
-                <p className="mt-0.5 text-[11px] text-muted-foreground/80">
-                  {new Date(a.created_on).toLocaleString("en-IN")}
-                </p>
-              </li>
-            ))}
-          </ol>
+          <CrmHistoryTimeline events={existingLead?.activities} />
         </SectionCard>
       )}
 

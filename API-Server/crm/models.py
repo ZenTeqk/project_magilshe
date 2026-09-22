@@ -73,6 +73,12 @@ class Lead(models.Model):
         related_name="lead_updated_user"
     )
     updated_on = models.DateTimeField(auto_now=True, null=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_crm_leads",
+    )
 
     # Legacy fields retained for data compatibility.
     expected_price = models.IntegerField(default=0)
@@ -184,6 +190,12 @@ class Quotation(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="Draft")
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_crm_quotations",
+    )
 
     class Meta:
         ordering = ["-id"]
@@ -372,6 +384,12 @@ class CRMOrder(models.Model):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="cancelled_crm_orders",
     )
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_crm_orders",
+    )
 
     class Meta:
         ordering = ("-id",)
@@ -421,6 +439,12 @@ class CRMInvoice(models.Model):
     generated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="generated_crm_invoices")
     generated_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_crm_invoices",
+    )
 
     class Meta:
         ordering = ("-id",)
@@ -502,6 +526,12 @@ class CRMDelivery(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     damage_description = models.TextField(null=True, blank=True)
     failure_reason = models.CharField(max_length=255, null=True, blank=True)
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="archived_crm_deliveries",
+    )
 
     class Meta:
         ordering = ("-id",)

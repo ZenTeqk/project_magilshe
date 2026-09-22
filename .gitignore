@@ -1,0 +1,55 @@
+# Local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+db.sqlite3
+
+# Python virtual environments
+venv/
+.venv/
+env/
+.env_local/
+API-Server/venv/
+API-Server/.venv/
+
+# Node
+node_modules/
+Admin/node_modules/
+Website/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+Admin/dist/
+Website/build/
+dist-ssr/
+
+# Logs and runtime files
+logs/
+*.log
+*.pid
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

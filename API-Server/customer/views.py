@@ -38,6 +38,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
 
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 
 from cakery.check_instance import check_instance
 from cakery.validators import validate_request
@@ -70,7 +71,7 @@ class SaveCustomerAddress(APIView):
                     'is_primary' : data['is_primary']
                 }
 
-                a_id = str(data['id'])
+                a_id = str(data.get('id', 0))
 
                 if a_id and a_id.isdigit() and a_id != '0':
                     db_param['updated_by'] = request.user
@@ -138,7 +139,10 @@ class UpdateProfile(APIView):
                 image = data['image']
                 if (image != None and image != "null"):
                     file_name = str(uuid.uuid4())
-                    ext = image.name.split('.')[-1]
+                    try:
+                        ext = validate_image_upload(image)
+                    except ValueError as error:
+                        return Response({"message": str(error)}, status=400)
                     if put_image_to_s3(image, "{}/customer/profile/{}.{}".format(aws_domain_name, file_name, ext)):
                         db_param["profile_picture_name"] = file_name
                         db_param["profile_picture_ext"] = ext

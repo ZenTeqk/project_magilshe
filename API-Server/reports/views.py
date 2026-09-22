@@ -25,7 +25,6 @@ from django.db import transaction
 from cakery.common import StrongRandomPasswordGenerator, generate_username
 from django.db.models.functions import ExtractMonth, ExtractDay
 from django.db.models import Avg, Count, F, Max, Q, Sum
-from django.db.models.functions import TruncDate
 from django.utils import timezone
 from decimal import Decimal
 
@@ -136,7 +135,12 @@ class CRMAnalyticsReport(APIView):
             "count": pending_orders.count(),
             "amount": Decimal(payments_pending_amount).quantize(Decimal("0.01")),
         }
-        revenue_trend = list(payments.annotate(day=TruncDate("payment_date")).values("day").annotate(value=Sum("amount")).order_by("day"))
+        # payment_date is already a plain DateField (day granularity), so no
+        # truncation is needed. TruncDate() here previously made Django's sqlite
+        # backend cast it through a UTC->TIME_ZONE datetime conversion function
+        # that assumes a full datetime string, raising "user-defined function
+        # raised exception" against a bare date value.
+        revenue_trend = list(payments.annotate(day=F("payment_date")).values("day").annotate(value=Sum("amount")).order_by("day"))
         customer_rows = list(orders.values("phone", "customer_name").annotate(total_orders=Count("id"), total_spend=Sum("total_amount"), last_order=Max("confirmed_on")).order_by("-total_spend")[:25])
         product_rows = list(CRMOrderItem.objects.filter(order__in=orders).values("item_name", "flavour", "weight").annotate(quantity=Sum("quantity"), revenue=Sum("amount"), orders=Count("order", distinct=True)).order_by("-quantity")[:20])
         occasions = list(leads.values("occasion").annotate(value=Count("id")).order_by("-value")[:12])

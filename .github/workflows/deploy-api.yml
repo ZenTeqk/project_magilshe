@@ -43,6 +43,9 @@ jobs:
         run: |
           ssh ${{ secrets.API_DEPLOY_USER }}@${{ secrets.API_SERVER_HOST }} "cat > ~/api/cakery/.env" <<EOF
           DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}
+          # ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}
+          # CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+          # CSRF_TRUSTED_ORIGINS=${{ secrets.CSRF_TRUSTED_ORIGINS }}
           DB_HOST=${{ secrets.DB_HOST }}
           DB_NAME=${{ secrets.DB_NAME }}
           DB_USER=${{ secrets.DB_USER }}
@@ -54,6 +57,20 @@ jobs:
           AWS_S3_ACCESS_KEY_ID=${{ secrets.AWS_S3_ACCESS_KEY_ID }}
           AWS_S3_SECRET_ACCESS_KEY=${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
           AWS_S3_REGION_NAME=${{ secrets.AWS_S3_REGION_NAME }}
+          # MSG91_API_KEY=${{ secrets.MSG91_API_KEY }}
+          # MSG91_TEMPLATE_ID=${{ secrets.MSG91_TEMPLATE_ID }}
+          # MSG91_SENDER_ID=${{ secrets.MSG91_SENDER_ID }}
+          # MSG91_ROUTE=${{ secrets.MSG91_ROUTE }}
+          # MSG91_COUNTRY_CODE=${{ secrets.MSG91_COUNTRY_CODE }}
+          # OTP_EXPIRY_SECONDS=${{ vars.OTP_EXPIRY_SECONDS }}
+          # OTP_REQUEST_PHONE_LIMIT=${{ vars.OTP_REQUEST_PHONE_LIMIT }}
+          # OTP_REQUEST_PHONE_WINDOW_SECONDS=${{ vars.OTP_REQUEST_PHONE_WINDOW_SECONDS }}
+          # OTP_REQUEST_IP_LIMIT=${{ vars.OTP_REQUEST_IP_LIMIT }}
+          # OTP_REQUEST_IP_WINDOW_SECONDS=${{ vars.OTP_REQUEST_IP_WINDOW_SECONDS }}
+          # OTP_VERIFY_PHONE_LIMIT=${{ vars.OTP_VERIFY_PHONE_LIMIT }}
+          # OTP_VERIFY_PHONE_WINDOW_SECONDS=${{ vars.OTP_VERIFY_PHONE_WINDOW_SECONDS }}
+          # OTP_VERIFY_IP_LIMIT=${{ vars.OTP_VERIFY_IP_LIMIT }}
+          # OTP_VERIFY_IP_WINDOW_SECONDS=${{ vars.OTP_VERIFY_IP_WINDOW_SECONDS }}
           EOF
 
       - name: Install dependencies, migrate, collectstatic

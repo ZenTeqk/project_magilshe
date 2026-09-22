@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import type { CompanyConfig, Quotation } from "@/features/crm/quotations-hooks";
+import { formatTimeOfDay } from "@/lib/format-time";
+import { addressOrFallback } from "./address-fallback";
 import {
   PDF, displayDate, displayUnit, drawBakeryMessage, drawDocumentHeader, drawFooter, drawInfoBlock, drawSectionLabel,
   drawTableHeader, drawTableRowBackground, drawTotalsPanel, loadBrandLogo, money,
@@ -17,7 +19,7 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   ];
   const customerRows: Array<[string, unknown]> = [
     ["Name", q.customer_name], ["Phone", q.phone],
-    ["Address", q.billing_address || q.address],
+    ["Address", addressOrFallback(q.billing_address, q.address)],
   ];
   const cardHeight = Math.max(measureInfoBlockHeight(doc, detailRows, 92), measureInfoBlockHeight(doc, customerRows, 92));
   const detailsBottom = drawInfoBlock(doc, "Quotation details", detailRows, PDF.left, y, 92, cardHeight);
@@ -27,7 +29,7 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   if (q.occasion || q.event_date || q.delivery_date || (q.address && q.address !== q.billing_address)) {
     y = drawInfoBlock(doc, "Event & delivery details", [
       ["Occasion", q.occasion], ["Event date", q.event_date ? displayDate(q.event_date) : null],
-      ["Delivery", q.delivery_date ? `${displayDate(q.delivery_date)}${q.delivery_time ? `  ${q.delivery_time}` : ""}` : null],
+      ["Delivery", q.delivery_date ? `${displayDate(q.delivery_date)}${q.delivery_time ? `  ${formatTimeOfDay(q.delivery_time)}` : ""}` : null],
       ["Method", q.delivery_type], ["Address", q.address && q.address !== q.billing_address ? q.address : null],
     ], PDF.left, y, PDF.right - PDF.left) + 5;
   }

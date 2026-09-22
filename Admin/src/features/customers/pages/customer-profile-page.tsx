@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { inr } from "@/lib/data";
+import { formatDateTimeWithTimeOfDay } from "@/lib/format-time";
 import {
   useCompleteCustomerEvent,
   useCrmCustomer,
@@ -520,7 +521,7 @@ function CustomerProfilePage() {
                       >
                         <td className="px-4 py-3 font-medium">{d.delivery_no}</td>
                         <td className="px-4 py-3">{d.delivery_type}</td>
-                        <td className="px-4 py-3 text-muted-foreground tabular">{fmtDate(d.pickup_time || d.delivery_time || d.porter_time || d.created_on)}</td>
+                        <td className="px-4 py-3 text-muted-foreground tabular">{formatDateTimeWithTimeOfDay(d.pickup_time || d.delivery_time || d.porter_time || d.created_on) || "—"}</td>
                         <td className="px-4 py-3">
                           <StatusChip status={d.delivery_status} />
                         </td>

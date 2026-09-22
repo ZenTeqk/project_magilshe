@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Eye, Plus, Settings2, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, Download, Eye, Lock, Plus, Settings2, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
-import { EmptyState } from "@/components/shared/empty-state";
 import { CardSkeleton } from "@/components/shared/skeletons";
 import { Field } from "@/components/shared/field";
 import { StatusChip } from "@/components/shared/status-chip";
@@ -50,10 +49,12 @@ import {
 } from "@/features/crm/quotations-hooks";
 import { GstRateDialog } from "@/features/crm/components/gst-rate-dialog";
 import { RecordQuotationPaymentDialog } from "@/features/crm/components/record-quotation-payment-dialog";
+import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 
 const emptyItem: QuotationItem = {
   item_name: "",
@@ -63,7 +64,7 @@ const emptyItem: QuotationItem = {
   quantity: "",
   unit_type: "kg",
   rate: "",
-  gst_percentage: 0,
+  gst_percentage: "",
 };
 
 const blank = {
@@ -115,6 +116,7 @@ function QuotationFormPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [gstDialogOpen, setGstDialogOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [expandedVersions, setExpandedVersions] = useState<number[]>([]);
 
   useEffect(() => {
     if (existingQuotation) {
@@ -140,6 +142,12 @@ function QuotationFormPage() {
       });
     }
   }, [existingQuotation]);
+
+  const latestVersionId = existingQuotation?.quotation_versions?.[0]?.id;
+
+  useEffect(() => {
+    if (latestVersionId) setExpandedVersions([latestVersionId]);
+  }, [existingQuotation?.id, latestVersionId]);
 
   useEffect(() => {
     if (isEdit || !leadForPrefill) return;
@@ -167,7 +175,7 @@ function QuotationFormPage() {
           quantity: leadForPrefill.quantity ?? 1,
           unit_type: leadForPrefill.unit_type ?? "kg",
           rate: leadForPrefill.estimated_amount ?? leadForPrefill.budget ?? "",
-          gst_percentage: 0,
+          gst_percentage: "",
         },
       ],
     }));
@@ -239,7 +247,7 @@ function QuotationFormPage() {
     valid_until: form.valid_until || null,
     delivery_type: form.delivery_type,
     delivery_date: form.delivery_date || null,
-    delivery_time: form.delivery_time || null,
+    delivery_time: normalizeTimeOfDayInput(form.delivery_time) || null,
     special_instructions: form.special_instructions || null,
     payment_terms: form.payment_terms || null,
     notes: form.notes || null,
@@ -268,7 +276,7 @@ function QuotationFormPage() {
     valid_until: source.valid_until ?? null,
     delivery_type: source.delivery_type ?? null,
     delivery_date: source.delivery_date ?? null,
-    delivery_time: source.delivery_time ?? null,
+    delivery_time: normalizeTimeOfDayInput(source.delivery_time) || null,
     special_instructions: source.special_instructions ?? null,
     payment_terms: source.payment_terms ?? null,
     notes: source.notes ?? null,
@@ -298,6 +306,10 @@ function QuotationFormPage() {
   }, [form, generatedData]);
 
   const save = async () => {
+    if (isFinalizedLocked) {
+      toast.error("This quotation is locked. Create a new quotation for changes.");
+      return;
+    }
     const clientErrors: Record<string, string> = {};
     const phoneDigits = form.phone.replace(/\D/g, "");
     if (!/^[6-9]\d{9}$/.test(phoneDigits)) clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
@@ -337,6 +349,10 @@ function QuotationFormPage() {
 
   const generateVersion = async () => {
     if (!id || !hasDocumentChanges) return;
+    if (isFinalizedLocked) {
+      toast.error("This quotation is locked. Create a new quotation for changes.");
+      return;
+    }
     try {
       await generateQuotationVersion.mutateAsync({ id, payload: buildPayload() });
       toast.success("Quotation updated", { description: "A new fixed PDF snapshot has been created." });
@@ -402,6 +418,9 @@ function QuotationFormPage() {
   }
 
   const status = existingQuotation?.status;
+  const isFinalizedLocked = Boolean(
+    existingQuotation?.order_id && ["Order Confirmed", "Closed"].includes(status ?? ""),
+  );
 
   return (
     <>
@@ -430,20 +449,22 @@ function QuotationFormPage() {
                 </Button>
               </>
             )}
-            {isEdit && hasDocumentChanges && (
+            {isEdit && hasDocumentChanges && !isFinalizedLocked && (
               <Button onClick={generateVersion} disabled={generateQuotationVersion.isPending}>
                 {generateQuotationVersion.isPending ? "Creating…" : "Create New Quotation"}
               </Button>
             )}
-            <Button
-              variant={isEdit ? "outline" : "default"}
-              onClick={save}
-              disabled={
-                createQuotation.isPending || updateQuotation.isPending || convertLead.isPending
-              }
-            >
-              {isEdit ? "Save changes" : "Create quotation"}
-            </Button>
+            {!isFinalizedLocked && (
+              <Button
+                variant={isEdit ? "outline" : "default"}
+                onClick={save}
+                disabled={
+                  createQuotation.isPending || updateQuotation.isPending || convertLead.isPending
+                }
+              >
+                {isEdit ? "Save changes" : "Create quotation"}
+              </Button>
+            )}
           </>
         }
       />
@@ -460,7 +481,7 @@ function QuotationFormPage() {
                   : `Version ${existingQuotation.current_version?.version_number ?? 1} is up to date.`}
               </p>
             </div>
-            {hasDocumentChanges && <Button size="sm" onClick={generateVersion} disabled={generateQuotationVersion.isPending}>Create New Quotation</Button>}
+            {hasDocumentChanges && !isFinalizedLocked && <Button size="sm" onClick={generateVersion} disabled={generateQuotationVersion.isPending}>Create New Quotation</Button>}
           </div>
           <WorkflowTracker
             stages={["Quotation", "Sent", "Accepted", "Advance Received", "Order Confirmed"]}
@@ -519,6 +540,19 @@ function QuotationFormPage() {
         </SectionCard>
       )}
 
+      {isFinalizedLocked && (
+        <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-muted p-4 text-sm">
+          <Lock className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="font-semibold">Quotation locked</p>
+            <p className="text-muted-foreground">
+              This quotation has a confirmed order and is preserved as a finalized business record. Create a new quotation for any changes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <fieldset disabled={isFinalizedLocked} className={isFinalizedLocked ? "space-y-4 opacity-75" : "space-y-4"}>
       <SectionCard title="Customer Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer name" required error={errors["customer_name"]}>
@@ -635,10 +669,10 @@ function QuotationFormPage() {
               type="text"
               list="quotation-delivery-time-slots"
               placeholder="Select or type a time"
-              value={form.delivery_time}
-              onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))}
+              value={formatTimeOfDay(form.delivery_time)}
+              onChange={(e) => setForm((f) => ({ ...f, delivery_time: normalizeTimeOfDayInput(e.target.value) }))}
             />
-            <datalist id="quotation-delivery-time-slots">{(deliveryTimeSlots ?? []).map((slot) => <option key={slot} value={slot} />)}</datalist>
+            <datalist id="quotation-delivery-time-slots">{(deliveryTimeSlots ?? []).map((slot) => <option key={slot} value={formatTimeOfDay(slot)} />)}</datalist>
           </Field>
         </div>
       </SectionCard>
@@ -869,43 +903,108 @@ function QuotationFormPage() {
           </dl>
         </SectionCard>
       </div>
+      </fieldset>
 
       {isEdit && existingQuotation && (
         <SectionCard title="History">
-          <div className="mb-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {existingQuotation.quotation_versions.map((version, index) => (
-              <div key={version.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <p className="text-sm font-semibold">Version {version.version_number}{index === 0 ? " · Current ✓" : ""}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(version.generated_on).toLocaleString("en-IN")} · {inr(Number(version.total_amount))}</p>
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => previewVersion(version.snapshot)}>
-                  <Eye className="size-4" /> Preview
-                </Button>
-              </div>
-            ))}
-          </div>
-          {existingQuotation.quotation_activities?.length ? (
-            <ol className="relative space-y-4 border-l border-border pl-5">
-              {existingQuotation.quotation_activities.map((a) => (
-                <li key={a.id} className="relative">
-                  <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                  <p className="text-sm">
-                    <span className="font-semibold">{a.staff_name}</span>{" "}
-                    <span className="text-muted-foreground">{a.action}</span>
-                  </p>
-                  {a.description && (
-                    <p className="text-xs text-muted-foreground">{a.description}</p>
+          <div className="mb-5 space-y-2">
+            {existingQuotation.quotation_versions.map((version, index) => {
+              const expanded = expandedVersions.includes(version.id);
+              const snapshot = version.snapshot;
+              return (
+                <div key={version.id} className="rounded-lg border border-border">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 p-3 text-left"
+                    onClick={() =>
+                      setExpandedVersions((current) =>
+                        expanded ? current.filter((versionId) => versionId !== version.id) : [...current, version.id],
+                      )
+                    }
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ChevronRight className={`size-4 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">Version {version.version_number}{index === 0 ? " - Current" : ""}</span>
+                        <span className="block text-xs text-muted-foreground">{new Date(version.generated_on).toLocaleString("en-IN")} - {inr(Number(version.total_amount))}</span>
+                      </span>
+                    </span>
+                    {index === 0 && <StatusChip status="Current" tone="success" dot={false} />}
+                  </button>
+                  {expanded && (
+                    <div className="border-t border-border p-3 text-sm">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Customer</p>
+                          <p className="font-medium">{snapshot.customer_name ?? "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Phone</p>
+                          <p className="tabular">{snapshot.phone ?? "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Event date</p>
+                          <p className="tabular">{snapshot.event_date ?? "-"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Total</p>
+                          <p className="font-semibold tabular">{inr(Number(snapshot.total_amount ?? version.total_amount))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Advance</p>
+                          <p className="tabular">{inr(Number(snapshot.advance_amount ?? 0))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Balance</p>
+                          <p className="tabular">{inr(Number(snapshot.balance_amount ?? 0))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Discount</p>
+                          <p className="tabular">{inr(Number(snapshot.discount_amount ?? 0))}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status then</p>
+                          <p>{snapshot.status ?? "-"}</p>
+                        </div>
+                      </div>
+                      {snapshot.items?.length ? (
+                        <div className="mt-3 overflow-x-auto rounded-md border border-border">
+                          <table className="w-full min-w-[640px] text-xs">
+                            <thead className="bg-surface-muted text-muted-foreground">
+                              <tr>
+                                <th className="px-2 py-2 text-left">Item</th>
+                                <th className="px-2 py-2 text-left">Qty</th>
+                                <th className="px-2 py-2 text-left">Rate</th>
+                                <th className="px-2 py-2 text-left">GST%</th>
+                                <th className="px-2 py-2 text-right">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {snapshot.items.map((item, itemIndex) => (
+                                <tr key={`${version.id}-${itemIndex}`} className="border-t border-border">
+                                  <td className="px-2 py-2">{item.item_name}</td>
+                                  <td className="px-2 py-2 tabular">{item.quantity} {item.unit_type}</td>
+                                  <td className="px-2 py-2 tabular">{inr(Number(item.rate ?? 0))}</td>
+                                  <td className="px-2 py-2 tabular">{Number(item.gst_percentage ?? 0)}</td>
+                                  <td className="px-2 py-2 text-right tabular">{inr(Number(item.amount ?? item.subtotal ?? 0))}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex justify-end">
+                        <Button size="sm" variant="outline" onClick={() => previewVersion(snapshot)}>
+                          <Eye className="size-4" /> View PDF
+                        </Button>
+                      </div>
+                    </div>
                   )}
-                  <p className="mt-0.5 text-[11px] text-muted-foreground/80">
-                    {new Date(a.created_on).toLocaleString("en-IN")}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <EmptyState title="No activity yet" />
-          )}
+                </div>
+              );
+            })}
+          </div>
+          <CrmHistoryTimeline events={existingQuotation.quotation_activities} />
         </SectionCard>
       )}
 

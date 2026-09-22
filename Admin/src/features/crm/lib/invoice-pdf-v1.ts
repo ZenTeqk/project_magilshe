@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import type { CrmInvoice } from "@/features/crm/invoices-hooks";
 import type { CompanyConfig } from "@/features/crm/quotations-hooks";
+import { addressOrFallback } from "./address-fallback";
 import {
   PDF, displayDate, displayUnit, drawBakeryMessage, drawDocumentHeader, drawFooter, drawInfoBlock, drawSectionLabel,
   drawTableHeader, drawTableRowBackground, drawTotalsPanel, loadBrandLogo, measureInfoBlockHeight, money,
@@ -20,7 +21,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
   const customerRows: Array<[string, unknown]> = [
     ["Name", invoice.customer_name], ["Phone", invoice.phone],
     ["Email", invoice.email],
-    ["Address", invoice.address || invoice.delivery_address],
+    ["Address", addressOrFallback(invoice.address, invoice.delivery_address)],
   ];
   const cardHeight = Math.max(
     measureInfoBlockHeight(doc, detailRows, 91),

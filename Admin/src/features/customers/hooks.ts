@@ -64,6 +64,46 @@ export function useCrmCustomers() {
   });
 }
 
+export type CustomerImportError = { row: number; reason: string };
+export type CustomerImportResult = {
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: CustomerImportError[];
+  unknown_columns?: string[] | undefined;
+};
+
+export function useImportCustomers() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await apiClient.post<CustomerImportResult>(endpoints.crm.customerImport, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers"] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customer-analytics"] });
+    },
+  });
+}
+
+export function useExportCustomers() {
+  return useMutation({
+    mutationFn: async (ids?: Array<string | number>) => {
+      const { data } = await apiClient.get<Blob>(endpoints.crm.customerExport, {
+        params: ids?.length ? { ids: ids.join(",") } : undefined,
+        responseType: "blob",
+      });
+      return data;
+    },
+  });
+}
+
 export function useCrmCustomerAnalytics(params?: { from_date?: string; to_date?: string }) {
   return useQuery({
     queryKey: ["crm", "customer-analytics", params],
@@ -239,6 +279,24 @@ export function useCreateCustomer() {
       );
       queryClient.invalidateQueries({ queryKey: ["crm", "customers"] });
       queryClient.invalidateQueries({ queryKey: ["crm", "customer-analytics"] });
+    },
+  });
+}
+
+export function useArchiveCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string | number) => {
+      await apiClient.delete(endpoints.crm.customer(id));
+      return id;
+    },
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData<CrmCustomerSummary[]>(["crm", "customers"], (current) =>
+        current?.filter((customer) => String(customer.id) !== String(id)),
+      );
+      queryClient.invalidateQueries({ queryKey: ["crm", "customers"] });
+      queryClient.invalidateQueries({ queryKey: ["crm", "customer-analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["archived-records", "customers"] });
     },
   });
 }

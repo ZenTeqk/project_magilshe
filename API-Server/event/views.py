@@ -33,17 +33,19 @@ from django.core.files.storage import FileSystemStorage
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, NotFound
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
 
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 
 from cakery.check_instance import check_instance
 from cakery.validators import validate_request
 
 from cakery.common import custom_error_message, aws_domain_name
+from customer.rbac import effective_permissions
 
 from event.models import Event, EventOrder, EventOrderItems
 from event.serializers import event_serializer, event_order_serializer
@@ -51,6 +53,23 @@ from event.serializers import event_serializer, event_order_serializer
 from cake.models import CakePrice
 
 logger = logging.getLogger('cakery')
+
+EVENT_ORDER_VIEW_PERMISSION = "marketing.view"
+EVENT_ORDER_EDIT_PERMISSION = "marketing.edit"
+
+
+def _has_permission(user, code):
+    return code in effective_permissions(user)
+
+
+def _parse_positive_int(value, field_name):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError({field_name: "Invalid value."})
+    if parsed <= 0:
+        raise ValidationError({field_name: "Invalid value."})
+    return parsed
 
 class SaveEvent(APIView):
     def post(self, request):
@@ -89,7 +108,10 @@ class SaveEvent(APIView):
                     image = data['image']
                     if (image != None and image != "null"):
                         file_name = str(uuid.uuid4())
-                        ext = image.name.split('.')[-1]
+                        try:
+                            ext = validate_image_upload(image)
+                        except ValueError as error:
+                            return Response({"message": str(error)}, status=400)
                         if put_image_to_s3(image, "{}/event/{}.{}".format(aws_domain_name, file_name, ext)):
                             db_param["image_name"] = file_name
                             db_param["image_ext"] = ext
@@ -162,8 +184,6 @@ class SaveEventOrder(APIView):
 
                 cake_price_details = data.get('cake_price_details', [])
 
-                print(f"Cake Price Details = {cake_price_details}")
-
                 if(len(cake_price_details) < 1):
                     raise Exception('Need Atleast One Cake Price')
 
@@ -177,8 +197,6 @@ class SaveEventOrder(APIView):
                     "ordered_time" : datetime.now()
                 }
 
-                print(f"Event DB Param - {event_order_db_param}")
-
                 event_order = EventOrder.objects.create(**event_order_db_param)
 
                 for cpd in cake_price_details:
@@ -190,8 +208,6 @@ class SaveEventOrder(APIView):
 
                     EventOrderItems.objects.create(**cpd_db_param)
 
-                    print(f"CPD DB PAram - {cpd_db_param}")
-
                 return Response({'message' : 'Event Order Placed Successfully!', 'data' : event_order_serializer(event_order)})
         except Exception as e:
             logger.exception("Post Event Data Error - {}".format(e))
@@ -202,16 +218,20 @@ class SaveEventOrder(APIView):
 
 
 class GetAllEventOrder(APIView):
-    permission_classes = []
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         data = []
         try:
+            if not _has_permission(request.user, EVENT_ORDER_VIEW_PERMISSION):
+                return Response(
+                    {'message': 'You do not have permission to perform this action.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             data = [event_order_serializer(obj) for obj in EventOrder.objects.filter(status=True).all()]
         except Exception as e:
             logger.exception(f"Get All Event Order Data Error - {e}")
-            data = []
+            raise APIException({'message' : custom_error_message})
 
         return Response({'data' : data})
     
@@ -219,19 +239,25 @@ class GetAllEventOrder(APIView):
 
 
 class GetIndividualEventOrderData(APIView):
-    permission_classes = []
-    authentication_classes = []
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, id):
-        data = None
         try:
-            if id:
-                event_order = EventOrder.objects.filter(id=id, status=True).first()
-                if event_order:
-                    data = event_order_serializer(event_order)
+            if not _has_permission(request.user, EVENT_ORDER_VIEW_PERMISSION):
+                return Response(
+                    {'message': 'You do not have permission to perform this action.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            event_order_id = _parse_positive_int(id, 'id')
+            event_order = EventOrder.objects.filter(id=event_order_id, status=True).first()
+            if event_order is None:
+                return Response({'message': 'Event order not found.'}, status=status.HTTP_404_NOT_FOUND)
+            data = event_order_serializer(event_order)
+        except ValidationError:
+            raise
         except Exception as e:
             logger.exception(f"Get Individual Event Order Data Error - {e}")
-            data = None
+            raise APIException({'message' : custom_error_message})
 
         return Response({'data' : data})
     
@@ -239,26 +265,35 @@ class GetIndividualEventOrderData(APIView):
 
 
 class UpdateEventOrder(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         try:
+            if not _has_permission(request.user, EVENT_ORDER_EDIT_PERMISSION):
+                return Response(
+                    {'message': 'You do not have permission to perform this action.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             data = validate_request(request, request.data)
             order_status = data.get('order_status', None)
             order_id = data.get('id', None)
 
             if not order_status:
-                raise APIException('Order Status Missing')
+                raise ValidationError({'order_status': 'Order status missing.'})
 
             if not order_id:
-                raise APIException('Order Id Missing')
+                raise ValidationError({'id': 'Order id missing.'})
             
-            event_order = EventOrder.objects.filter(id=int(order_id))
+            event_order = EventOrder.objects.filter(id=_parse_positive_int(order_id, 'id'), status=True)
 
             if event_order.exists():            
-                event_order.update(order_status=int(order_status))
+                event_order.update(order_status=_parse_positive_int(order_status, 'order_status'))
             else:
-                raise APIException('Invalid Order ID')            
+                return Response({'message': 'Event order not found.'}, status=status.HTTP_404_NOT_FOUND)
 
             return Response({'message' : 'Status Updated Successfully!', 'data' : event_order_serializer(event_order.first())})
+        except ValidationError:
+            raise
         except Exception as e:
             logger.exception(f"Update Event Order Error - {e}")
             raise APIException({'message' : custom_error_message})

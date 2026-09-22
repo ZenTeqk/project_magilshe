@@ -38,6 +38,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import permissions, status
 
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 
 from cakery.check_instance import check_instance
 from cakery.validators import validate_request
@@ -81,7 +82,10 @@ class SaveConfiguration(APIView):
                 image = data['image']
                 if (image != None and image != "null"):
                     file_name = str(uuid.uuid4())
-                    ext = image.name.split('.')[-1]
+                    try:
+                        ext = validate_image_upload(image)
+                    except ValueError as error:
+                        return Response({"image": str(error)}, status=status.HTTP_400_BAD_REQUEST)
                     if put_image_to_s3(image, "{}/logo/{}.{}".format(aws_domain_name, file_name, ext)):
                         db_param["image_name"] = file_name
                         db_param["image_ext"] = ext
@@ -161,7 +165,10 @@ class ConfigurationSettings(APIView):
                 image = data['image']
                 if (image != None and image != "null"):
                     file_name = str(uuid.uuid4())
-                    ext = image.name.split('.')[-1]
+                    try:
+                        ext = validate_image_upload(image)
+                    except ValueError as error:
+                        return Response({"image": str(error)}, status=status.HTTP_400_BAD_REQUEST)
                     if put_image_to_s3(image, "{}/logo/{}.{}".format(aws_domain_name, file_name, ext)):
                         db_param["image_name"] = file_name
                         db_param["image_ext"] = ext
@@ -207,7 +214,10 @@ class ConfigurationView(APIView):
             image = data['image']
             if (image != None and image != "null"):
                 file_name = str(uuid.uuid4())
-                ext = image.name.split('.')[-1]
+                try:
+                    ext = validate_image_upload(image)
+                except ValueError as error:
+                    return Response({"image": str(error)}, status=status.HTTP_400_BAD_REQUEST)
                 if put_image_to_s3(image, "{}/logo/{}.{}".format(aws_domain_name, file_name, ext)):
                     db_param["image_name"] = file_name
                     db_param["image_ext"] = ext

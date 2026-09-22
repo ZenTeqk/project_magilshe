@@ -15,7 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/shared/field";
 import { cn } from "@/lib/utils";
 import { inr } from "@/lib/data";
+import { formatDateTimeWithTimeOfDay, formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
+import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import {
   useDelivery, useUpdateDelivery, useDeliveryWorkflowAction, useUploadDamageImages,
   useCancelDelivery,
@@ -45,7 +47,14 @@ const toDateTimeParts = (value: string | null | undefined) => {
   const [date = "", time = ""] = local.split("T");
   return { date, time };
 };
-const combineDateTime = (date: string, time: string) => date && time ? fromLocalInput(`${date}T${time}`) : null;
+const combineDateTime = (date: string, time: string) => {
+  const normalized = normalizeTimeOfDayInput(time);
+  return date && normalized ? fromLocalInput(`${date}T${normalized.slice(0, 5)}`) : null;
+};
+const deliveryTimeOptions = [
+  "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM",
+  "3:00 PM", "4:00 PM", "5:00 PM", "6:00 PM", "7:00 PM", "8:00 PM",
+];
 
 type FormState = {
   delivery_type: DeliveryType;
@@ -298,7 +307,7 @@ function DeliveryDetailPage() {
               <span className={paymentSummaryStyles.inlineTotal}>Total {inr(Number(delivery.total_amount))}</span><span>·</span>
               <strong className={paymentSummaryStyles.inlineAdvance}>Advance {inr(Number(delivery.advance_paid))}</strong><span>·</span>
               <span className={paymentSummaryStyles.inlineBalance}>Balance {inr(Number(delivery.balance_amount))}</span><span>·</span>
-              <span>Scheduled {delivery.scheduled_at ? new Date(delivery.scheduled_at).toLocaleString("en-IN") : "—"}</span>
+              <span>Scheduled {formatDateTimeWithTimeOfDay(delivery.scheduled_at) || "—"}</span>
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -346,7 +355,7 @@ function DeliveryDetailPage() {
             <div><dt className="text-muted-foreground">Order number</dt><dd className="tabular font-medium">{delivery.order_no}</dd></div>
             <div><dt className="text-muted-foreground">Delivery type</dt><dd className="font-medium">{form.delivery_type}</dd></div>
             <div><dt className="text-muted-foreground">Status</dt><dd className="font-medium">{delivery.delivery_status}</dd></div>
-            <div><dt className="text-muted-foreground">Completed</dt><dd className="tabular">{delivery.completed_at ? new Date(delivery.completed_at).toLocaleString("en-IN") : "—"}</dd></div>
+            <div><dt className="text-muted-foreground">Completed</dt><dd className="tabular">{formatDateTimeWithTimeOfDay(delivery.completed_at) || "—"}</dd></div>
             <div><dt className="text-muted-foreground">Final payment status</dt><dd className="font-medium">{Number(delivery.balance_amount) === 0 ? "Paid in full" : `Balance ${inr(Number(delivery.balance_amount))}`}</dd></div>
           </dl>
         </SectionCard>
@@ -392,7 +401,16 @@ function DeliveryDetailPage() {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Delivery Date" required><Input type="date" value={form.delivery_date} onChange={(event) => change("delivery_date", event.target.value)} /></Field>
-          <Field label="Delivery Time" required><Input type="time" value={form.delivery_clock} onChange={(event) => change("delivery_clock", event.target.value)} /></Field>
+          <Field label="Delivery Time" required>
+            <Input
+              type="text"
+              list="delivery-detail-time-options"
+              placeholder="Select or type a time"
+              value={formatTimeOfDay(form.delivery_clock)}
+              onChange={(event) => change("delivery_clock", normalizeTimeOfDayInput(event.target.value))}
+            />
+            <datalist id="delivery-detail-time-options">{deliveryTimeOptions.map((slot) => <option key={slot} value={slot} />)}</datalist>
+          </Field>
         </div>
 
         {isPickup && (
@@ -484,20 +502,11 @@ function DeliveryDetailPage() {
       </SectionCard>
 
       <SectionCard title="Timeline" description="Read-only history grouped by date and workflow type.">
-        {delivery.timeline?.length ? (
-          <ol className="relative space-y-4 border-l border-border pl-5">
-            {delivery.timeline.map((a) => (
-              <li key={a.id} className="relative">
-                <span className="absolute top-1.5 left-[-1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                <p className="text-sm"><span className="font-semibold">{a.staff_name}</span> <span className="text-muted-foreground">{a.action}</span></p>
-                {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
-                <p className="mt-0.5 text-[11px] text-muted-foreground/80">{new Date(a.created_on).toLocaleString("en-IN")}</p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <EmptyState title="No activity yet" description="Assignment, start, completion and workflow closure events will appear here." />
-        )}
+        <CrmHistoryTimeline
+          events={delivery.timeline}
+          emptyTitle="No activity yet"
+          emptyDescription="Assignment, start, completion and workflow closure events will appear here."
+        />
       </SectionCard>
 
       <MarkDamagedDialog open={damageOpen} onOpenChange={setDamageOpen} busy={busy} onSubmit={submitDamage} />

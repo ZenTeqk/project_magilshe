@@ -7,19 +7,20 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import models, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, ProtectedError, Q
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from cakery.common import aws_domain_name, get_s3_session
 from cakery.file_upload_to_aws import put_image_to_s3
-from customer.rbac import effective_permissions
+from customer.rbac import effective_permissions, is_super_admin
 from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerCommunicationLog, CustomerRecurringEvent,
     Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment,
 )
-from .customer_matching import find_existing_customer
+from .customer_matching import find_existing_customer, sync_customer_from_crm_details
 from .actionable import (
     DELIVERY_ACTIONABLE_STATUSES, INVOICE_ACTIONABLE_STATUSES,
     LEAD_ACTIONABLE_STATUSES, ORDER_ACTIONABLE_STATUSES,
@@ -31,11 +32,86 @@ from .serializers import (
     CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer,
     CustomerRecurringEventSerializer, LeadReferenceImageSerializer, LeadSerializer,
     QuotationListSerializer, QuotationPaymentSerializer, QuotationSerializer, CRMCustomerUpdateSerializer,
-    create_quotation_version,
+    create_quotation_version, is_quotation_locked,
 )
 
 
-class LeadViewSet(viewsets.ModelViewSet):
+def _wants_archived(request):
+    return str(request.query_params.get("archived") or "").lower() in {"1", "true", "yes"}
+
+
+def _filter_archived(queryset, request):
+    if _wants_archived(request):
+        return queryset.filter(is_archived=True) if is_super_admin(request.user) else queryset.none()
+    return queryset.filter(is_archived=False)
+
+
+def _archive_record(instance, user, label):
+    instance.is_archived = True
+    instance.archived_at = timezone.now()
+    instance.archived_by = user
+    instance.save(update_fields=("is_archived", "archived_at", "archived_by"))
+    return Response({"message": f"{label} archived."}, status=status.HTTP_200_OK)
+
+
+def _restore_record(instance, label):
+    instance.is_archived = False
+    instance.archived_at = None
+    instance.archived_by = None
+    instance.save(update_fields=("is_archived", "archived_at", "archived_by"))
+    return Response({"message": f"{label} restored."}, status=status.HTTP_200_OK)
+
+
+def _require_super_admin(request):
+    if not is_super_admin(request.user):
+        return Response({"detail": "Only Super Admin can perform this action."}, status=status.HTTP_403_FORBIDDEN)
+    return None
+
+
+class ArchivedLifecycleMixin:
+    lifecycle_label = "Record"
+
+    def get_queryset(self):
+        if getattr(self, "action", None) in {"restore", "permanent_delete"}:
+            return super().get_queryset()
+        if getattr(self, "action", None) in {"retrieve", "update", "partial_update"} and is_super_admin(self.request.user):
+            return super().get_queryset()
+        return _filter_archived(super().get_queryset(), self.request)
+
+    def destroy(self, request, *args, **kwargs):
+        return _archive_record(self.get_object(), request.user, self.lifecycle_label)
+
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        return _restore_record(self.get_object(), self.lifecycle_label)
+
+    @action(detail=True, methods=["delete"], url_path="permanent-delete")
+    def permanent_delete(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        instance = self.get_object()
+        blocker = self.permanent_delete_blocker(instance)
+        if blocker:
+            return Response({"message": blocker}, status=status.HTTP_409_CONFLICT)
+        try:
+            instance.delete()
+        except ProtectedError:
+            return Response(
+                {"message": f"{self.lifecycle_label} cannot be permanently deleted because it has protected related records. Archive it instead."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def permanent_delete_blocker(self, instance):
+        return None
+
+
+class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
+    lifecycle_label = "Lead"
     serializer_class = LeadSerializer
     queryset = Lead.objects.select_related("cake", "assigned_to").all()
 
@@ -57,6 +133,13 @@ class LeadViewSet(viewsets.ModelViewSet):
         if p.get("to_date"):
             qs = qs.filter(created_on__date__lte=p["to_date"])
         return qs
+
+    def permanent_delete_blocker(self, instance):
+        if hasattr(instance, "quotation"):
+            return "Lead cannot be permanently deleted because it has a related quotation. Archive it instead."
+        if instance.activities.exists() or instance.reference_images.exists():
+            return "Lead cannot be permanently deleted because it has CRM history. Archive it instead."
+        return None
 
     @action(detail=False, methods=["get"], url_path="crm-dashboard")
     def crm_dashboard(self, request):
@@ -139,8 +222,9 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         customer = serializer.validated_data.get("customer")
-        if customer is None:
-            customer = find_existing_customer(serializer.validated_data.get("phone"))
+        customer = sync_customer_from_crm_details(
+            {**serializer.validated_data, "customer": customer}, self.request.user
+        )
         lead = serializer.save(created_by=self.request.user, customer=customer)
         LeadActivity.objects.create(lead=lead, action="Lead Created", staff=self.request.user)
         sync_recurring_event(lead)
@@ -148,8 +232,22 @@ class LeadViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         previous_status = serializer.instance.status
         save_kwargs = {"updated_by": self.request.user}
-        if "customer" not in serializer.validated_data and "phone" in serializer.validated_data:
-            save_kwargs["customer"] = find_existing_customer(serializer.validated_data["phone"])
+        if "customer" in serializer.validated_data or "phone" in serializer.validated_data:
+            synced_customer = sync_customer_from_crm_details(
+                {
+                    **serializer.validated_data,
+                    "customer": serializer.validated_data.get("customer", serializer.instance.customer),
+                    "customer_name": serializer.validated_data.get("customer_name", serializer.instance.customer_name),
+                    "phone": serializer.validated_data.get("phone", serializer.instance.phone),
+                    "email": serializer.validated_data.get("email", serializer.instance.email),
+                    "address": serializer.validated_data.get("address", serializer.instance.address),
+                    "city": serializer.validated_data.get("city", serializer.instance.city),
+                    "pincode": serializer.validated_data.get("pincode", serializer.instance.pincode),
+                },
+                self.request.user,
+            )
+            if synced_customer is not None:
+                save_kwargs["customer"] = synced_customer
         lead = serializer.save(**save_kwargs)
         LeadActivity.objects.create(lead=lead, action="Lead Edited", staff=self.request.user)
         sync_recurring_event(lead)
@@ -273,6 +371,17 @@ class LeadViewSet(viewsets.ModelViewSet):
                 description=f"{previous_status} to Won · Won & Generate Quotation",
             )
         primary_address = None
+        if lead.customer is None:
+            lead.customer = sync_customer_from_crm_details({
+                "customer_name": lead.customer_name,
+                "phone": lead.phone,
+                "email": lead.email,
+                "address": lead.address,
+                "city": lead.city,
+                "pincode": lead.pincode,
+            }, request.user)
+            if lead.customer is not None:
+                lead.save(update_fields=("customer", "updated_on"))
         if lead.customer:
             primary_address = lead.customer.customeraddress_set.order_by("-is_primary", "id").first()
         quotation, created = Quotation.objects.get_or_create(
@@ -415,7 +524,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 lead = serializer.save(
                     created_by=request.user,
-                    customer=find_existing_customer(serializer.validated_data.get("phone")),
+                    customer=sync_customer_from_crm_details(serializer.validated_data, request.user),
                 )
                 LeadActivity.objects.create(lead=lead, action="Lead Imported", staff=request.user)
             successes += 1
@@ -455,7 +564,16 @@ class CRMCustomerViewSet(
     def get_queryset(self):
         Customer = get_user_model()
         not_cancelled = ~Q(crm_orders__status="Cancelled")
-        queryset = Customer.objects.filter(is_staff=False).annotate(
+        queryset = Customer.objects.filter(is_staff=False)
+        if getattr(self, "action", None) in {"restore", "permanent_delete"}:
+            pass
+        elif getattr(self, "action", None) in {"retrieve", "update", "partial_update"} and is_super_admin(self.request.user):
+            pass
+        elif str(self.request.query_params.get("archived") or "").lower() in {"1", "true", "yes"}:
+            queryset = queryset.filter(is_active=False) if is_super_admin(self.request.user) else queryset.none()
+        else:
+            queryset = queryset.filter(is_active=True)
+        queryset = queryset.annotate(
             lead_count=Count("crm_leads", distinct=True),
             quotation_count=Count("crm_quotations", distinct=True),
             order_count=Count("crm_orders", distinct=True),
@@ -485,6 +603,9 @@ class CRMCustomerViewSet(
             "first_name": customer.first_name, "last_name": customer.last_name,
             "email": customer.email, "phone": customer.phone,
             "is_active": customer.is_active, "is_staff": customer.is_staff,
+            "archived_at": customer.archived_at,
+            "archived_by": customer.archived_by_id,
+            "archived_by_name": str(customer.archived_by) if customer.archived_by else None,
             "date_joined": customer.date_joined, "last_login": customer.last_login,
             "phone_verified_at": customer.phone_verified_at,
             "email_verified_at": customer.email_verified_at,
@@ -503,8 +624,220 @@ class CRMCustomerViewSet(
             "is_returning_customer": customer.valid_order_count > 1,
         }
 
+    def destroy(self, request, *args, **kwargs):
+        customer = self.get_object()
+        customer.is_active = False
+        customer.archived_at = timezone.now()
+        customer.archived_by = request.user
+        customer.save(update_fields=("is_active", "archived_at", "archived_by"))
+        return Response({"message": "Customer archived."})
+
+    @action(detail=True, methods=["post"], url_path="restore")
+    def restore(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        customer = self.get_object()
+        customer.is_active = True
+        customer.archived_at = None
+        customer.archived_by = None
+        customer.save(update_fields=("is_active", "archived_at", "archived_by"))
+        return Response({"message": "Customer restored."})
+
+    @action(detail=True, methods=["delete"], url_path="permanent-delete")
+    def permanent_delete(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        customer = self.get_object()
+        if customer.crm_orders.exists() or customer.crm_invoices.exists() or customer.crm_quotations.exists() or customer.crm_leads.exists():
+            return Response({"message": "Customer cannot be permanently deleted because it has business history. Archive it instead."}, status=409)
+        try:
+            customer.delete()
+        except ProtectedError:
+            return Response({"message": "Customer cannot be permanently deleted because it has protected related records. Archive it instead."}, status=409)
+        return Response(status=204)
+
     def list(self, request, *args, **kwargs):
         return Response([self.summary(customer) for customer in self.get_queryset()[:200]])
+
+    @staticmethod
+    def _normalize_import_header(value):
+        return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+    @classmethod
+    def _customer_import_field(cls, header):
+        aliases = {
+            "customerid": "id", "id": "id",
+            "customername": "name", "name": "name", "fullname": "name",
+            "firstname": "first_name", "first": "first_name",
+            "lastname": "last_name", "surname": "last_name",
+            "phonenumber": "phone", "mobile": "phone", "mobilenumber": "phone",
+            "phone": "phone", "contact": "phone", "contactnumber": "phone",
+            "emailaddress": "email", "email": "email",
+            "address": "address", "primaryaddress": "address",
+            "city": "city", "pincode": "pincode", "pin": "pincode",
+            "postalcode": "pincode", "postcode": "pincode", "zipcode": "pincode",
+            "zip": "pincode", "status": "status", "customerstatus": "status",
+        }
+        return aliases.get(cls._normalize_import_header(header))
+
+    @staticmethod
+    def _split_customer_name(name):
+        parts = str(name or "").strip().split()
+        if not parts:
+            return "", ""
+        return parts[0], " ".join(parts[1:])
+
+    def _read_customer_import_rows(self, upload):
+        name = str(getattr(upload, "name", "") or "")
+        extension = name.rsplit(".", 1)[-1].casefold() if "." in name else ""
+        if extension == "csv":
+            text = upload.read().decode("utf-8-sig")
+            return list(csv.reader(io.StringIO(text)))
+        if extension == "xlsx":
+            from openpyxl import load_workbook
+            workbook = load_workbook(upload, read_only=True, data_only=True)
+            sheet = workbook.active
+            return [[cell for cell in row] for row in sheet.iter_rows(values_only=True)]
+        raise ValueError("Upload a CSV or XLSX customer file.")
+
+    def _import_customer_row(self, data, request):
+        customer = None
+        customer_id = data.get("id")
+        phone = data.get("phone")
+        email = data.get("email")
+        if customer_id:
+            customer = get_user_model().objects.filter(id=customer_id, is_staff=False).first()
+            if not customer:
+                raise ValueError("Customer ID was not found.")
+        if not customer and phone:
+            matches = get_user_model().objects.filter(phone=phone, is_staff=False)
+            if matches.count() > 1:
+                raise ValueError("Multiple existing customers use this phone number.")
+            customer = matches.first()
+        if not customer and email:
+            matches = get_user_model().objects.filter(email__iexact=email, is_staff=False)
+            if matches.count() > 1:
+                raise ValueError("Multiple existing customers use this email address.")
+            customer = matches.first()
+
+        name = data.get("name")
+        first_name = data.get("first_name")
+        last_name = data.get("last_name")
+        if name and not first_name:
+            first_name, split_last = self._split_customer_name(name)
+            last_name = last_name or split_last
+        if not str(first_name or "").strip():
+            raise ValueError("Missing customer name.")
+        if not str(phone or "").strip():
+            raise ValueError("Missing phone number.")
+
+        payload = {
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "email": email or "",
+            "phone": phone,
+            "is_active": data.get("status", "active").casefold() not in {"inactive", "archived", "disabled", "false", "0"},
+        }
+        address_payload = {
+            "title": "Primary Address",
+            "person_name": " ".join(filter(None, [payload["first_name"], payload["last_name"]])).strip(),
+            "phone": phone,
+            "address": data.get("address") or "",
+            "city": data.get("city") or "",
+            "pincode": data.get("pincode") or "",
+            "is_primary": True,
+        }
+        if address_payload["address"] or address_payload["city"] or address_payload["pincode"]:
+            primary = customer.customeraddress_set.order_by("-is_primary", "id").first() if customer else None
+            if primary:
+                address_payload["id"] = primary.id
+            payload["addresses"] = [address_payload]
+        serializer = CRMCustomerUpdateSerializer(
+            customer,
+            data=payload,
+            partial=bool(customer),
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        return serializer.save(), bool(customer)
+
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_file(self, request):
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"message": "Select a CSV or XLSX file to import."}, status=400)
+        if upload.size > 5 * 1024 * 1024:
+            return Response({"message": "Customer import file must be 5 MB or smaller."}, status=400)
+        try:
+            rows = self._read_customer_import_rows(upload)
+        except Exception as exc:
+            return Response({"message": str(exc)}, status=400)
+        rows = [list(row) for row in rows if any(str(cell or "").strip() for cell in row)]
+        if not rows:
+            return Response({"message": "The import file is empty."}, status=400)
+        headers = [str(cell or "").strip() for cell in rows[0]]
+        mapped = [self._customer_import_field(header) for header in headers]
+        unknown = [headers[index] for index, field in enumerate(mapped) if headers[index] and not field]
+        if unknown:
+            return Response({"message": "Some columns are not supported.", "unknown_columns": unknown}, status=400)
+        if not any(field in {"name", "first_name"} for field in mapped) or "phone" not in mapped:
+            return Response({"message": "Import requires customer name and phone columns."}, status=400)
+
+        result = {"created": 0, "updated": 0, "skipped": 0, "failed": 0, "errors": [], "unknown_columns": []}
+        with transaction.atomic():
+            for row_number, row in enumerate(rows[1:], start=2):
+                row_data = {}
+                for index, field in enumerate(mapped):
+                    if not field:
+                        continue
+                    value = row[index] if index < len(row) else ""
+                    value = "" if value is None else str(value).strip()
+                    if value:
+                        row_data[field] = value
+                if not row_data:
+                    result["skipped"] += 1
+                    continue
+                try:
+                    _, updated = self._import_customer_row(row_data, request)
+                    result["updated" if updated else "created"] += 1
+                except Exception as exc:
+                    result["failed"] += 1
+                    detail = getattr(exc, "detail", exc)
+                    result["errors"].append({"row": row_number, "reason": str(detail)})
+        return Response(result)
+
+    @action(detail=False, methods=["get"], url_path="export")
+    def export_file(self, request):
+        queryset = self.get_queryset()
+        ids = [value for value in str(request.query_params.get("ids") or "").split(",") if value.strip()]
+        if ids:
+            queryset = queryset.filter(id__in=ids)
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="customers.csv"'
+        writer = csv.writer(response)
+        writer.writerow([
+            "Customer ID", "Name", "Phone", "Email", "Address", "City", "Pincode",
+            "Total Orders", "Total Revenue", "Last Order", "Customer Status", "Repeat Customer",
+        ])
+        for customer in queryset[:1000]:
+            primary = customer.customeraddress_set.order_by("-is_primary", "id").first()
+            writer.writerow([
+                customer.id,
+                " ".join(filter(None, [customer.first_name, customer.last_name])).strip() or customer.username,
+                customer.phone or "",
+                customer.email or "",
+                primary.address if primary else "",
+                primary.city if primary else "",
+                primary.pincode if primary else "",
+                customer.valid_order_count,
+                customer.total_revenue or 0,
+                customer.last_order_date or "",
+                "Active" if customer.is_active else "Inactive",
+                "Yes" if customer.valid_order_count > 1 else "No",
+            ])
+        return response
 
     @action(detail=False, methods=["get"], url_path="analytics")
     def analytics(self, request):
@@ -657,6 +990,16 @@ def _confirm_quotation_order(quotation, user):
     CRMOrderViewSet.create_direct so a directly-created order goes through the
     exact same item/activity pipeline as a normal quotation-confirmed order."""
     lead = quotation.lead
+    if quotation.customer is None:
+        customer = sync_customer_from_crm_details({
+            "customer_name": quotation.customer_name or (lead.customer_name if lead else ""),
+            "phone": quotation.phone or (lead.phone if lead else ""),
+            "email": quotation.email or (lead.email if lead else ""),
+            "address": quotation.address or quotation.billing_address or (lead.address if lead else ""),
+        }, user)
+        if customer is not None:
+            quotation.customer = customer
+            quotation.save(update_fields=("customer", "updated_on"))
     order, created = CRMOrder.objects.get_or_create(
         quotation=quotation,
         defaults={
@@ -699,18 +1042,32 @@ def _confirm_quotation_order(quotation, user):
     return order, created
 
 
-class QuotationViewSet(viewsets.ModelViewSet):
+class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
+    lifecycle_label = "Quotation"
     serializer_class = QuotationSerializer
     queryset = Quotation.objects.select_related("lead", "customer", "cake").prefetch_related("versions").all()
 
     def get_serializer_class(self):
         return QuotationListSerializer if self.action == "list" else QuotationSerializer
 
+    def permanent_delete_blocker(self, instance):
+        if instance.payments.exists():
+            return "Quotation cannot be permanently deleted because it has payment history. Archive it instead."
+        if instance.versions.exists():
+            return "Quotation cannot be permanently deleted because it has quotation versions. Archive it instead."
+        if hasattr(instance, "crm_order"):
+            return "Quotation cannot be permanently deleted because it has a related order. Archive it instead."
+        if instance.activities.exists():
+            return "Quotation cannot be permanently deleted because it has CRM history. Archive it instead."
+        return None
+
     def perform_create(self, serializer):
-        phone = serializer.validated_data.get("phone")
+        customer = serializer.validated_data.get("customer")
+        if customer is None:
+            customer = sync_customer_from_crm_details(serializer.validated_data, self.request.user)
         quotation = serializer.save(
             created_by=self.request.user,
-            customer=find_existing_customer(phone) if phone else None,
+            customer=customer,
         )
         QuotationActivity.objects.create(
             quotation=quotation, action="Quotation Created",
@@ -720,7 +1077,10 @@ class QuotationViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         previous = serializer.instance.status
-        quotation = serializer.save()
+        customer = serializer.validated_data.get("customer", serializer.instance.customer)
+        if customer is None and any(field in serializer.validated_data for field in ("customer_name", "phone", "email", "address", "billing_address")):
+            customer = sync_customer_from_crm_details(serializer.validated_data, self.request.user)
+        quotation = serializer.save(customer=customer) if customer is not None else serializer.save()
         if previous != quotation.status and quotation.lead:
             LeadActivity.objects.create(
                 lead=quotation.lead, action=f"Quotation {quotation.status}",
@@ -763,9 +1123,16 @@ class QuotationViewSet(viewsets.ModelViewSet):
         if cached is not None:
             return Response(cached)
         Customer = get_user_model()
-        customers = Customer.objects.filter(is_staff=False).filter(
+        customers = Customer.objects.filter(is_staff=False)
+        token_query = Q()
+        for token in [part for part in term.split() if part]:
+            token_query &= (
+                Q(first_name__icontains=token) | Q(last_name__icontains=token) |
+                Q(phone__icontains=token) | Q(email__icontains=token)
+            )
+        customers = customers.filter(
             Q(first_name__icontains=term) | Q(last_name__icontains=term) |
-            Q(phone__icontains=term) | Q(email__icontains=term)
+            Q(phone__icontains=term) | Q(email__icontains=term) | token_query
         ).prefetch_related("customeraddress_set")[:20]
         results = [{
             "id": customer.id,
@@ -832,6 +1199,11 @@ class QuotationViewSet(viewsets.ModelViewSet):
         action_name = request.data.get("action")
         if action_name not in transitions:
             return Response({"message": "Unknown quotation action."}, status=400)
+        if is_quotation_locked(quotation):
+            return Response(
+                {"message": "This quotation is finalized with a confirmed order and cannot be changed."},
+                status=400,
+            )
         allowed, new_status, activity = transitions[action_name]
         if quotation.status not in allowed:
             return Response(
@@ -901,7 +1273,8 @@ class QuotationViewSet(viewsets.ModelViewSet):
         )
 
 
-class CRMOrderViewSet(viewsets.ModelViewSet):
+class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
+    lifecycle_label = "Order"
     serializer_class = CRMOrderSerializer
     queryset = CRMOrder.objects.select_related(
         "quotation", "quotation__lead", "customer", "delivery_staff",
@@ -916,6 +1289,17 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         if end:
             queryset = queryset.filter(Q(delivery_date__lte=end) | Q(delivery_date__isnull=True, event_date__lte=end))
         return queryset
+
+    def permanent_delete_blocker(self, instance):
+        if instance.advance_paid and instance.advance_paid > 0:
+            return "Order cannot be permanently deleted because it has payment history. Archive it instead."
+        if instance.status not in {"Cancelled"}:
+            return "Order cannot be permanently deleted unless it is cancelled and has no dependencies. Archive it instead."
+        if hasattr(instance, "invoice") or hasattr(instance, "delivery"):
+            return "Order cannot be permanently deleted because it has invoice or delivery history. Archive it instead."
+        if instance.items.exists() or instance.quotation.activities.exists():
+            return "Order cannot be permanently deleted because it has order or CRM history. Archive it instead."
+        return None
 
     def create(self, request, *args, **kwargs):
         return Response(
@@ -952,7 +1336,7 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             customer = create_serializer.validated_data.get("customer")
             if customer is None:
-                customer = find_existing_customer(create_serializer.validated_data.get("phone"))
+                customer = sync_customer_from_crm_details(create_serializer.validated_data, request.user)
             quotation = create_serializer.save(created_by=request.user, customer=customer)
             confirm_serializer = QuotationSerializer(
                 quotation,
@@ -971,29 +1355,42 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
-        order = self.get_object()
-        serializer = QuotationPaymentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        amount = serializer.validated_data["amount"]
-        if amount <= 0 or amount > order.balance_amount:
-            return Response(
-                {"amount": ["Enter an amount greater than zero and no more than the balance due."]},
-                status=400,
+        with transaction.atomic():
+            order = CRMOrder.objects.select_for_update().select_related("quotation").get(pk=pk)
+            invoice = None
+            if hasattr(order, "invoice"):
+                invoice = CRMInvoice.objects.select_for_update().get(order=order)
+                if invoice.status == "Cancelled":
+                    return Response({"message": "Payments cannot be recorded against a cancelled invoice."}, status=400)
+            if order.status == "Cancelled":
+                return Response({"message": "Payments cannot be recorded against a cancelled order."}, status=400)
+            serializer = QuotationPaymentSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            amount = serializer.validated_data["amount"]
+            if amount <= 0 or amount > order.balance_amount:
+                return Response(
+                    {"amount": ["Enter an amount greater than zero and no more than the balance due."]},
+                    status=400,
+                )
+            reference = serializer.validated_data.get("transaction_reference")
+            if reference and QuotationPayment.objects.filter(
+                quotation=order.quotation, transaction_reference=reference,
+            ).exists():
+                return Response({"transaction_reference": ["This payment reference has already been recorded."]}, status=400)
+            payment = serializer.save(
+                quotation=order.quotation, collected_by=request.user
             )
-        payment = serializer.save(
-            quotation=order.quotation, collected_by=request.user
-        )
-        order.advance_paid += payment.amount
-        order.save(update_fields=("advance_paid", "updated_on"))
-        if hasattr(order, "invoice"):
-            order.invoice.amount_paid = order.advance_paid
-            order.invoice.balance_amount = order.balance_amount
-            order.invoice.status = "Paid" if order.balance_amount == 0 else order.invoice.status
-            order.invoice.save(update_fields=("amount_paid", "balance_amount", "status", "updated_on"))
-        QuotationActivity.objects.create(
-            quotation=order.quotation, action="Order Payment Recorded",
-            description=str(payment.amount), staff=request.user,
-        )
+            order.advance_paid += payment.amount
+            order.save(update_fields=("advance_paid", "updated_on"))
+            if invoice:
+                invoice.amount_paid = order.advance_paid
+                invoice.balance_amount = order.balance_amount
+                invoice.status = "Paid" if order.balance_amount == 0 else invoice.status
+                invoice.save(update_fields=("amount_paid", "balance_amount", "status", "updated_on"))
+            QuotationActivity.objects.create(
+                quotation=order.quotation, action="Order Payment Recorded",
+                description=str(payment.amount), staff=request.user,
+            )
         return Response(self.get_serializer(order).data, status=201)
 
     @action(detail=True, methods=["post"], url_path="workflow-action")
@@ -1070,7 +1467,7 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
             quotation = order.quotation
             invoice, created = CRMInvoice.objects.get_or_create(order=order, defaults={
                 "customer": order.customer, "customer_name": order.customer_name, "phone": order.phone,
-                "address": order.delivery_address or quotation.address,
+                "address": order.delivery_address or quotation.address or quotation.billing_address,
                 "subtotal": quotation.subtotal, "gst_amount": quotation.gst_amount,
                 "total_amount": order.total_amount, "amount_paid": order.advance_paid,
                 "balance_amount": order.balance_amount,
@@ -1084,7 +1481,8 @@ class CRMOrderViewSet(viewsets.ModelViewSet):
         return Response({"message": "Invoice generated." if created else "Invoice already exists.", "data": CRMInvoiceSerializer(invoice).data}, status=201 if created else 200)
 
 
-class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+class CRMInvoiceViewSet(ArchivedLifecycleMixin, viewsets.ReadOnlyModelViewSet):
+    lifecycle_label = "Invoice"
     serializer_class = CRMInvoiceSerializer
     queryset = CRMInvoice.objects.select_related("order", "order__quotation", "customer").prefetch_related(
         "order__items", "order__quotation__payments", "order__quotation__activities",
@@ -1099,33 +1497,68 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(generated_on__date__lte=end)
         return queryset
 
+    def permanent_delete_blocker(self, instance):
+        if instance.amount_paid and instance.amount_paid > 0:
+            return "Invoice cannot be permanently deleted because it has payment history. Archive it instead."
+        if instance.status != "Cancelled":
+            return "Invoice cannot be permanently deleted unless it is cancelled and has no dependencies. Archive it instead."
+        if instance.order.quotation.payments.exists() or instance.order.quotation.activities.exists():
+            return "Invoice cannot be permanently deleted because it has payment or CRM history. Archive it instead."
+        return None
+
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
-        invoice = self.get_object()
-        if invoice.status not in {"Generated", "Issued"}:
-            return Response({"message": f"This invoice cannot be cancelled while it is {invoice.status}."}, status=400)
-        invoice.status = "Cancelled"
-        invoice.save(update_fields=("status", "updated_on"))
-        QuotationActivity.objects.create(
-            quotation=invoice.order.quotation, action="Invoice Cancelled",
-            description=invoice.invoice_no, staff=request.user,
-        )
+        with transaction.atomic():
+            invoice = CRMInvoice.objects.select_for_update().select_related("order", "order__quotation").get(pk=pk)
+            order = CRMOrder.objects.select_for_update().get(pk=invoice.order_id)
+            delivery = None
+            if hasattr(order, "delivery"):
+                delivery = CRMDelivery.objects.select_for_update().get(order=order)
+                if delivery.delivery_status != "Pending":
+                    return Response(
+                        {"message": f"This invoice cannot be cancelled while delivery is {delivery.delivery_status}."},
+                        status=400,
+                    )
+            if invoice.status not in {"Generated", "Issued"}:
+                return Response({"message": f"This invoice cannot be cancelled while it is {invoice.status}."}, status=400)
+            invoice.status = "Cancelled"
+            invoice.save(update_fields=("status", "updated_on"))
+            if order.status in {"Invoice Pending", "Invoice Generated"}:
+                order.status = "Ready"
+                order.save(update_fields=("status", "updated_on"))
+            if delivery:
+                delivery.delivery_status = "Cancelled"
+                delivery.save(update_fields=("delivery_status", "updated_on"))
+            QuotationActivity.objects.create(
+                quotation=invoice.order.quotation, action="Invoice Cancelled",
+                description=invoice.invoice_no, staff=request.user,
+            )
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
         with transaction.atomic():
             invoice = CRMInvoice.objects.select_for_update().select_related("order", "order__quotation").get(pk=pk)
+            order = CRMOrder.objects.select_for_update().get(pk=invoice.order_id)
+            if invoice.status == "Cancelled":
+                return Response({"message": "Payments cannot be recorded against a cancelled invoice."}, status=400)
+            if order.status == "Cancelled":
+                return Response({"message": "Payments cannot be recorded against a cancelled order."}, status=400)
             serializer = QuotationPaymentSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             amount = serializer.validated_data["amount"]
             if amount <= 0 or amount > invoice.balance_amount:
                 return Response({"amount": ["Enter an amount greater than zero and no more than the balance due."]}, status=400)
+            reference = serializer.validated_data.get("transaction_reference")
+            if reference and QuotationPayment.objects.filter(
+                quotation=invoice.order.quotation, transaction_reference=reference,
+            ).exists():
+                return Response({"transaction_reference": ["This payment reference has already been recorded."]}, status=400)
             payment = serializer.save(quotation=invoice.order.quotation, collected_by=request.user)
-            invoice.order.advance_paid += payment.amount
-            invoice.order.save(update_fields=("advance_paid", "updated_on"))
-            invoice.amount_paid = invoice.order.advance_paid
-            invoice.balance_amount = invoice.order.balance_amount
+            order.advance_paid += payment.amount
+            order.save(update_fields=("advance_paid", "updated_on"))
+            invoice.amount_paid = order.advance_paid
+            invoice.balance_amount = order.balance_amount
             if invoice.balance_amount <= 0:
                 invoice.status = "Paid"
             invoice.save(update_fields=("amount_paid", "balance_amount", "status", "updated_on"))
@@ -1137,6 +1570,8 @@ class CRMInvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"], url_path="payment-completed")
     def payment_completed(self, request, pk=None):
         invoice = self.get_object()
+        if invoice.status == "Cancelled":
+            return Response({"message": "Cancelled invoices cannot be marked paid."}, status=400)
         if invoice.balance_amount > 0:
             return Response({"message": "Collect the full balance before completing payment."}, status=400)
         if invoice.status != "Paid":
@@ -1210,7 +1645,8 @@ def _missing_delivery_fields(delivery):
     return [key for key, value in checks if not value]
 
 
-class CRMDeliveryViewSet(viewsets.ModelViewSet):
+class CRMDeliveryViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
+    lifecycle_label = "Delivery"
     serializer_class = CRMDeliverySerializer
     queryset = CRMDelivery.objects.select_related("order", "order__quotation", "order__invoice", "order__customer", "customer_address", "delivery_person", "external_platform", "external_delivery_person").prefetch_related(
         "order__items", "order__quotation__activities", "order__customer__customeraddress_set", "damage_images",
@@ -1225,6 +1661,15 @@ class CRMDeliveryViewSet(viewsets.ModelViewSet):
         if end:
             scheduled &= (Q(pickup_time__date__lte=end) | Q(delivery_time__date__lte=end) | Q(porter_time__date__lte=end))
         return queryset.filter(scheduled) if start or end else queryset
+
+    def permanent_delete_blocker(self, instance):
+        if instance.delivery_status not in {"Pending", "Cancelled"}:
+            return "Delivery cannot be permanently deleted because it has delivery history. Archive it instead."
+        if instance.damage_images.exists():
+            return "Delivery cannot be permanently deleted because it has damage history. Archive it instead."
+        if instance.order_id:
+            return "Delivery cannot be permanently deleted because it is related to an order. Archive it instead."
+        return None
 
     def create(self, request, *args, **kwargs):
         return Response({"message": "Deliveries are created from paid invoices."}, status=405)
@@ -1309,9 +1754,10 @@ class CRMDeliveryViewSet(viewsets.ModelViewSet):
             return Response({"message": "Select at least one image."}, status=400)
         created = []
         for upload in uploads:
-            ext = upload.name.rsplit(".", 1)[-1].lower()
-            if ext not in {"jpg", "jpeg", "png", "webp"}:
-                return Response({"message": f"{upload.name}: unsupported file type."}, status=400)
+            try:
+                ext = validate_image_upload(upload)
+            except ValueError as error:
+                return Response({"message": f"{upload.name}: {error}"}, status=400)
             file_name = uuid.uuid4()
             key = f"{aws_domain_name}/crm/delivery/damage/{file_name}.{ext}"
             if not put_image_to_s3(upload, key):

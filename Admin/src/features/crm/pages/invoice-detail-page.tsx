@@ -16,7 +16,9 @@ import {
 } from "@/features/crm/invoices-hooks";
 import { useCompanyConfig } from "@/features/crm/quotations-hooks";
 import { RecordInvoicePaymentDialog } from "@/features/crm/components/record-invoice-payment-dialog";
+import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { buildInvoicePdf } from "@/features/crm/lib/pdf-template";
+import { addressOrFallback } from "@/features/crm/lib/address-fallback";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
 
 function InvoiceDetailPage() {
@@ -132,7 +134,7 @@ function InvoiceDetailPage() {
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between"><dt className="text-muted-foreground">Name</dt><dd className="font-medium">{invoice.customer_name}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Phone</dt><dd className="tabular">{invoice.phone}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted-foreground">Address</dt><dd className="max-w-[60%] text-right">{invoice.address || invoice.delivery_address || "—"}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Address</dt><dd className="max-w-[60%] text-right">{addressOrFallback(invoice.address, invoice.delivery_address)}</dd></div>
           </dl>
         </SectionCard>
 
@@ -205,20 +207,7 @@ function InvoiceDetailPage() {
       </SectionCard>
 
       <SectionCard title="Financial activity">
-        {invoice.timeline?.length ? (
-          <ol className="relative space-y-4 border-l border-border pl-5">
-            {invoice.timeline.map((a) => (
-              <li key={a.id} className="relative">
-                <span className="absolute top-1.5 -left-[1.4rem] size-2.5 rounded-full bg-primary ring-4 ring-card" />
-                <p className="text-sm"><span className="font-semibold">{a.staff_name}</span> <span className="text-muted-foreground">{a.action}</span></p>
-                {a.description && <p className="text-xs text-muted-foreground">{a.description}</p>}
-                <p className="mt-0.5 text-[11px] text-muted-foreground/80">{new Date(a.created_on).toLocaleString("en-IN")}</p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <EmptyState title="Payment and Delivery handoff events will appear here" />
-        )}
+        <CrmHistoryTimeline events={invoice.timeline} emptyTitle="Payment and Delivery handoff events will appear here" />
       </SectionCard>
 
       <RecordInvoicePaymentDialog invoice={invoice} open={paymentOpen} onOpenChange={setPaymentOpen} />

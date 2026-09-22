@@ -3,6 +3,7 @@ import uuid
 from rest_framework import serializers
 from cakery.common import aws_domain_name, get_s3_file_url
 from cakery.file_upload_to_aws import put_image_to_s3
+from cakery.uploads import validate_image_upload
 from delivery_person.models import DeliveryPerson, DeliveryPlatform, ExternalDeliveryPerson
 
 
@@ -22,7 +23,7 @@ def delivery_person_serializer(obj):
 
 
 class DeliveryStaffSerializer(serializers.ModelSerializer):
-    image = serializers.ImageField(write_only=True, required=False)
+    image = serializers.FileField(write_only=True, required=False)
     image_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -39,9 +40,10 @@ class DeliveryStaffSerializer(serializers.ModelSerializer):
         image = validated_data.pop("image", None)
         if not image:
             return
-        ext = image.name.rsplit(".", 1)[-1].lower() if "." in image.name else ""
-        if ext not in {"jpg", "jpeg", "png", "webp"}:
-            raise serializers.ValidationError({"image": "Supported images: JPG, JPEG, PNG and WEBP."})
+        try:
+            ext = validate_image_upload(image)
+        except ValueError as error:
+            raise serializers.ValidationError({"image": str(error)})
         image_name = uuid.uuid4()
         key = f"{aws_domain_name}/delivery-person/profile/{image_name}.{ext}"
         if not put_image_to_s3(image, key):

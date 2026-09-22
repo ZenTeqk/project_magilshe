@@ -219,7 +219,7 @@ def offer_serializer(obj):
     res['offer_from'] = obj.offer_from
     res['offer_to'] = obj.offer_to
     res['status'] = obj.status
-    res['url'] = None if(obj.image_name == "" or obj.image_name == None) else "{}/{}/cake/{}.{}".format(settings.IMAGE_BASE_URL, aws_domain_name, obj.image_name, obj.image_ext)
+    res['url'] = None if(obj.image_name == "" or obj.image_name == None) else "{}/{}/offer/banner/{}.{}".format(settings.IMAGE_BASE_URL, aws_domain_name, obj.image_name, obj.image_ext)
 
     if obj.id_list:
         cake_prices = CakePrice.objects.filter(id__in=obj.id_list)

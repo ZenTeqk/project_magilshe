@@ -155,8 +155,6 @@ const Cart = () => {
     let requestData = {
       id: 0,
       cart_id_list: cartIDList,
-      total_amount: totalPrice,
-      total_qty: cartIDList?.length,
       delivery_person_name: formData?.deliveryName,
       delivery_person_phone: formData?.deliveryPhone,
       delivery_person_email: "",
@@ -195,7 +193,6 @@ const Cart = () => {
       let requestData = {
         id: CartItem?.id,
         cake_price: CartItem?.cake_price_id,
-        price: CartItem?.price,
         qty: operation === "increase" ? CartItem?.qty + 1 : Math.max(1, CartItem?.qty - 1),
         type: CartItem?.occasion_type,
         date: CartItem?.occasion_date,

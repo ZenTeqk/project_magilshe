@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import type { CompanyConfig, Quotation } from "@/features/crm/quotations-hooks";
+import { formatTimeOfDay } from "@/lib/format-time";
+import { addressOrFallback } from "./address-fallback";
 import {
   PDF, displayDate, displayUnit, drawBakeryMessage, drawDocumentHeader, drawFooter, drawInfoBlock, drawSectionLabel,
   drawTableHeader, drawTableRowBackground, drawTotalsPanel, loadBrandLogo, money,
@@ -15,25 +17,22 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     ["Date", displayDate(q.created_on)],
     ["Valid until", q.valid_until ? displayDate(q.valid_until) : null],
     ["Status", q.status], ["Payment", q.payment_method || "Not recorded"],
+    ["Occasion", q.occasion],
+    ["Event", q.event_date ? displayDate(q.event_date) : null],
+    ["Delivery", q.delivery_date ? `${displayDate(q.delivery_date)}${q.delivery_time ? `  ${formatTimeOfDay(q.delivery_time)}` : ""}` : null],
+    ["Method", q.delivery_type],
   ];
   const customerRows: Array<[string, unknown]> = [
     ["Name", q.customer_name], ["Phone", q.phone],
     ["Email", q.email],
-    ["Address", q.billing_address || q.address],
+    ["Address", addressOrFallback(q.billing_address, q.address)],
+    ["Delivery", q.address && q.address !== q.billing_address ? q.address : null],
   ];
   const cardWidth = 84;
   const cardHeight = Math.max(measureInfoBlockHeight(doc, detailRows, cardWidth), measureInfoBlockHeight(doc, customerRows, cardWidth));
   const detailsBottom = drawInfoBlock(doc, "Quote details", detailRows, PDF.left, y, cardWidth, cardHeight);
   const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 110, y, cardWidth, cardHeight);
   y = Math.max(customerBottom, detailsBottom) + 4;
-
-  if (q.occasion || q.event_date || q.delivery_date || (q.address && q.address !== q.billing_address)) {
-    y = drawInfoBlock(doc, "Event & delivery details", [
-      ["Occasion", q.occasion], ["Event date", q.event_date ? displayDate(q.event_date) : null],
-      ["Delivery", q.delivery_date ? `${displayDate(q.delivery_date)}${q.delivery_time ? `  ${q.delivery_time}` : ""}` : null],
-      ["Method", q.delivery_type], ["Address", q.address && q.address !== q.billing_address ? q.address : null],
-    ], PDF.left, y, PDF.right - PDF.left) + 5;
-  }
 
   const headers = [
     { text: "#", x: 24, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 31 }, { text: "FLAVOUR", x: 86 },
@@ -63,9 +62,9 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   const balance = Math.max(0, grandTotal - advance);
 
   items.forEach((item, index) => {
-    const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 54).slice(0, 5);
-    const flavourLines = doc.splitTextToSize(String(item.flavour || "-"), 25).slice(0, 4);
-    const rowHeight = Math.max(14, Math.max(productLines.length, flavourLines.length) * 4.5 + 5);
+    const productLines = doc.splitTextToSize([item.item_name, item.description].filter(Boolean).join(" - "), 54).slice(0, 4);
+    const flavourLines = doc.splitTextToSize(String(item.flavour || "-"), 25).slice(0, 3);
+    const rowHeight = Math.max(11.5, Math.max(productLines.length, flavourLines.length) * 3.9 + 4.2);
     if (y + rowHeight > 267) {
       doc.addPage();
       y = drawDocumentHeader(doc, "QUOTATION", "No.", q.quotation_no, q.created_on, company, logo, true);
@@ -73,15 +72,15 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     }
     const qty = Number(item.quantity) || 0, rate = Number(item.rate) || 0, gst = Number(item.gst_percentage) || 0;
     drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(8.3); doc.setTextColor(...PDF.ink);
-    doc.text(String(index + 1), 24, y + 6.5, { align: "center" }); doc.text(productLines, 31, y + 6.5); doc.text(flavourLines, 86, y + 6.5);
-    doc.text(String(qty), 118, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6.5, { align: "center" });
-    doc.text(money(rate), 158, y + 6.5, { align: "right" }); doc.text(`${gst}%`, 169, y + 6.5, { align: "center" });
-    doc.setFont("helvetica", "bold"); doc.text(money(qty * rate), 190, y + 6.5, { align: "right" });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(...PDF.ink);
+    doc.text(String(index + 1), 24, y + 6, { align: "center" }); doc.text(productLines, 31, y + 6); doc.text(flavourLines, 86, y + 6);
+    doc.text(String(qty), 118, y + 6, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6, { align: "center" });
+    doc.text(money(rate), 158, y + 6, { align: "right" }); doc.text(`${gst}%`, 169, y + 6, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.text(money(qty * rate), 190, y + 6, { align: "right" });
     y += rowHeight;
   });
 
-  const totalsHeight = 54 + (Number(q.discount_amount || 0) ? 6.5 : 0);
+  const totalsHeight = 47 + (Number(q.discount_amount || 0) ? 5.6 : 0);
   if (y + totalsHeight > 267) {
     doc.addPage();
     y = drawDocumentHeader(doc, "QUOTATION", "No.", q.quotation_no, q.created_on, company, logo, true);

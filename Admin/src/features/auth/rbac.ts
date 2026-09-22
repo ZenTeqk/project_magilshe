@@ -27,6 +27,7 @@ export function useCurrentAccess(enabled = true) {
 }
 
 export function hasPermission(access: CurrentAccess | undefined, code: string) {
+  if (code === "__super_admin__") return Boolean(access?.is_super_admin);
   return Boolean(access?.is_super_admin || access?.permissions.includes(code));
 }
 
@@ -50,7 +51,8 @@ const routes: Array<[string, string]> = [
 ];
 
 export function permissionForRoute(pathname: string) {
-  if (pathname === "/crm/customers") return "customers.analytics.view";
+  if (pathname === "/crm/customers") return "customers.data.view";
   if (pathname.startsWith("/crm/customers/")) return "customers.data.view";
+  if (pathname === "/archived-records") return "__super_admin__";
   return routes.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.[1];
 }
