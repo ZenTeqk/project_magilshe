@@ -154,11 +154,11 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 queryset = queryset.filter(**{f"{field}__date__lte": to_date})
             return queryset
 
-        leads_qs = in_range(Lead.objects.all(), "created_on")
-        quotations_qs = in_range(Quotation.objects.all(), "created_on")
-        orders_qs = in_range(CRMOrder.objects.all(), "confirmed_on")
-        invoices_qs = in_range(CRMInvoice.objects.all(), "generated_on")
-        deliveries_qs = in_range(CRMDelivery.objects.all(), "created_on")
+        leads_qs = in_range(Lead.objects.filter(is_archived=False), "created_on")
+        quotations_qs = in_range(Quotation.objects.filter(is_archived=False), "created_on")
+        orders_qs = in_range(CRMOrder.objects.filter(is_archived=False), "confirmed_on")
+        invoices_qs = in_range(CRMInvoice.objects.filter(is_archived=False), "generated_on")
+        deliveries_qs = in_range(CRMDelivery.objects.filter(is_archived=False), "created_on")
         follow_ups_qs = leads_qs.filter(status="Follow-up", follow_up_date__isnull=False)
         lead_counts = dict(leads_qs.values_list("status").annotate(total=models.Count("id")))
         status_counts = {
@@ -191,7 +191,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             "lost": leads_qs.filter(status="Lost").count(),
         }
         workflows = []
-        quotations = in_range(Quotation.objects.select_related(
+        quotations = in_range(Quotation.objects.filter(is_archived=False).select_related(
             "lead", "crm_order", "crm_order__invoice", "crm_order__delivery"
         ), "updated_on").order_by("-updated_on")[:10]
         for quotation in quotations:
@@ -565,7 +565,12 @@ class CRMCustomerViewSet(
         Customer = get_user_model()
         not_cancelled = ~Q(crm_orders__status="Cancelled")
         queryset = Customer.objects.filter(is_staff=False)
-        if getattr(self, "action", None) in {"restore", "permanent_delete"}:
+        if getattr(self, "action", None) in {
+            "restore",
+            "permanent_delete",
+            "deletion_dependencies_action",
+            "clear_deletion_dependencies",
+        }:
             pass
         elif getattr(self, "action", None) in {"retrieve", "update", "partial_update"} and is_super_admin(self.request.user):
             pass
@@ -644,14 +649,70 @@ class CRMCustomerViewSet(
         customer.save(update_fields=("is_active", "archived_at", "archived_by"))
         return Response({"message": "Customer restored."})
 
+    @staticmethod
+    def deletion_dependencies(customer):
+        links = [
+            {
+                "label": "Leads",
+                "count": customer.crm_leads.count(),
+                "records": list(customer.crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Quotations",
+                "count": customer.crm_quotations.count(),
+                "records": list(customer.crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Orders",
+                "count": customer.crm_orders.count(),
+                "records": list(customer.crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Invoices",
+                "count": customer.crm_invoices.count(),
+                "records": list(customer.crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]),
+            },
+        ]
+        links = [link for link in links if link["count"]]
+        return {"has_dependencies": bool(links), "links": links}
+
+    @action(detail=True, methods=["get"], url_path="deletion-dependencies")
+    def deletion_dependencies_action(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        return Response(self.deletion_dependencies(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="clear-deletion-dependencies")
+    def clear_deletion_dependencies(self, request, pk=None):
+        denied = _require_super_admin(request)
+        if denied:
+            return denied
+        customer = self.get_object()
+        confirmation = str(request.data.get("confirmation") or "")
+        if confirmation != "CLEAR CUSTOMER LINKS":
+            return Response({"message": "Type CLEAR CUSTOMER LINKS to confirm clearing customer links."}, status=400)
+        with transaction.atomic():
+            counts = {
+                "leads": customer.crm_leads.update(customer=None),
+                "quotations": customer.crm_quotations.update(customer=None),
+                "orders": customer.crm_orders.update(customer=None),
+                "invoices": customer.crm_invoices.update(customer=None),
+            }
+        return Response({"message": "Customer links cleared. Business records were kept.", "counts": counts})
+
     @action(detail=True, methods=["delete"], url_path="permanent-delete")
     def permanent_delete(self, request, pk=None):
         denied = _require_super_admin(request)
         if denied:
             return denied
         customer = self.get_object()
-        if customer.crm_orders.exists() or customer.crm_invoices.exists() or customer.crm_quotations.exists() or customer.crm_leads.exists():
-            return Response({"message": "Customer cannot be permanently deleted because it has business history. Archive it instead."}, status=409)
+        dependencies = self.deletion_dependencies(customer)
+        if dependencies["has_dependencies"]:
+            return Response({
+                "message": "Customer cannot be permanently deleted because it has business history. Clear linked CRM records first.",
+                "dependencies": dependencies,
+            }, status=409)
         try:
             customer.delete()
         except ProtectedError:

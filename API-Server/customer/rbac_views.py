@@ -21,7 +21,12 @@ class StaffUserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         archived = str(self.request.query_params.get("archived") or "").lower() in {"1", "true", "yes"}
-        if self.action in {"restore", "permanent_delete"}:
+        if self.action in {
+            "restore",
+            "permanent_delete",
+            "deletion_dependencies_action",
+            "clear_deletion_dependencies",
+        }:
             return queryset
         return queryset.filter(is_active=not archived) if (not archived or is_super_admin(self.request.user)) else queryset.none()
 
@@ -54,6 +59,63 @@ class StaffUserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=("is_active", "archived_at", "archived_by"))
         return Response(self.get_serializer(user).data)
 
+    @staticmethod
+    def deletion_dependencies(user):
+        links = [
+            {
+                "label": "Assigned leads",
+                "count": user.assigned_crm_leads.count(),
+                "records": list(user.assigned_crm_leads.order_by("-id").values("id", "lead_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Created quotations",
+                "count": user.created_crm_quotations.count(),
+                "records": list(user.created_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Assigned quotations",
+                "count": user.assigned_crm_quotations.count(),
+                "records": list(user.assigned_crm_quotations.order_by("-id").values("id", "quotation_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Assigned orders",
+                "count": user.assigned_crm_orders.count(),
+                "records": list(user.assigned_crm_orders.order_by("-id").values("id", "order_no", "customer_name", "status")[:20]),
+            },
+            {
+                "label": "Generated invoices",
+                "count": user.generated_crm_invoices.count(),
+                "records": list(user.generated_crm_invoices.order_by("-id").values("id", "invoice_no", "customer_name", "status")[:20]),
+            },
+        ]
+        links = [link for link in links if link["count"]]
+        return {"has_dependencies": bool(links), "links": links}
+
+    @action(detail=True, methods=["get"], url_path="deletion-dependencies")
+    def deletion_dependencies_action(self, request, pk=None):
+        if not is_super_admin(request.user):
+            return Response({"detail": "Only Super Admin can inspect delete blockers."}, status=status.HTTP_403_FORBIDDEN)
+        return Response(self.deletion_dependencies(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="clear-deletion-dependencies")
+    def clear_deletion_dependencies(self, request, pk=None):
+        if not is_super_admin(request.user):
+            return Response({"detail": "Only Super Admin can clear delete blockers."}, status=status.HTTP_403_FORBIDDEN)
+        user = self.get_object()
+        if user == request.user or user.is_superuser or (user.role_id and user.role.is_super_admin):
+            return Response({"message": "A protected Super Admin account cannot be cleared for deletion."}, status=409)
+        confirmation = str(request.data.get("confirmation") or "")
+        if confirmation != "CLEAR USER LINKS":
+            return Response({"message": "Type CLEAR USER LINKS to confirm clearing user links."}, status=400)
+        counts = {
+            "assigned_leads": user.assigned_crm_leads.update(assigned_to=None),
+            "created_quotations": user.created_crm_quotations.update(created_by=None),
+            "assigned_quotations": user.assigned_crm_quotations.update(sales_staff=None),
+            "assigned_orders": user.assigned_crm_orders.update(assigned_staff=None),
+            "generated_invoices": user.generated_crm_invoices.update(generated_by=None),
+        }
+        return Response({"message": "User links cleared. Business records were kept.", "counts": counts})
+
     @action(detail=True, methods=["delete"], url_path="permanent-delete")
     def permanent_delete(self, request, pk=None):
         if not is_super_admin(request.user):
@@ -61,13 +123,12 @@ class StaffUserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         if user == request.user or user.is_superuser or (user.role_id and user.role.is_super_admin):
             return Response({"message": "A protected Super Admin account cannot be permanently deleted."}, status=409)
-        business_refs = (
-            user.assigned_crm_leads.exists() or user.created_crm_quotations.exists() or
-            user.assigned_crm_quotations.exists() or user.assigned_crm_orders.exists() or
-            user.generated_crm_invoices.exists()
-        )
-        if business_refs:
-            return Response({"message": "User cannot be permanently deleted because they own CRM history. Archive it instead."}, status=409)
+        dependencies = self.deletion_dependencies(user)
+        if dependencies["has_dependencies"]:
+            return Response({
+                "message": "User cannot be permanently deleted because they own CRM history. Clear linked CRM records first.",
+                "dependencies": dependencies,
+            }, status=409)
         try:
             user.delete()
         except ProtectedError:

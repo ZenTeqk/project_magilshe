@@ -36,6 +36,17 @@ type ArchivedRow = {
   detailPath: string;
 };
 
+type DependencyLink = {
+  label: string;
+  count: number;
+  records: Array<Record<string, unknown>>;
+};
+
+type DeletionDependencies = {
+  has_dependencies: boolean;
+  links: DependencyLink[];
+};
+
 const tabs: Array<{ key: ArchiveType; label: string }> = [
   { key: "users", label: "Users" },
   { key: "customers", label: "Customers" },
@@ -187,10 +198,43 @@ function errorMessage(error: unknown, fallback: string) {
     || fallback;
 }
 
+function errorDependencies(error: unknown): DeletionDependencies | null {
+  return ((error as { response?: { data?: { dependencies?: DeletionDependencies } } })?.response?.data?.dependencies) ?? null;
+}
+
+const dependencyEndpoint: Partial<Record<ArchiveType, (id: string | number) => string>> = {
+  users: endpoints.rbac.userDeletionDependencies,
+  customers: endpoints.crm.customerDeletionDependencies,
+};
+
+const clearDependencyEndpoint: Partial<Record<ArchiveType, (id: string | number) => string>> = {
+  users: endpoints.rbac.userClearDeletionDependencies,
+  customers: endpoints.crm.customerClearDeletionDependencies,
+};
+
+const clearConfirmation: Partial<Record<ArchiveType, string>> = {
+  users: "CLEAR USER LINKS",
+  customers: "CLEAR CUSTOMER LINKS",
+};
+
+function dependencyRecordLabel(record: Record<string, unknown>) {
+  return String(
+    record["lead_no"]
+    ?? record["quotation_no"]
+    ?? record["order_no"]
+    ?? record["invoice_no"]
+    ?? record["delivery_no"]
+    ?? record["customer_name"]
+    ?? record["id"]
+    ?? "Record",
+  );
+}
+
 export default function ArchivedRecordsPage() {
   const [active, setActive] = useState<ArchiveType>("users");
   const [deleteTarget, setDeleteTarget] = useState<ArchivedRow | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const [dependencies, setDependencies] = useState<DeletionDependencies | null>(null);
   const queryClient = useQueryClient();
   const archivedQuery = useQuery({
     queryKey: ["archived-records", active],
@@ -222,8 +266,41 @@ export default function ArchivedRecordsPage() {
       queryClient.invalidateQueries({ queryKey: ["archived-records", active] });
       setDeleteTarget(null);
       setConfirmText("");
+      setDependencies(null);
     },
-    onError: (error) => toast.error(errorMessage(error, "Unable to permanently delete this record.")),
+    onError: (error) => {
+      const blockers = errorDependencies(error);
+      if (blockers) setDependencies(blockers);
+      toast.error(errorMessage(error, "Unable to permanently delete this record."));
+    },
+  });
+
+  const inspectDependencies = useMutation({
+    mutationFn: async (row: ArchivedRow) => {
+      const endpoint = dependencyEndpoint[active];
+      if (!endpoint) return { has_dependencies: false, links: [] } satisfies DeletionDependencies;
+      const { data } = await apiClient.get<DeletionDependencies>(endpoint(row.id));
+      return data;
+    },
+    onSuccess: (data) => setDependencies(data),
+    onError: (error) => toast.error(errorMessage(error, "Unable to load linked records.")),
+  });
+
+  const clearDependencies = useMutation({
+    mutationFn: async (row: ArchivedRow) => {
+      const endpoint = clearDependencyEndpoint[active];
+      const confirmation = clearConfirmation[active];
+      if (!endpoint || !confirmation) throw new Error("This record type does not support clearing links.");
+      const { data } = await apiClient.post(endpoint(row.id), { confirmation });
+      return data as { message?: string };
+    },
+    onSuccess: (data, row) => {
+      toast.success(data.message ?? "Links cleared.");
+      setDependencies(null);
+      inspectDependencies.mutate(row);
+      queryClient.invalidateQueries({ queryKey: ["archived-records", active] });
+    },
+    onError: (error) => toast.error(errorMessage(error, "Unable to clear linked records.")),
   });
 
   const rows = useMemo(() => archivedQuery.data ?? [], [archivedQuery.data]);
@@ -290,7 +367,15 @@ export default function ArchivedRecordsPage() {
                     <Button variant="outline" size="sm" onClick={() => restore.mutate(row)} disabled={restore.isPending}>
                       <RotateCcw className="size-4" /> Restore
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(row)}>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setDeleteTarget(row);
+                        setDependencies(null);
+                        if (dependencyEndpoint[active]) inspectDependencies.mutate(row);
+                      }}
+                    >
                       <Trash2 className="size-4" /> Permanently Delete
                     </Button>
                   </div>
@@ -301,7 +386,7 @@ export default function ArchivedRecordsPage() {
         ))}
       </Tabs>
 
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setConfirmText(""); } }}>
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setConfirmText(""); setDependencies(null); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Permanently Delete {deleteTarget?.identifier}?</AlertDialogTitle>
@@ -309,6 +394,54 @@ export default function ArchivedRecordsPage() {
               This action cannot be undone. Type DELETE to confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {dependencyEndpoint[active] && (
+            <div className="rounded-lg border border-border bg-surface-muted p-3 text-sm">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="font-medium">Linked records</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!deleteTarget || inspectDependencies.isPending}
+                  onClick={() => deleteTarget && inspectDependencies.mutate(deleteTarget)}
+                >
+                  Refresh
+                </Button>
+              </div>
+              {inspectDependencies.isPending ? (
+                <p className="text-muted-foreground">Checking linked records...</p>
+              ) : dependencies?.links.length ? (
+                <div className="space-y-3">
+                  {dependencies.links.map((link) => (
+                    <div key={link.label}>
+                      <p className="font-medium">{link.label}: {link.count}</p>
+                      <ul className="mt-1 max-h-24 space-y-1 overflow-auto text-xs text-muted-foreground">
+                        {link.records.map((record) => (
+                          <li key={`${link.label}-${record["id"]}`}>
+                            {dependencyRecordLabel(record)}
+                            {record["status"] ? ` - ${String(record["status"])}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                  <div className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">
+                    Clearing links keeps these business records, but removes their reference to this {active === "users" ? "user" : "customer"} so the archived record can be permanently deleted.
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!deleteTarget || clearDependencies.isPending}
+                    onClick={() => deleteTarget && clearDependencies.mutate(deleteTarget)}
+                  >
+                    {clearDependencies.isPending ? "Clearing..." : "Clear linked records"}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No linked CRM records found.</p>
+              )}
+            </div>
+          )}
           <Input value={confirmText} onChange={(event) => setConfirmText(event.target.value)} />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

@@ -85,6 +85,8 @@ export const endpoints = {
     customer: (id: string | number) => `crm/customers/${id}/`,
     customerRestore: (id: string | number) => `crm/customers/${id}/restore/`,
     customerPermanentDelete: (id: string | number) => `crm/customers/${id}/permanent-delete/`,
+    customerDeletionDependencies: (id: string | number) => `crm/customers/${id}/deletion-dependencies/`,
+    customerClearDeletionDependencies: (id: string | number) => `crm/customers/${id}/clear-deletion-dependencies/`,
     customerUpcomingEvents: "crm/customers/upcoming-events/",
     customerSendReminder: (id: string | number) => `crm/customers/${id}/send-reminder/`,
 
@@ -107,6 +109,8 @@ export const endpoints = {
     user: (id: string | number) => `customer/rbac/users/${id}/`,
     userRestore: (id: string | number) => `customer/rbac/users/${id}/restore/`,
     userPermanentDelete: (id: string | number) => `customer/rbac/users/${id}/permanent-delete/`,
+    userDeletionDependencies: (id: string | number) => `customer/rbac/users/${id}/deletion-dependencies/`,
+    userClearDeletionDependencies: (id: string | number) => `customer/rbac/users/${id}/clear-deletion-dependencies/`,
     roles: "customer/rbac/roles/",
     role: (id: string | number) => `customer/rbac/roles/${id}/`,
     roleRestore: (id: string | number) => `customer/rbac/roles/${id}/restore/`,
