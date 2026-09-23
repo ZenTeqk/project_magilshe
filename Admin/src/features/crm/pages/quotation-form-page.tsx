@@ -733,18 +733,18 @@ function QuotationFormPage() {
         }
       >
         <div className="scroll-slim overflow-x-auto">
-          <table className="w-full min-w-[1120px] table-fixed text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
-                <th className="w-52 py-2 pr-2">Cake / Product</th>
-                <th className="w-48 py-2 pr-2">Description</th>
-                <th className="w-48 py-2 pr-2">Flavour</th>
-                <th className="py-2 pr-2 w-20">Qty</th>
-                <th className="py-2 pr-2 w-28">Unit</th>
-                <th className="py-2 pr-2 w-40">Rate</th>
-                <th className="py-2 pr-2 w-36">GST%</th>
-                <th className="py-2 pr-2 w-28 text-right">Amount</th>
-                <th className="w-10" />
+                <th className="w-[18%] py-2 pr-2">Cake / Product</th>
+                <th className="w-[16%] py-2 pr-2">Description</th>
+                <th className="w-[15%] py-2 pr-2">Flavour</th>
+                <th className="py-2 pr-2 w-[8%]">Qty</th>
+                <th className="py-2 pr-2 w-[10%]">Unit</th>
+                <th className="py-2 pr-2 w-[13%]">Rate</th>
+                <th className="py-2 pr-2 w-[10%]">GST%</th>
+                <th className="py-2 pr-2 w-[10%] text-right">Amount</th>
+                <th className="w-8" />
               </tr>
             </thead>
             <tbody>
