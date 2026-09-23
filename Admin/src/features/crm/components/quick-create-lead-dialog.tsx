@@ -137,7 +137,7 @@ export function QuickCreateLeadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-visible sm:max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New lead</DialogTitle>
           <DialogDescription>
@@ -145,7 +145,7 @@ export function QuickCreateLeadDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-visible">
           <div className="space-y-3">
             <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               Customer
