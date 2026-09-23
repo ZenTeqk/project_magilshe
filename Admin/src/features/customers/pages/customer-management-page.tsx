@@ -51,9 +51,9 @@ function CustomerManagementPage() {
   const exportCustomers = useExportCustomers();
   const archiveCustomer = useArchiveCustomer();
   const canArchiveCustomers = hasPermission(access.data, "customers.data.delete");
-  const tableQuery = searchParams.get("q") ?? "";
   const parsedPage = Number(searchParams.get("page") ?? "1");
-  const tablePage = Number.isFinite(parsedPage) ? Math.max(0, parsedPage - 1) : 0;
+  const [tableQuery, setTableQuery] = useState(() => searchParams.get("q") ?? "");
+  const [tablePage, setTablePage] = useState(() => Number.isFinite(parsedPage) ? Math.max(0, parsedPage - 1) : 0);
 
   const updateListParams = (updates: { q?: string; page?: number }) => {
     const next = new URLSearchParams(searchParams);
@@ -70,8 +70,25 @@ function CustomerManagementPage() {
     setSearchParams(next, { replace: true });
   };
 
+  const changeTableQuery = (query: string) => {
+    setTableQuery(query);
+    setTablePage(0);
+    updateListParams({ q: query });
+  };
+
+  const changeTablePage = (page: number) => {
+    setTablePage(page);
+    updateListParams({ page });
+  };
+
   const profilePath = (id: string | number) => {
-    const params = searchParams.toString();
+    const next = new URLSearchParams(searchParams);
+    const query = tableQuery.trim();
+    if (query) next.set("q", query);
+    else next.delete("q");
+    if (tablePage > 0) next.set("page", String(tablePage + 1));
+    else next.delete("page");
+    const params = next.toString();
     return `/crm/customers/${id}${params ? `?${params}` : ""}`;
   };
 
@@ -204,11 +221,24 @@ function CustomerManagementPage() {
         <DataTable<CrmCustomerSummary>
           rows={customers ?? []}
           rowKey={(r) => String(r.id)}
-          searchKeys={(r) => `${r.name} ${r.phone} ${r.email}`}
+          searchKeys={(r) => {
+            const primaryAddress = r.addresses.find((item) => item.is_primary) ?? r.addresses[0];
+            return [
+              r.name,
+              r.username,
+              r.first_name,
+              r.last_name,
+              r.phone,
+              r.email,
+              primaryAddress?.address,
+              primaryAddress?.city,
+              primaryAddress?.pincode,
+            ].filter(Boolean).join(" ");
+          }}
           query={tableQuery}
-          onQueryChange={(query) => updateListParams({ q: query })}
+          onQueryChange={changeTableQuery}
           page={tablePage}
-          onPageChange={(page) => updateListParams({ page })}
+          onPageChange={changeTablePage}
           onRowClick={(r) => navigate(profilePath(r.id))}
           emptyTitle="No customers yet"
           emptyDescription="Customers appear here once linked to a lead, quotation or order."
