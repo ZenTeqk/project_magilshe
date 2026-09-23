@@ -4,11 +4,12 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useCrmOptions } from "@/features/crm/hooks";
 import { useOrderWorkflowAction } from "@/features/crm/orders-hooks";
 import { configuredOptions } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 export function CancelOrderDialog({
   orderId, open, onOpenChange,
@@ -17,6 +18,7 @@ export function CancelOrderDialog({
   const reasons = configuredOptions(liveReasons);
   const [reason, setReason] = useState("");
   const workflowAction = useOrderWorkflowAction();
+  const createOption = useCreateCrmOptionFromText();
 
   const finalReason = reason;
 
@@ -40,12 +42,7 @@ export function CancelOrderDialog({
           <DialogDescription>A cancellation reason is required.</DialogDescription>
         </DialogHeader>
         <Field label="Reason" required>
-          <Select value={reason} onValueChange={setReason}>
-            <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-            <SelectContent>
-              {reasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("order_cancellation_reason", reasons)} placeholder="Select or type reason" />
           {!reasons.length && <p className="text-xs text-warning">Add an active cancellation reason in CRM Settings.</p>}
         </Field>
         <DialogFooter>

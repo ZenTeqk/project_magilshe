@@ -201,10 +201,7 @@ function DirectOrderPage() {
             </Field>
             <Field label="Payment date" required><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></Field>
             <Field label="Payment method" required error={errors["payment_method"]}>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
-                <SelectContent>{paymentMethods.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-              </Select>
+              <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" />
               {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
             </Field>
             <Field label="Transaction reference"><Input value={transactionReference} onChange={(e) => setTransactionReference(e.target.value)} /></Field>

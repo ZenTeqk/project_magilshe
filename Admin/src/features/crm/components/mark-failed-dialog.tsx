@@ -3,10 +3,11 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useCrmOptions } from "@/features/crm/hooks";
 import { configuredOptions } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 export function MarkFailedDialog({
   open, onOpenChange, busy, onSubmit,
@@ -20,6 +21,7 @@ export function MarkFailedDialog({
   const reasons = configuredOptions(liveReasons);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const createOption = useCreateCrmOptionFromText();
 
   const finalReason = reason;
 
@@ -45,12 +47,7 @@ export function MarkFailedDialog({
         </DialogHeader>
         {error && <div className="rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-sm text-danger">{error}</div>}
         <Field label="Failure reason" required>
-          <Select value={reason} onValueChange={setReason}>
-            <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-            <SelectContent>
-              {reasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("delivery_failure_reason", reasons)} placeholder="Select or type reason" />
           {!reasons.length && <p className="text-xs text-warning">Add an active failure reason in CRM Settings.</p>}
         </Field>
         <DialogFooter>

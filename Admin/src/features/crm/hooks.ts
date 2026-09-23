@@ -8,8 +8,27 @@ function unwrapList<T>(data: unknown): T[] {
     const record = data as Record<string, unknown>;
     if (Array.isArray(record["results"])) return record["results"] as T[];
     if (Array.isArray(record["data"])) return record["data"] as T[];
+    const results = record["results"];
+    if (results && typeof results === "object") {
+      const nested = results as Record<string, unknown>;
+      if (Array.isArray(nested["data"])) return nested["data"] as T[];
+    }
   }
   return [];
+}
+
+function dedupeNames(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const name = String(value ?? "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(name);
+  }
+  return result;
 }
 const leadKey = (id: string | number) => ["crm", "lead", String(id)] as const;
 
@@ -423,7 +442,12 @@ export function useCrmOptions(type: string) {
       const { data } = await apiClient.get(endpoints.crm.options, {
         params: { type, active: true },
       });
-      return unwrapList<CrmOption>(data).map((option) => option.name);
+      const optionNames = unwrapList<CrmOption>(data).map((option) => option.name);
+      if (!["cake_type", "cake_product"].includes(type)) return dedupeNames(optionNames);
+
+      const products = await apiClient.get(endpoints.catalog.cakes, { params: { page_size: 10000 } });
+      const productNames = unwrapList<{ name: string }>(products.data).map((product) => product.name);
+      return dedupeNames([...optionNames, ...productNames]);
     },
   });
 }

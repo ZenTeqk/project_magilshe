@@ -106,6 +106,9 @@ function QuotationFormPage() {
   const { data: cakeProducts } = useCrmOptions("cake_product");
   const { data: cakeFlavours } = useCrmOptions("cake_flavour");
   const { data: productRates } = useCrmOptions("product_rate");
+  const { data: occasions } = useCrmOptions("occasion");
+  const { data: paymentTerms } = useCrmOptions("payment_term");
+  const { data: deliveryMethods } = useCrmOptions("delivery_method");
   const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: company } = useCompanyConfig();
 
@@ -140,6 +143,18 @@ function QuotationFormPage() {
     const currentRates = isEdit ? form.items.map((item) => String(item.rate ?? "")) : [];
     return optionsWithCurrentValues(productRates, currentRates);
   }, [productRates, form.items, isEdit]);
+  const occasionOptions = useMemo(
+    () => optionsWithCurrentValues(occasions, [form.occasion]),
+    [occasions, form.occasion],
+  );
+  const paymentTermOptions = useMemo(
+    () => optionsWithCurrentValues(paymentTerms, [form.payment_terms]),
+    [paymentTerms, form.payment_terms],
+  );
+  const deliveryMethodOptions = useMemo(
+    () => optionsWithCurrentValues(deliveryMethods, [form.delivery_type]),
+    [deliveryMethods, form.delivery_type],
+  );
 
   useEffect(() => {
     if (existingQuotation) {
@@ -652,9 +667,12 @@ function QuotationFormPage() {
       <SectionCard title="Delivery Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Occasion">
-            <Input
+            <OptionCombobox
               value={form.occasion}
-              onChange={(e) => setForm((f) => ({ ...f, occasion: e.target.value }))}
+              options={occasionOptions}
+              onChange={(value) => setForm((f) => ({ ...f, occasion: value }))}
+              onCreateOption={createOption("occasion", occasionOptions)}
+              placeholder="Select or type occasion"
             />
           </Field>
           <Field label="Event date">
@@ -672,18 +690,13 @@ function QuotationFormPage() {
             />
           </Field>
           <Field label="Delivery type">
-            <Select
+            <OptionCombobox
               value={form.delivery_type}
-              onValueChange={(v) => setForm((f) => ({ ...f, delivery_type: v }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Pickup">Pickup</SelectItem>
-                <SelectItem value="Delivery">Delivery</SelectItem>
-              </SelectContent>
-            </Select>
+              options={deliveryMethodOptions}
+              onChange={(value) => setForm((f) => ({ ...f, delivery_type: value }))}
+              onCreateOption={createOption("delivery_method", deliveryMethodOptions)}
+              placeholder="Select or type delivery method"
+            />
           </Field>
           <Field label="Delivery date">
             <Input
@@ -847,10 +860,12 @@ function QuotationFormPage() {
               />
             </Field>
             <Field label="Payment terms">
-              <Textarea
-                rows={2}
+              <OptionCombobox
                 value={form.payment_terms}
-                onChange={(e) => setForm((f) => ({ ...f, payment_terms: e.target.value }))}
+                options={paymentTermOptions}
+                onChange={(value) => setForm((f) => ({ ...f, payment_terms: value }))}
+                onCreateOption={createOption("payment_term", paymentTermOptions)}
+                placeholder="Select or type payment terms"
               />
             </Field>
             <Field label="Notes">

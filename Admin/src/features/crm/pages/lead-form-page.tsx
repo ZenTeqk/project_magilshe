@@ -543,10 +543,7 @@ function LeadFormPage() {
         {form.status === "Won" && (
           <div className="mt-4">
             <Field label="Reason for winning" required error={errors["winning_reason"]}>
-              <Select value={form.winning_reason} onValueChange={(value) => set("winning_reason", value)}>
-                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-                <SelectContent>{winningReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
-              </Select>
+              <OptionCombobox value={form.winning_reason} options={winningReasonOptions} onChange={(value) => set("winning_reason", value)} onCreateOption={createOption("winning_reason", winningReasonOptions)} placeholder="Select or type reason" />
               {!winningReasonOptions.length && <p className="text-xs text-warning">Add an active winning reason in CRM Settings.</p>}
             </Field>
           </div>
@@ -554,10 +551,7 @@ function LeadFormPage() {
         {form.status === "Lost" && (
           <div className="mt-4">
             <Field label="Reason for loss" required error={errors["loss_reason"]}>
-              <Select value={form.loss_reason} onValueChange={(value) => set("loss_reason", value)}>
-                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
-                <SelectContent>{lossReasonOptions.map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
-              </Select>
+              <OptionCombobox value={form.loss_reason} options={lossReasonOptions} onChange={(value) => set("loss_reason", value)} onCreateOption={createOption("loss_reason", lossReasonOptions)} placeholder="Select or type reason" />
               {!lossReasonOptions.length && <p className="text-xs text-warning">Add an active loss reason in CRM Settings.</p>}
             </Field>
           </div>

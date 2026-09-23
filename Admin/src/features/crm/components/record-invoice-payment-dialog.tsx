@@ -6,12 +6,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { inr } from "@/lib/data";
 import { useRecordInvoicePayment, type CrmInvoice } from "@/features/crm/invoices-hooks";
 import { useCrmOptions } from "@/features/crm/hooks";
 import { configuredOptions } from "@/features/crm/config-options";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 export function RecordInvoicePaymentDialog({
   invoice, open, onOpenChange,
@@ -26,6 +27,7 @@ export function RecordInvoicePaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const { data: livePaymentMethods } = useCrmOptions("payment_method");
   const paymentMethods = configuredOptions(livePaymentMethods);
+  const createOption = useCreateCrmOptionFromText();
 
   const recordPayment = useRecordInvoicePayment();
 
@@ -65,10 +67,7 @@ export function RecordInvoicePaymentDialog({
             <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
           </Field>
           <Field label="Payment method" required>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-              <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
-              <SelectContent>{paymentMethods.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-            </Select>
+            <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" />
             {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
           </Field>
           <Field label="Transaction reference">

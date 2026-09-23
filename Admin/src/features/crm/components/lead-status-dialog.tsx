@@ -10,15 +10,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useCrmOptions, useUpdateLead, type Lead, type LeadStatus } from "@/features/crm/hooks";
+import { OptionCombobox } from "@/features/crm/components/option-combobox";
+import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
 export function LeadStatusDialog({
   lead,
@@ -35,12 +30,12 @@ export function LeadStatusDialog({
   const [followUpTime, setFollowUpTime] = useState("");
   const [followUpNotes, setFollowUpNotes] = useState("");
   const [reason, setReason] = useState("");
-  const [customReason, setCustomReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const optionType = target === "Won" ? "winning_reason" : target === "Lost" ? "loss_reason" : "";
   const { data: liveReasons } = useCrmOptions(optionType);
   const reasons = liveReasons ?? [];
+  const createOption = useCreateCrmOptionFromText();
 
   const updateLead = useUpdateLead();
 
@@ -49,7 +44,6 @@ export function LeadStatusDialog({
     setFollowUpTime(lead.follow_up_time ?? "");
     setFollowUpNotes("");
     setReason("");
-    setCustomReason("");
     setError(null);
   }, [lead.id, target]);
 
@@ -62,8 +56,7 @@ export function LeadStatusDialog({
       payload["follow_up_notes"] = followUpNotes;
     }
     if (target === "Won" || target === "Lost") {
-      const value = reason === "Other" ? customReason : reason;
-      payload[target === "Won" ? "winning_reason" : "loss_reason"] = value;
+      payload[target === "Won" ? "winning_reason" : "loss_reason"] = reason;
     }
     try {
       const data = await updateLead.mutateAsync({ id: lead.id, payload });
@@ -86,7 +79,7 @@ export function LeadStatusDialog({
   const canSave =
     target === "Follow-up"
       ? !!followUpDate && !!followUpNotes.trim()
-      : (reason && reason !== "Other") || (reason === "Other" && !!customReason.trim());
+      : !!reason.trim();
 
   return (
     <Dialog open={target !== null} onOpenChange={onOpenChange}>
@@ -135,28 +128,8 @@ export function LeadStatusDialog({
               <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">No active reasons are configured. Add one in CRM Settings before changing this status.</p>
             )}
             <Field label={target === "Won" ? "Reason for winning" : "Reason for loss"} required>
-              <Select value={reason} onValueChange={setReason}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a reason" />
-                </SelectTrigger>
-                <SelectContent>
-                  {reasons.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption(optionType, reasons)} placeholder="Select or type reason" />
             </Field>
-            {reason === "Other" && (
-              <Field label="Custom reason" required>
-                <Input
-                  autoFocus
-                  value={customReason}
-                  onChange={(e) => setCustomReason(e.target.value)}
-                />
-              </Field>
-            )}
           </div>
         )}
 
