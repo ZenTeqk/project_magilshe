@@ -39,7 +39,20 @@ export function CustomerMatchPicker({ term, selected, onSelect, onChange }: Prop
     <strong className="px-1 text-xs text-primary">{results.length === 1 ? "Existing customer found" : "Existing customers found"}</strong>
     <div className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">{results.map((customer) => <div key={customer.id} className="flex items-center justify-between gap-3 p-2.5">
       <div className="min-w-0"><strong className="block truncate text-sm">{customer.name}</strong><span className="block truncate text-xs text-muted-foreground">{customer.phone || "—"} · {customer.email || "—"}</span><span className="block text-[11px] text-muted-foreground">Customer since: {customer.customer_since ? new Date(customer.customer_since).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—"}</span></div>
-      <Button type="button" size="sm" variant="outline" onClick={() => onSelect(customer)}>Select</Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onPointerDown={(event) => {
+          event.preventDefault();
+          onSelect(customer);
+        }}
+        onClick={(event) => {
+          if (event.detail === 0) onSelect(customer);
+        }}
+      >
+        Select
+      </Button>
     </div>)}</div>
   </div>;
 }

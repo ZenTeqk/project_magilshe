@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +31,6 @@ export function OptionCombobox({
 }: OptionComboboxProps) {
   const [open, setOpen] = useState(false);
   const [showAllOptions, setShowAllOptions] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const rootRef = useRef<HTMLDivElement | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -52,6 +50,12 @@ export function OptionCombobox({
     onCreateOption?.(typed);
   };
 
+  const selectOption = (option: string) => {
+    cancelClose();
+    onChange(option);
+    setOpen(false);
+  };
+
   const scheduleClose = () => {
     closeTimer.current = window.setTimeout(() => setOpen(false), 120);
   };
@@ -60,37 +64,14 @@ export function OptionCombobox({
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
   };
 
-  const updateMenuPosition = () => {
-    const rect = rootRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMenuStyle({
-      left: rect.left,
-      top: rect.bottom + 4,
-      width: rect.width,
-    });
-  };
-
   const openMenu = () => {
     setShowAllOptions(true);
-    updateMenuPosition();
     setOpen(true);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    updateMenuPosition();
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-    return () => {
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [open]);
-
   const menu = open ? (
     <div
-      className="fixed z-[1000] max-h-56 overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
-      style={menuStyle}
+      className="absolute top-full right-0 left-0 z-[70] mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
     >
       {visibleOptions.length ? (
         visibleOptions.map((option) => (
@@ -98,10 +79,12 @@ export function OptionCombobox({
             key={option}
             type="button"
             className="block w-full rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              selectOption(option);
+            }}
             onMouseDown={(event) => {
               event.preventDefault();
-              onChange(option);
-              setOpen(false);
             }}
           >
             {option}
@@ -134,7 +117,6 @@ export function OptionCombobox({
         onChange={(event) => {
           setShowAllOptions(false);
           onChange(event.target.value);
-          updateMenuPosition();
           setOpen(true);
         }}
         onKeyDown={(event) => {
@@ -150,17 +132,17 @@ export function OptionCombobox({
         variant="ghost"
         size="icon"
         className="absolute right-1 top-1 h-8 w-8 text-muted-foreground hover:text-foreground"
+        onPointerDown={(event) => event.preventDefault()}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           setShowAllOptions(true);
-          updateMenuPosition();
           setOpen((current) => !current);
         }}
         aria-label="Show options"
       >
         <ChevronDown className="size-4" />
       </Button>
-      {menu && createPortal(menu, document.body)}
+      {menu}
     </div>
   );
 }

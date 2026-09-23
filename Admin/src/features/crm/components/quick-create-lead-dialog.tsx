@@ -25,7 +25,7 @@ import {
   type CrmCustomerSearchResult,
 } from "@/features/crm/hooks";
 import { CustomerMatchPicker } from "./customer-match-picker";
-import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
@@ -76,6 +76,19 @@ export function QuickCreateLeadDialog({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !saleUnits.length) return;
+    setForm((current) => {
+      if (saleUnits.some((unit) => unit.toLowerCase() === String(current.unit_type).toLowerCase())) return current;
+      const unit_type = saleUnits[0] as SaleUnit;
+      return {
+        ...current,
+        unit_type,
+        quantity: current.quantity === "" ? defaultQuantity(unit_type) : current.quantity,
+      };
+    });
+  }, [open, saleUnits]);
+
   const applyMatch = (customer: CrmCustomerSearchResult) => {
     setMatched(customer);
     setForm((f) => ({
@@ -113,7 +126,7 @@ export function QuickCreateLeadDialog({
         }
       }
       setErrors(fieldErrors);
-      toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? "Unable to create lead.");
+      toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? Object.values(fieldErrors)[0] ?? "Unable to create lead.");
     }
   };
 
@@ -124,7 +137,7 @@ export function QuickCreateLeadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="overflow-visible sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New lead</DialogTitle>
           <DialogDescription>

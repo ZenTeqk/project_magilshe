@@ -268,11 +268,13 @@ export function toLeadPayload(form: Record<string, unknown>) {
     "updated_by",
     "updated_on",
   ]);
-  return Object.fromEntries(
+  const payload = Object.fromEntries(
     Object.entries(form)
       .filter(([key]) => !omit.has(key))
       .map(([key, value]) => [key, value === "" ? null : value]),
   );
+  if (payload["lead_source"] === null) delete payload["lead_source"];
+  return payload;
 }
 
 export function useCreateLead() {

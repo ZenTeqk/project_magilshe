@@ -32,7 +32,7 @@ import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tra
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
-import { quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
@@ -131,6 +131,19 @@ function LeadFormPage() {
     }
   }, [existingLead]);
 
+  useEffect(() => {
+    if (isEdit || !saleUnits.length) return;
+    setForm((current) => {
+      if (saleUnits.some((unit) => unit.toLowerCase() === String(current.unit_type).toLowerCase())) return current;
+      const unit_type = saleUnits[0] as SaleUnit;
+      return {
+        ...current,
+        unit_type,
+        quantity: current.quantity === "" ? defaultQuantity(unit_type) : current.quantity,
+      };
+    });
+  }, [isEdit, saleUnits]);
+
   const set = <K extends keyof typeof blank>(key: K, value: (typeof blank)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
@@ -208,7 +221,7 @@ function LeadFormPage() {
         }
       }
       setErrors(fieldErrors);
-      toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? "Unable to save lead.");
+      toast.error(fieldErrors["detail"] ?? fieldErrors["message"] ?? Object.values(fieldErrors)[0] ?? "Unable to save lead.");
     }
   };
 
