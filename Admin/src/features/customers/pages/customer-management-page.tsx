@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Archive, Download, MoreHorizontal, Pencil, Plus, Repeat, Upload, UserRoundSearch } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
@@ -39,6 +39,7 @@ import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
  */
 function CustomerManagementPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const access = useCurrentAccess();
   const { data: customers, isLoading, isError, refetch } = useCrmCustomers();
   const [editCustomer, setEditCustomer] = useState<CrmCustomerSummary | null>(null);
@@ -50,6 +51,29 @@ function CustomerManagementPage() {
   const exportCustomers = useExportCustomers();
   const archiveCustomer = useArchiveCustomer();
   const canArchiveCustomers = hasPermission(access.data, "customers.data.delete");
+  const tableQuery = searchParams.get("q") ?? "";
+  const parsedPage = Number(searchParams.get("page") ?? "1");
+  const tablePage = Number.isFinite(parsedPage) ? Math.max(0, parsedPage - 1) : 0;
+
+  const updateListParams = (updates: { q?: string; page?: number }) => {
+    const next = new URLSearchParams(searchParams);
+    if (updates.q !== undefined) {
+      const value = updates.q.trim();
+      if (value) next.set("q", value);
+      else next.delete("q");
+      next.delete("page");
+    }
+    if (updates.page !== undefined) {
+      if (updates.page > 0) next.set("page", String(updates.page + 1));
+      else next.delete("page");
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const profilePath = (id: string | number) => {
+    const params = searchParams.toString();
+    return `/crm/customers/${id}${params ? `?${params}` : ""}`;
+  };
 
   const runImport = async (file: File | undefined) => {
     if (!file) return;
@@ -181,7 +205,11 @@ function CustomerManagementPage() {
           rows={customers ?? []}
           rowKey={(r) => String(r.id)}
           searchKeys={(r) => `${r.name} ${r.phone} ${r.email}`}
-          onRowClick={(r) => navigate(`/crm/customers/${r.id}`)}
+          query={tableQuery}
+          onQueryChange={(query) => updateListParams({ q: query })}
+          page={tablePage}
+          onPageChange={(page) => updateListParams({ page })}
+          onRowClick={(r) => navigate(profilePath(r.id))}
           emptyTitle="No customers yet"
           emptyDescription="Customers appear here once linked to a lead, quotation or order."
           exportName="customers"
@@ -268,7 +296,7 @@ function CustomerManagementPage() {
             },
           ]}
           rowActions={(customer) => <div className="flex items-center justify-end gap-1">
-            <Button size="icon" variant="ghost" className="size-8" aria-label={`Open ${customer.name}`} onClick={(event) => { event.stopPropagation(); navigate(`/crm/customers/${customer.id}`); }}><UserRoundSearch className="size-4" /></Button>
+            <Button size="icon" variant="ghost" className="size-8" aria-label={`Open ${customer.name}`} onClick={(event) => { event.stopPropagation(); navigate(profilePath(customer.id)); }}><UserRoundSearch className="size-4" /></Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="icon" variant="ghost" className="size-8" aria-label={`Actions for ${customer.name}`}>
@@ -276,7 +304,7 @@ function CustomerManagementPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => navigate(`/crm/customers/${customer.id}`)}>
+                <DropdownMenuItem onClick={() => navigate(profilePath(customer.id))}>
                   <UserRoundSearch className="size-4" /> Open profile
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setEditCustomer(customer)}>
@@ -296,7 +324,7 @@ function CustomerManagementPage() {
         />
       )}
       {editCustomer && <EditCustomerDialog open customer={editCustomer} onOpenChange={(open) => !open && setEditCustomer(null)} />}
-      <CreateCustomerDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={(id) => navigate(`/crm/customers/${id}`)} />
+      <CreateCustomerDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={(id) => navigate(profilePath(id))} />
       <AlertDialog open={archiveTarget !== null} onOpenChange={(open) => !open && setArchiveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

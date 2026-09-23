@@ -386,10 +386,7 @@ function LeadFormPage() {
             />
           </Field>
           <Field label="Unit" required>
-            <Select value={form.unit_type} onValueChange={(v) => set("unit_type", v as SaleUnit)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
-            </Select>
+            <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(value) => set("unit_type", value as SaleUnit)} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
           </Field>
           <Field label="Theme">
             <Input value={form.theme} onChange={(e) => set("theme", e.target.value)} />

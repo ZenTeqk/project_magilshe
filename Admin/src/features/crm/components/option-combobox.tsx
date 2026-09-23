@@ -31,6 +31,7 @@ export function OptionCombobox({
   className,
 }: OptionComboboxProps) {
   const [open, setOpen] = useState(false);
+  const [showAllOptions, setShowAllOptions] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const rootRef = useRef<HTMLDivElement | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -39,9 +40,9 @@ export function OptionCombobox({
     const query = String(value ?? "").trim().toLowerCase();
     const cleaned = [...new Map(options.map((option) => [option.trim().toLowerCase(), option.trim()])).values()]
       .filter(Boolean);
-    if (!query) return cleaned;
+    if (showAllOptions || !query) return cleaned;
     return cleaned.filter((option) => option.toLowerCase().includes(query));
-  }, [options, value]);
+  }, [options, showAllOptions, value]);
   const optionExists = (candidate: string) => (
     options.some((option) => option.trim().toLowerCase() === candidate.trim().toLowerCase())
   );
@@ -70,6 +71,7 @@ export function OptionCombobox({
   };
 
   const openMenu = () => {
+    setShowAllOptions(true);
     updateMenuPosition();
     setOpen(true);
   };
@@ -130,8 +132,10 @@ export function OptionCombobox({
         placeholder={placeholder}
         onFocus={openMenu}
         onChange={(event) => {
+          setShowAllOptions(false);
           onChange(event.target.value);
-          openMenu();
+          updateMenuPosition();
+          setOpen(true);
         }}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
@@ -148,6 +152,7 @@ export function OptionCombobox({
         className="absolute right-1 top-1 h-8 w-8 text-muted-foreground hover:text-foreground"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
+          setShowAllOptions(true);
           updateMenuPosition();
           setOpen((current) => !current);
         }}

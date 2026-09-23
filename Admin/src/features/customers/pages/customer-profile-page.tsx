@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -68,6 +68,7 @@ function fmtDate(value: string | null | undefined) {
 function CustomerProfilePage() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: customer, isLoading, isError } = useCrmCustomer(customerId);
   const [editOpen, setEditOpen] = useState(false);
   const [eventDialog, setEventDialog] = useState<{ open: boolean; event: CustomerRecurringEvent | null }>({
@@ -98,6 +99,7 @@ function CustomerProfilePage() {
 
   const primaryAddress = customer.addresses.find((a) => a["is_primary"]) ?? customer.addresses[0];
   const summary = customer.purchase_summary;
+  const backToCustomers = `/crm/customers/manage${location.search}`;
 
   const createLeadFromEvent = (event: CustomerRecurringEvent) => {
     navigate("/crm/leads/new", {
@@ -117,7 +119,7 @@ function CustomerProfilePage() {
     <>
       <div>
         <Button variant="ghost" size="sm" className="rounded-lg" asChild>
-          <Link to="/crm/customers/manage">
+          <Link to={backToCustomers}>
             <ArrowLeft className="size-4" /> All customers
           </Link>
         </Button>

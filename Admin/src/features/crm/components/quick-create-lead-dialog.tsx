@@ -183,10 +183,7 @@ export function QuickCreateLeadDialog({
                 />
               </Field>
               <Field label="Unit" required>
-                <Select value={form.unit_type} onValueChange={(unit_type) => setForm((f) => ({ ...f, unit_type: unit_type as SaleUnit }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
-                </Select>
+                <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(unit_type) => setForm((f) => ({ ...f, unit_type: unit_type as SaleUnit }))} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
               </Field>
               <Field label="Rate">
                 <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, estimated_amount: v }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" />

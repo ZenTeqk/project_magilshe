@@ -114,12 +114,12 @@ class CRMCustomerImportExportTests(TestCase):
         self.assertEqual(rows[0]["Customer Status"], "Active")
 
     def test_customer_analytics_total_matches_active_customer_management_count(self):
-        first = get_user_model().objects.create_user(
-            username="9876543217", phone="9876543217", first_name="First"
-        )
-        second = get_user_model().objects.create_user(
-            username="9876543218", phone="9876543218", first_name="Second"
-        )
+        customers = [
+            get_user_model().objects.create_user(
+                username=f"9876543{index:03d}", phone=f"9876543{index:03d}", first_name=f"Customer {index}"
+            )
+            for index in range(210)
+        ]
         archived = get_user_model().objects.create_user(
             username="9876543219", phone="9876543219", first_name="Archived", is_active=False
         )
@@ -131,8 +131,9 @@ class CRMCustomerImportExportTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         ids = {row["id"] for row in response.data}
-        self.assertIn(first.id, ids)
-        self.assertIn(second.id, ids)
+        self.assertEqual(len(response.data), len(customers))
+        self.assertIn(customers[0].id, ids)
+        self.assertIn(customers[-1].id, ids)
         self.assertNotIn(archived.id, ids)
 
     def test_customer_import_export_require_customer_data_permissions(self):

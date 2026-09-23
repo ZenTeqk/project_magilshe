@@ -51,6 +51,10 @@ export type DataTableProps<T> = {
   selectable?: boolean;
   exportName?: string;
   onExport?: (rows: T[]) => void;
+  query?: string;
+  onQueryChange?: (query: string) => void;
+  page?: number;
+  onPageChange?: (page: number) => void;
 };
 
 export function DataTable<T>({
@@ -70,13 +74,21 @@ export function DataTable<T>({
   selectable = true,
   exportName = "export",
   onExport,
+  query: controlledQuery,
+  onQueryChange,
+  page: controlledPage,
+  onPageChange,
 }: DataTableProps<T>) {
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
+  const [internalQuery, setInternalQuery] = useState("");
+  const [internalPage, setInternalPage] = useState(0);
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
   const [hidden, setHidden] = useState<string[]>(columns.filter((c) => c.hidden).map((c) => c.key));
   const [selected, setSelected] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const query = controlledQuery ?? internalQuery;
+  const page = controlledPage ?? internalPage;
+  const setQuery = onQueryChange ?? setInternalQuery;
+  const setPage = onPageChange ?? setInternalPage;
 
   const visible = columns.filter((c) => !hidden.includes(c.key));
 

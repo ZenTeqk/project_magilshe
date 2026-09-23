@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { useCatalogUnits } from "@/features/catalog/catalog-hooks";
-import { useCrmOptionRows } from "@/features/crm/options-hooks";
+import { useCrmOptions } from "@/features/crm/hooks";
 
 export const DEFAULT_SALE_UNITS = ["kg", "piece"] as const;
 export type SaleUnit = string;
@@ -21,20 +20,16 @@ export function calculateLineItem(
 }
 
 export function useSaleUnits() {
-  const query = useCrmOptionRows("sale_unit");
-  const catalogUnits = useCatalogUnits();
+  const query = useCrmOptions("sale_unit");
   const units = useMemo(() => {
-    const configured = [
-      ...(query.data ?? []).filter((row) => row.is_active).map((row) => row.name),
-      ...(catalogUnits.data ?? []).map((unit) => unit.name),
-    ]
+    const configured = (query.data ?? [])
       .map((name) => name.trim())
-      .filter((name) => name && !["gram", "grams", "g"].includes(name.toLowerCase()));
+      .filter(Boolean);
     return configured.length
       ? [...new Map(configured.map((name) => [name.toLowerCase(), name])).values()]
       : [...DEFAULT_SALE_UNITS];
-  }, [catalogUnits.data, query.data]);
-  return { ...query, isLoading: query.isLoading || catalogUnits.isLoading, units };
+  }, [query.data]);
+  return { ...query, units };
 }
 
 export function quantityStep(unit: SaleUnit) {

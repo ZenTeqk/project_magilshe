@@ -769,10 +769,7 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <Select value={item.unit_type} onValueChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>{saleUnits.map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent>
-                      </Select>
+                      <OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
                     </td>
                     <td className="py-2 pr-2">
                       <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" />

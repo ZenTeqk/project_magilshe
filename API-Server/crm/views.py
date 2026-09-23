@@ -1050,7 +1050,7 @@ class CRMCustomerViewSet(
         """Reuse the customer projection under the separately enforceable
         analytics permission consumed by the Customer Dashboard."""
         queryset = self.get_queryset()
-        return Response([self.summary(customer) for customer in queryset[:200]])
+        return Response([self.summary(customer) for customer in queryset])
 
     def retrieve(self, request, *args, **kwargs):
         customer = self.get_queryset().get(pk=kwargs["pk"])
