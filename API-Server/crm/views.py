@@ -865,7 +865,7 @@ class CRMCustomerViewSet(
         return Response(status=204)
 
     def list(self, request, *args, **kwargs):
-        return Response([self.summary(customer) for customer in self.get_queryset()[:200]])
+        return Response([self.summary(customer) for customer in self.get_queryset()])
 
     @staticmethod
     def _normalize_import_header(value):
