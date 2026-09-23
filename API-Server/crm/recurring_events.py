@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from .models import CustomerRecurringEvent
+from .models import CRMOption, CustomerRecurringEvent
 
 RECURRING_KEYWORDS = (
     ("birthday", "Birthday"),
@@ -12,7 +12,12 @@ RECURRING_KEYWORDS = (
 
 
 def match_recurring_event_type(occasion):
-    text = str(occasion or "").strip().lower()
+    raw_text = str(occasion or "").strip()
+    text = raw_text.lower()
+    configured = CRMOption.objects.filter(option_type="occasion", is_active=True)
+    for option in configured:
+        if option.name.strip().lower() == text:
+            return option.name.strip()
     for keyword, label in RECURRING_KEYWORDS:
         if keyword in text:
             return label
@@ -29,7 +34,11 @@ def sync_recurring_event(lead):
     event, _ = CustomerRecurringEvent.objects.update_or_create(
         customer_id=lead.customer_id, event_type=event_type,
         event_month=lead.event_date.month, event_day=lead.event_date.day,
-        defaults={"original_date": lead.event_date, "source_lead": lead},
+        defaults={
+            "original_date": lead.event_date,
+            "source_lead": lead,
+            "notes": lead.event_notes,
+        },
     )
     return event
 

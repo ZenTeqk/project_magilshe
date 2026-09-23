@@ -21,7 +21,7 @@ import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", gst_percentage: "" };
 
 function DirectOrderPage() {
-  const { units: saleUnits } = useSaleUnits();
+  const { units: saleUnits, factors: unitFactors } = useSaleUnits();
   const { data: cakeTypes } = useCrmOptions("cake_type");
   const { data: occasions } = useCrmOptions("occasion");
   const { data: cakeProducts } = useCrmOptions("cake_product");
@@ -66,8 +66,8 @@ function DirectOrderPage() {
     setBillingAddress(primary ? [primary.address, primary.city, primary.pincode].filter(Boolean).join(", ") : billingAddress);
   };
 
-  const subtotal = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate).baseAmount, 0);
-  const gst = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage).gstAmount, 0);
+  const subtotal = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors).baseAmount, 0);
+  const gst = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors).gstAmount, 0);
   const total = Math.max(0, subtotal + gst - (Number(discountAmount) || 0));
 
   const setItem = (i: number, patch: Partial<DirectOrderItem>) => setItems((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -146,11 +146,11 @@ function DirectOrderPage() {
       <SectionCard title="Order details">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Cake type" required error={errors["cake_type"]}>
-            <OptionCombobox value={cakeType} options={cakeTypeOptions} onChange={setCakeType} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" />
+            <OptionCombobox value={cakeType} options={cakeTypeOptions} onChange={setCakeType} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" portal />
             {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Occasion">
-            <OptionCombobox value={occasion} options={occasionOptions} onChange={setOccasion} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" />
+            <OptionCombobox value={occasion} options={occasionOptions} onChange={setOccasion} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" portal />
           </Field>
           <Field label="Event date"><Input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} /></Field>
         </div>
@@ -164,15 +164,15 @@ function DirectOrderPage() {
             </thead>
             <tbody>
               {items.map((item, i) => {
-                const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
+                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
-                    <td className="py-2 pr-2"><OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" /></td>
-                    <td className="py-2 pr-2"><OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" /></td>
+                    <td className="py-2 pr-2"><OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" portal /></td>
+                    <td className="py-2 pr-2"><OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" portal /></td>
                     <td className="py-2 pr-2"><Input type="number" min={quantityMin(item.unit_type)} step={quantityStep(item.unit_type)} value={item.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></td>
-                    <td className="py-2 pr-2"><OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" /></td>
-                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" /></td>
-                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" /></td>
+                    <td className="py-2 pr-2"><OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal /></td>
+                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal /></td>
+                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" portal /></td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right"><Button variant="ghost" size="icon" className="size-8" disabled={items.length === 1} onClick={() => removeItem(i)}><Trash2 className="size-4" /></Button></td>
                   </tr>
@@ -201,7 +201,7 @@ function DirectOrderPage() {
             </Field>
             <Field label="Payment date" required><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></Field>
             <Field label="Payment method" required error={errors["payment_method"]}>
-              <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" />
+              <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" portal />
               {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
             </Field>
             <Field label="Transaction reference"><Input value={transactionReference} onChange={(e) => setTransactionReference(e.target.value)} /></Field>

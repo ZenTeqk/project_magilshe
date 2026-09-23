@@ -12,6 +12,7 @@ from customer.models import Customer, CustomerAddress
 from .models import (
     CRMOption, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation,
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment, QuotationVersion,
+    pricing_quantity,
 )
 from .recurring_events import recurring_event_status
 from .uploads import validate_image_upload
@@ -159,6 +160,7 @@ class CustomerRecurringEventSerializer(serializers.ModelSerializer):
     """Manual CRUD for customer occasions/reminders, on top of the same model
     auto-populated from Lead history by recurring_events.sync_recurring_event."""
 
+    event_type = serializers.CharField()
     event_date = serializers.DateField(write_only=True, required=False)
     next_occurrence = serializers.SerializerMethodField()
     reminder_date = serializers.SerializerMethodField()
@@ -196,6 +198,26 @@ class CustomerRecurringEventSerializer(serializers.ModelSerializer):
 
     def get_days_until(self, obj):
         return (self._status(obj)[0] - date.today()).days
+
+    def validate_event_type(self, value):
+        event_type = str(value or "").strip()
+        if not event_type:
+            raise serializers.ValidationError("Event type is required.")
+
+        active_occasions = list(
+            CRMOption.objects.filter(option_type="occasion", is_active=True).values_list("name", flat=True)
+        )
+        if not active_occasions:
+            return event_type
+
+        allowed = {name.strip().casefold() for name in active_occasions if str(name).strip()}
+        if event_type.casefold() in allowed:
+            return event_type
+
+        if self.instance and str(self.instance.event_type).casefold() == event_type.casefold():
+            return event_type
+
+        raise serializers.ValidationError("Select an active occasion from CRM Settings.")
 
     def validate(self, attrs):
         event_date = attrs.pop("event_date", None)
@@ -509,13 +531,14 @@ class QuotationSerializer(serializers.ModelSerializer):
             "gst_percentage", self.instance.gst_percentage if self.instance else 0
         ) or 0
         if rate is not None and quantity is not None:
-            resulting_total = rate * quantity
+            unit_type = attrs.get("unit_type") or getattr(self.instance, "unit_type", "kg")
+            resulting_total = rate * pricing_quantity(quantity, unit_type)
             if gst_enabled:
                 resulting_total += resulting_total * gst_percentage / 100
         if attrs.get("items"):
-            subtotal = sum(item["quantity"] * item["rate"] for item in attrs["items"])
+            subtotal = sum(pricing_quantity(item["quantity"], item.get("unit_type")) * item["rate"] for item in attrs["items"])
             gst = sum(
-                item["quantity"] * item["rate"] * (item.get("gst_percentage") or 0) / 100
+                pricing_quantity(item["quantity"], item.get("unit_type")) * item["rate"] * (item.get("gst_percentage") or 0) / 100
                 for item in attrs["items"]
             )
             resulting_total = subtotal + gst - attrs.get(
@@ -603,7 +626,7 @@ class CRMOrderItemSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_amount(self, obj):
-        return (Decimal(obj.quantity) * Decimal(obj.rate)).quantize(Decimal("0.01"))
+        return (pricing_quantity(obj.quantity, obj.unit_type) * Decimal(obj.rate)).quantize(Decimal("0.01"))
 
     def validate(self, attrs):
         unit_type = attrs.get("unit_type", self.instance.unit_type if self.instance else "kg")

@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 from .models import CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerRecurringEvent, Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment, QuotationVersion
 from .serializers import CRMDeliverySerializer, LeadSerializer, QuotationItemSerializer, QuotationSerializer, create_quotation_version
 from .uploads import validate_image_upload
+from .recurring_events import sync_recurring_event
 
 
 class CRMCustomerImportExportTests(TestCase):
@@ -959,6 +960,31 @@ class DeliveryAssignmentSnapshotTests(TestCase):
 
 
 class UpcomingCustomerEventsDashboardTests(TestCase):
+    def test_configured_lead_occasion_syncs_event_notes_to_customer_event(self):
+        customer = get_user_model().objects.create_user(
+            username="event-note-customer", first_name="Event", last_name="Notes", phone="9000000202",
+        )
+        CRMOption.objects.update_or_create(
+            option_type="occasion", name="Engagement", defaults={"is_active": True}
+        )
+        lead = Lead.objects.create(
+            customer=customer,
+            customer_name="Event Notes",
+            phone="9000000202",
+            occasion="Engagement",
+            event_date=timezone.localdate() + timedelta(days=10),
+            cake_type="Cake",
+            quantity=1,
+            unit_type="kg",
+            event_notes="Prefers evening reminder.",
+        )
+
+        event = sync_recurring_event(lead)
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event.event_type, "Engagement")
+        self.assertEqual(event.notes, "Prefers evening reminder.")
+
     def test_feed_returns_real_events_nearest_first_and_supports_empty_window(self):
         user = get_user_model().objects.create_superuser(username="event-dashboard-admin", password="password")
         customer = get_user_model().objects.create_user(
@@ -1050,6 +1076,23 @@ class SaleUnitAmountCalculationTests(TestCase):
         self.assertEqual(item.amount, Decimal("5850.00"))
         self.assertEqual(quotation.subtotal, Decimal("5850.00"))
         self.assertEqual(quotation.total_amount, Decimal("5850.00"))
+
+    def test_gram_quantity_250_at_500_per_kg_totals_125(self):
+        item, quotation = self.quotation_total("gram", "250", "500.00")
+        self.assertEqual(item.amount, Decimal("125.00"))
+        self.assertEqual(quotation.total_amount, Decimal("125.00"))
+
+    def test_custom_unit_uses_its_configured_conversion_factor(self):
+        CRMOption.objects.create(option_type="sale_unit", name="lb", conversion_factor=Decimal("0.4536"))
+        item, quotation = self.quotation_total("lb", "2", "500.00")
+        self.assertEqual(item.amount, Decimal("453.60"))
+        self.assertEqual(quotation.total_amount, Decimal("453.60"))
+
+    def test_configured_gram_factor_overrides_default_heuristic(self):
+        CRMOption.objects.create(option_type="sale_unit", name="gram", conversion_factor=Decimal("0.0005"))
+        item, quotation = self.quotation_total("gram", "250", "500.00")
+        self.assertEqual(item.amount, Decimal("62.50"))
+        self.assertEqual(quotation.total_amount, Decimal("62.50"))
 
 PNG_BYTES = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02"

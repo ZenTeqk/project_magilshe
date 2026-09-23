@@ -47,7 +47,7 @@ export function MarkFailedDialog({
         </DialogHeader>
         {error && <div className="rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-sm text-danger">{error}</div>}
         <Field label="Failure reason" required>
-          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("delivery_failure_reason", reasons)} placeholder="Select or type reason" />
+          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("delivery_failure_reason", reasons)} placeholder="Select or type reason" portal />
           {!reasons.length && <p className="text-xs text-warning">Add an active failure reason in CRM Settings.</p>}
         </Field>
         <DialogFooter>

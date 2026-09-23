@@ -128,7 +128,7 @@ export function LeadStatusDialog({
               <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">No active reasons are configured. Add one in CRM Settings before changing this status.</p>
             )}
             <Field label={target === "Won" ? "Reason for winning" : "Reason for loss"} required>
-              <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption(optionType, reasons)} placeholder="Select or type reason" />
+              <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption(optionType, reasons)} placeholder="Select or type reason" portal />
             </Field>
           </div>
         )}

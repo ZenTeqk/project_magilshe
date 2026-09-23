@@ -39,7 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen w-full bg-background">
+    <div className="h-dvh w-full overflow-hidden bg-background">
       <CommandPalette open={open} onOpenChange={setOpen} />
 
       <aside
@@ -53,11 +53,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-[padding] duration-200",
+          "flex h-dvh min-h-0 flex-col transition-[padding] duration-200",
           collapsed ? "lg:pl-16" : "lg:pl-60",
         )}
       >
-        <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur print:hidden">
+        <header className="sticky top-0 z-30 shrink-0 border-b border-border bg-surface/95 backdrop-blur print:hidden">
           <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -183,7 +183,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-5 sm:px-6 lg:px-7 lg:py-6">
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-7 lg:py-6 print:overflow-visible">
           <div className="mx-auto w-full max-w-[96rem] animate-rise space-y-5">{children}</div>
         </main>
       </div>

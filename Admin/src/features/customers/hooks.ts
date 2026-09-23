@@ -194,7 +194,7 @@ export type PurchaseSummary = {
 export type CustomerRecurringEvent = {
   id: number;
   customer?: number;
-  event_type: "Birthday" | "Anniversary" | "Wedding" | "Baby Shower" | "Corporate Event" | "Other";
+  event_type: string;
   event_month: number;
   event_day: number;
   original_date: string;

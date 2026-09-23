@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,7 @@ type OptionComboboxProps = {
   max?: number;
   step?: number;
   className?: string;
+  portal?: boolean;
 };
 
 export function OptionCombobox({
@@ -28,9 +30,11 @@ export function OptionCombobox({
   max,
   step,
   className,
+  portal = false,
 }: OptionComboboxProps) {
   const [open, setOpen] = useState(false);
   const [showAllOptions, setShowAllOptions] = useState(false);
+  const [portalStyle, setPortalStyle] = useState<CSSProperties | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -69,9 +73,37 @@ export function OptionCombobox({
     setOpen(true);
   };
 
+  useEffect(() => {
+    if (!open || !portal) return;
+    const updatePosition = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPortalStyle({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: Math.max(160, window.innerHeight - rect.bottom - 16),
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, portal]);
+
   const menu = open ? (
     <div
-      className="absolute top-full right-0 left-0 z-[70] mt-1 max-h-56 overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+      className={cn(
+        portal ? "fixed z-[1000]" : "absolute top-full right-0 left-0 z-[70] mt-1 max-h-56",
+        // A modal Radix Dialog sets document.body's pointer-events to "none" while open,
+        // which this portaled menu (appended directly to body) would otherwise inherit,
+        // making it visible but unclickable. Force it back on for this menu and its options.
+        "pointer-events-auto overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg",
+      )}
+      style={portal ? portalStyle ?? undefined : undefined}
     >
       {visibleOptions.length ? (
         visibleOptions.map((option) => (
@@ -142,7 +174,7 @@ export function OptionCombobox({
       >
         <ChevronDown className="size-4" />
       </Button>
-      {menu}
+      {portal && menu ? createPortal(menu, document.body) : menu}
     </div>
   );
 }

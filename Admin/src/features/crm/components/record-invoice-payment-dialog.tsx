@@ -67,7 +67,7 @@ export function RecordInvoicePaymentDialog({
             <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
           </Field>
           <Field label="Payment method" required>
-            <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" />
+            <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" portal />
             {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
           </Field>
           <Field label="Transaction reference">

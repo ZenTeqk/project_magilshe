@@ -4,6 +4,30 @@ from decimal import Decimal, ROUND_HALF_UP
 from cake.models import Cake
 
 SALE_UNIT_CHOICES = (("kg", "kg"), ("piece", "piece"))
+GRAM_ALIASES = {"g", "gm", "gms", "gram", "grams"}
+
+
+def pricing_quantity(quantity, unit_type):
+    """Converts a quantity into the unit the rate is priced against.
+
+    Uses the conversion_factor configured in CRM Settings for the unit when
+    one exists, falling back to the historical gram-name heuristic (kg/piece
+    and unconfigured units pass through 1:1) so existing data keeps computing
+    the same amounts.
+    """
+    quantity = Decimal(quantity or 0)
+    normalized = str(unit_type or "").strip().lower()
+    factor = (
+        CRMOption.objects
+        .filter(option_type="sale_unit", name__iexact=normalized)
+        .values_list("conversion_factor", flat=True)
+        .first()
+    )
+    if factor is not None:
+        return quantity * factor
+    if normalized in GRAM_ALIASES:
+        return quantity / Decimal("1000")
+    return quantity
 
 
 class Lead(models.Model):
@@ -34,6 +58,7 @@ class Lead(models.Model):
     pincode = models.CharField(max_length=6, null=True, blank=True)
     occasion = models.CharField(max_length=150, default="Other")
     event_date = models.DateField(null=True, blank=True)
+    event_notes = models.TextField(null=True, blank=True)
     cake = models.ForeignKey(Cake, on_delete=models.SET_NULL, null=True, blank=True)
     cake_type = models.CharField(max_length=150, default="Custom Cake")
     flavour = models.CharField(max_length=100, null=True, blank=True)
@@ -253,7 +278,7 @@ class QuotationItem(models.Model):
 
     @property
     def subtotal(self):
-        return (Decimal(self.quantity) * Decimal(self.rate)).quantize(Decimal("0.01"))
+        return (pricing_quantity(self.quantity, self.unit_type) * Decimal(self.rate)).quantize(Decimal("0.01"))
 
     @property
     def gst_amount(self):
@@ -613,6 +638,10 @@ class CRMOption(models.Model):
     name = models.CharField(max_length=150)
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
+    # Only meaningful for option_type="sale_unit": multiplied by the quantity
+    # before pricing, so a unit's rate always resolves to a per-kg amount.
+    # 1 for kg/piece-style units, 0.001 for grams, etc.
+    conversion_factor = models.DecimalField(max_digits=12, decimal_places=6, default=Decimal("1"))
     created_on = models.DateTimeField(auto_now_add=True)
     updated_on = models.DateTimeField(auto_now=True)
 

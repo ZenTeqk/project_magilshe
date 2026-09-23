@@ -275,7 +275,16 @@ function CustomerProfilePage() {
               ) : (
                 <ul className="space-y-3">
                   {customer.recurring_events.slice(0, 4).map((event) => (
-                    <li key={event.id} className="rounded-xl border border-border p-3">
+                    <li
+                      key={event.id}
+                      className="cursor-pointer rounded-xl border border-border p-3 transition-colors hover:bg-surface-muted/70"
+                      onClick={() => setEventDialog({ open: true, event })}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setEventDialog({ open: true, event });
+                      }}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="text-sm font-medium">{event.event_type}</p>
@@ -554,7 +563,16 @@ function CustomerProfilePage() {
             ) : (
               <ul className="divide-y divide-border">
                 {customer.recurring_events.map((event) => (
-                  <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <li
+                    key={event.id}
+                    className="flex cursor-pointer flex-wrap items-center justify-between gap-3 p-4 transition-colors hover:bg-surface-muted/70"
+                    onClick={() => setEventDialog({ open: true, event })}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") setEventDialog({ open: true, event });
+                    }}
+                  >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{event.event_type}</p>
@@ -570,23 +588,45 @@ function CustomerProfilePage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.stopPropagation();
                             completeEvent.mutate(
                               { id: event.id, customer: customer.id },
                               { onSuccess: () => toast.success("Reminder marked complete") },
-                            )
-                          }
+                            );
+                          }}
                         >
                           <Check className="size-4" /> Complete
                         </Button>
                       )}
-                      <Button size="sm" variant="outline" onClick={() => createLeadFromEvent(event)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          createLeadFromEvent(event);
+                        }}
+                      >
                         <UserRoundCheck className="size-4" /> Create Lead
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setEventDialog({ open: true, event })}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEventDialog({ open: true, event });
+                        }}
+                      >
                         <Pencil className="size-4" />
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setDeleteEvent(event)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteEvent(event);
+                        }}
+                      >
                         <Trash2 className="size-4 text-danger" />
                       </Button>
                     </div>

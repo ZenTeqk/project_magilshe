@@ -8,6 +8,7 @@ export type CrmOptionRow = {
   name: string;
   sort_order: number;
   is_active: boolean;
+  conversion_factor: string | number;
 };
 
 function unwrapList<T>(data: unknown): T[] {
@@ -36,6 +37,7 @@ export type SaveOptionInput = {
   name: string;
   sort_order: number;
   is_active: boolean;
+  conversion_factor?: string | number;
 };
 
 export function useSaveCrmOption() {

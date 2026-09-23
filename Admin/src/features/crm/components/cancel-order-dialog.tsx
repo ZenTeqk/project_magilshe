@@ -42,7 +42,7 @@ export function CancelOrderDialog({
           <DialogDescription>A cancellation reason is required.</DialogDescription>
         </DialogHeader>
         <Field label="Reason" required>
-          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("order_cancellation_reason", reasons)} placeholder="Select or type reason" />
+          <OptionCombobox value={reason} options={reasons} onChange={setReason} onCreateOption={createOption("order_cancellation_reason", reasons)} placeholder="Select or type reason" portal />
           {!reasons.length && <p className="text-xs text-warning">Add an active cancellation reason in CRM Settings.</p>}
         </Field>
         <DialogFooter>

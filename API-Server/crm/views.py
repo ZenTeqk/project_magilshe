@@ -19,6 +19,7 @@ from customer.rbac import effective_permissions, is_super_admin
 from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOption, CRMOrder, CRMOrderItem, CustomerCommunicationLog, CustomerRecurringEvent,
     Lead, LeadActivity, LeadReferenceImage, Quotation, QuotationActivity, QuotationItem, QuotationPayment,
+    pricing_quantity,
 )
 from .customer_matching import find_existing_customer, sync_customer_from_crm_details
 from .actionable import (
@@ -510,6 +511,9 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             },
         )
         if created:
+            lead_amount = Decimal(lead.estimated_amount or lead.budget or lead.expected_price or 0)
+            lead_pricing_quantity = pricing_quantity(lead.quantity or 1, lead.unit_type)
+            lead_rate = lead_amount / lead_pricing_quantity if lead_pricing_quantity else lead_amount
             QuotationItem.objects.create(
                 quotation=quotation,
                 cake=lead.cake,
@@ -519,7 +523,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 weight=lead.weight,
                 quantity=lead.quantity or 1,
                 unit_type=lead.unit_type,
-                rate=lead.estimated_amount or lead.budget or lead.expected_price or 0,
+                rate=lead_rate,
                 gst_percentage=0,
             )
             QuotationActivity.objects.create(

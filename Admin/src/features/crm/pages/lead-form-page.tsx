@@ -58,6 +58,7 @@ const blank = {
   theme: "",
   occasion: "",
   event_date: "",
+  event_notes: "",
   delivery_date: "",
   delivery_time: "",
   budget: "",
@@ -360,10 +361,10 @@ function LeadFormPage() {
         {!isEdit && <CustomerMatchPicker term={form.phone.length >= 3 ? form.phone : form.customer_name} selected={matched} onSelect={applyMatch} onChange={() => { setMatched(null); setForm((f) => ({ ...f, customer_id: null })); }}/>} 
       </SectionCard>
 
-      <SectionCard title="Event Details">
+      <SectionCard title="Event Details" className="relative z-20 overflow-visible" bodyClassName="overflow-visible">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Occasion" required error={errors["occasion"]}>
-            <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => set("occasion", v)} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" />
+            <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => set("occasion", v)} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" portal />
             {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
           </Field>
           <Field label="Event date" required error={errors["event_date"]}>
@@ -374,17 +375,24 @@ function LeadFormPage() {
               onChange={(e) => set("event_date", e.target.value)}
             />
           </Field>
+          <Field label="Event notes" className="sm:col-span-2">
+            <Textarea
+              rows={3}
+              value={form.event_notes}
+              onChange={(e) => set("event_notes", e.target.value)}
+            />
+          </Field>
         </div>
       </SectionCard>
 
       <SectionCard title="Cake Details">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Cake type" required error={errors["cake_type"]}>
-            <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => set("cake_type", v)} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" />
+            <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => set("cake_type", v)} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" portal />
             {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
           </Field>
           <Field label="Flavour">
-            <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => set("flavour", v)} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
+            <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => set("flavour", v)} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" portal />
           </Field>
           <Field label="Shape">
             <Input value={form.shape} onChange={(e) => set("shape", e.target.value)} />
@@ -399,7 +407,7 @@ function LeadFormPage() {
             />
           </Field>
           <Field label="Unit" required>
-            <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(value) => set("unit_type", value as SaleUnit)} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
+            <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(value) => set("unit_type", value as SaleUnit)} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
           </Field>
           <Field label="Theme">
             <Input value={form.theme} onChange={(e) => set("theme", e.target.value)} />
@@ -496,11 +504,8 @@ function LeadFormPage() {
               onChange={(e) => set("budget", e.target.value)}
             />
           </Field>
-          <Field label="Rate">
-            <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => set("estimated_amount", v)} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" />
-          </Field>
           <Field label="Amount">
-            <Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} />
+            <Input type="number" min={0} step={0.01} value={form.estimated_amount} onChange={(e) => set("estimated_amount", e.target.value)} />
           </Field>
         </div>
       </SectionCard>
@@ -553,7 +558,7 @@ function LeadFormPage() {
         {form.status === "Won" && (
           <div className="mt-4">
             <Field label="Reason for winning" required error={errors["winning_reason"]}>
-              <OptionCombobox value={form.winning_reason} options={winningReasonOptions} onChange={(value) => set("winning_reason", value)} onCreateOption={createOption("winning_reason", winningReasonOptions)} placeholder="Select or type reason" />
+              <OptionCombobox value={form.winning_reason} options={winningReasonOptions} onChange={(value) => set("winning_reason", value)} onCreateOption={createOption("winning_reason", winningReasonOptions)} placeholder="Select or type reason" portal />
               {!winningReasonOptions.length && <p className="text-xs text-warning">Add an active winning reason in CRM Settings.</p>}
             </Field>
           </div>
@@ -561,7 +566,7 @@ function LeadFormPage() {
         {form.status === "Lost" && (
           <div className="mt-4">
             <Field label="Reason for loss" required error={errors["loss_reason"]}>
-              <OptionCombobox value={form.loss_reason} options={lossReasonOptions} onChange={(value) => set("loss_reason", value)} onCreateOption={createOption("loss_reason", lossReasonOptions)} placeholder="Select or type reason" />
+              <OptionCombobox value={form.loss_reason} options={lossReasonOptions} onChange={(value) => set("loss_reason", value)} onCreateOption={createOption("loss_reason", lossReasonOptions)} placeholder="Select or type reason" portal />
               {!lossReasonOptions.length && <p className="text-xs text-warning">Add an active loss reason in CRM Settings.</p>}
             </Field>
           </div>
@@ -590,7 +595,7 @@ function LeadFormPage() {
       <SectionCard title="Sales Information">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Lead source">
-            <OptionCombobox value={form.lead_source} options={leadSourceOptions} onChange={(v) => set("lead_source", v)} onCreateOption={createOption("lead_source", leadSourceOptions)} placeholder="Select or type source" />
+            <OptionCombobox value={form.lead_source} options={leadSourceOptions} onChange={(v) => set("lead_source", v)} onCreateOption={createOption("lead_source", leadSourceOptions)} placeholder="Select or type source" portal />
             {!leadSourceOptions.length && <p className="text-xs text-warning">Add an active lead source in CRM Settings.</p>}
           </Field>
           <Field label="Lead source details">

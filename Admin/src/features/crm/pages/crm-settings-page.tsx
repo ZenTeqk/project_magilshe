@@ -79,7 +79,7 @@ const moduleGroups = [
   },
 ] as const;
 
-type EditorState = { type: string; typeLabel: string; id?: string | number; name: string; sort_order: number };
+type EditorState = { type: string; typeLabel: string; id?: string | number; name: string; sort_order: number; conversion_factor: string };
 type DeleteState = { type: string; row: CrmOptionRow };
 
 function CrmSettingsPage() {
@@ -94,6 +94,7 @@ function CrmSettingsPage() {
       await saveOption.mutateAsync({
         id: editor.id, option_type: editor.type, name: editor.name.trim(),
         sort_order: editor.sort_order, is_active: true,
+        ...(editor.type === "sale_unit" ? { conversion_factor: editor.conversion_factor || "1" } : {}),
       });
       toast.success(editor.id ? "Option updated successfully" : "Option added successfully");
       setEditor(null);
@@ -142,12 +143,13 @@ function CrmSettingsPage() {
                     label={item.label}
                     description={item.description}
                     onAdd={() =>
-                      setEditor({ type: item.type, typeLabel: item.label, name: "", sort_order: 0 })
+                      setEditor({ type: item.type, typeLabel: item.label, name: "", sort_order: 0, conversion_factor: "1" })
                     }
                     onEdit={(row) =>
                       setEditor({
                         type: item.type, typeLabel: item.label,
                         id: row.id, name: row.name, sort_order: row.sort_order,
+                        conversion_factor: String(row.conversion_factor ?? "1"),
                       })
                     }
                     onDelete={(row) => setDeleteTarget({ type: item.type, row })}
@@ -170,6 +172,21 @@ function CrmSettingsPage() {
               <Field label="Sort order">
                 <Input type="number" value={editor.sort_order} onChange={(e) => setEditor({ ...editor, sort_order: Number(e.target.value) || 0 })} />
               </Field>
+              {editor.type === "sale_unit" && (
+                <Field label="Conversion factor" required>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={editor.conversion_factor}
+                    onChange={(e) => setEditor({ ...editor, conversion_factor: e.target.value })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Multiplied by the quantity before pricing. Use 1 for kg/piece-style units, 0.001 for grams, or the
+                    correct factor for any other unit (e.g. 0.4536 for lb) so rates stay per-kg accurate.
+                  </p>
+                </Field>
+              )}
             </div>
           )}
           <DialogFooter>
@@ -273,7 +290,10 @@ function OptionTypeRows({
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{row.name}</p>
-                <p className="text-xs text-muted-foreground tabular">Sort order {row.sort_order}</p>
+                <p className="text-xs text-muted-foreground tabular">
+                  Sort order {row.sort_order}
+                  {type === "sale_unit" && ` · × ${Number(row.conversion_factor ?? 1)}`}
+                </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Switch

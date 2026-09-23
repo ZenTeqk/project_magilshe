@@ -55,7 +55,7 @@ import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeli
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
-import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { calculateLineItem, pricingQuantity, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
 
@@ -92,7 +92,7 @@ const blank = {
 };
 
 function QuotationFormPage() {
-  const { units: saleUnits } = useSaleUnits();
+  const { units: saleUnits, factors: unitFactors } = useSaleUnits();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const leadId = searchParams.get("lead") ?? undefined;
@@ -189,6 +189,9 @@ function QuotationFormPage() {
 
   useEffect(() => {
     if (isEdit || !leadForPrefill) return;
+    const leadAmount = Number(leadForPrefill.estimated_amount ?? leadForPrefill.budget ?? 0);
+    const leadQuantity = pricingQuantity(leadForPrefill.quantity ?? 1, leadForPrefill.unit_type ?? "kg", unitFactors);
+    const leadRate = leadAmount && leadQuantity ? leadAmount / leadQuantity : "";
     setForm((f) => ({
       ...f,
       customer: leadForPrefill.customer_id ?? null,
@@ -212,7 +215,7 @@ function QuotationFormPage() {
           weight: leadForPrefill.weight ?? "",
           quantity: leadForPrefill.quantity ?? 1,
           unit_type: leadForPrefill.unit_type ?? "kg",
-          rate: leadForPrefill.estimated_amount ?? leadForPrefill.budget ?? "",
+          rate: leadRate,
           gst_percentage: "",
         },
       ],
@@ -243,12 +246,12 @@ function QuotationFormPage() {
   };
 
   const totals = useMemo(() => {
-    const subtotal = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate).baseAmount, 0);
-    const gst = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage).gstAmount, 0);
+    const subtotal = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors).baseAmount, 0);
+    const gst = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors).gstAmount, 0);
     const discount = Number(form.discount_amount) || 0;
     const total = Math.max(0, subtotal + gst - discount);
     return { subtotal, gst, total };
-  }, [form.items, form.discount_amount]);
+  }, [form.items, form.discount_amount, unitFactors]);
 
   const advanceAmount = Number(existingQuotation?.advance_amount ?? 0);
   const hasRecordedAdvance = Boolean(
@@ -673,6 +676,7 @@ function QuotationFormPage() {
               onChange={(value) => setForm((f) => ({ ...f, occasion: value }))}
               onCreateOption={createOption("occasion", occasionOptions)}
               placeholder="Select or type occasion"
+              portal
             />
           </Field>
           <Field label="Event date">
@@ -696,6 +700,7 @@ function QuotationFormPage() {
               onChange={(value) => setForm((f) => ({ ...f, delivery_type: value }))}
               onCreateOption={createOption("delivery_method", deliveryMethodOptions)}
               placeholder="Select or type delivery method"
+              portal
             />
           </Field>
           <Field label="Delivery date">
@@ -744,11 +749,11 @@ function QuotationFormPage() {
             </thead>
             <tbody>
               {form.items.map((item, i) => {
-                const amount = calculateLineItem(item.quantity, item.rate).baseAmount;
+                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2">
-                      <OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" />
+                      <OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" portal />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -757,7 +762,7 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
+                      <OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" portal />
                     </td>
                     <td className="py-2 pr-2">
                       <Input
@@ -769,13 +774,13 @@ function QuotationFormPage() {
                       />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
+                      <OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" />
+                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" />
+                      <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" portal />
                     </td>
                     <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
                     <td className="py-2 text-right">
@@ -863,6 +868,7 @@ function QuotationFormPage() {
                 onChange={(value) => setForm((f) => ({ ...f, payment_terms: value }))}
                 onCreateOption={createOption("payment_term", paymentTermOptions)}
                 placeholder="Select or type payment terms"
+                portal
               />
             </Field>
             <Field label="Notes">

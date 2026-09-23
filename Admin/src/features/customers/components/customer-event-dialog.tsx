@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,15 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field } from "@/components/shared/field";
 import { useSaveCustomerEvent, type CustomerRecurringEvent } from "@/features/customers/hooks";
-
-const eventTypes: CustomerRecurringEvent["event_type"][] = [
-  "Birthday",
-  "Anniversary",
-  "Wedding",
-  "Baby Shower",
-  "Corporate Event",
-  "Other",
-];
+import { useCrmOptions } from "@/features/crm/hooks";
+import { optionsWithCurrent } from "@/features/crm/config-options";
 
 const reminderPresets = [
   { label: "7 days before", value: 7 },
@@ -36,11 +29,16 @@ export function CustomerEventDialog({
   event: CustomerRecurringEvent | null;
 }) {
   const save = useSaveCustomerEvent();
-  const [eventType, setEventType] = useState<CustomerRecurringEvent["event_type"]>("Birthday");
+  const { data: occasions } = useCrmOptions("occasion");
+  const [eventType, setEventType] = useState("Birthday");
   const [eventDate, setEventDate] = useState("");
   const [notes, setNotes] = useState("");
   const [reminderPreset, setReminderPreset] = useState(7);
   const [customDays, setCustomDays] = useState("7");
+  const eventTypeOptions = useMemo(
+    () => optionsWithCurrent(occasions, eventType || event?.event_type || "Birthday"),
+    [occasions, eventType, event?.event_type],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -52,13 +50,13 @@ export function CustomerEventDialog({
       setReminderPreset(preset ? preset.value : -1);
       setCustomDays(String(event.reminder_days_before));
     } else {
-      setEventType("Birthday");
+      setEventType(occasions?.[0] ?? "Birthday");
       setEventDate("");
       setNotes("");
       setReminderPreset(7);
       setCustomDays("7");
     }
-  }, [open, event]);
+  }, [open, event, occasions]);
 
   const reminderDaysBefore = reminderPreset === -1 ? Number(customDays) || 0 : reminderPreset;
 
@@ -97,12 +95,12 @@ export function CustomerEventDialog({
         </DialogHeader>
         <div className="space-y-4">
           <Field label="Event type" required>
-            <Select value={eventType} onValueChange={(v) => setEventType(v as typeof eventType)}>
+            <Select value={eventType} onValueChange={setEventType}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {eventTypes.map((t) => (
+                {eventTypeOptions.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
                   </SelectItem>

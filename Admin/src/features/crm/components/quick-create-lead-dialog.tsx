@@ -25,7 +25,7 @@ import {
   type CrmCustomerSearchResult,
 } from "@/features/crm/hooks";
 import { CustomerMatchPicker } from "./customer-match-picker";
-import { defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { calculateLineItem, defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
@@ -40,6 +40,7 @@ const emptyQuickLead = {
   weight: "",
   quantity: "" as number | string,
   unit_type: "kg" as SaleUnit,
+  rate: "",
   estimated_amount: "",
   event_date: "",
 };
@@ -51,7 +52,7 @@ export function QuickCreateLeadDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { units: saleUnits } = useSaleUnits();
+  const { units: saleUnits, factors: unitFactors } = useSaleUnits();
   const navigate = useNavigate();
   const [form, setForm] = useState(emptyQuickLead);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -67,6 +68,8 @@ export function QuickCreateLeadDialog({
   const productRateOptions = configuredOptions(productRates);
   const createOption = useCreateCrmOptionFromText();
   const createLead = useCreateLead();
+  const amountFromRate = (quantity: string | number, rate: string, unitType: SaleUnit) =>
+    calculateLineItem(quantity, rate, 0, unitType, unitFactors).baseAmount.toFixed(2);
 
   useEffect(() => {
     if (!open) {
@@ -113,7 +116,8 @@ export function QuickCreateLeadDialog({
     if (Object.keys(clientErrors).length) return;
 
     try {
-      const data = await createLead.mutateAsync(form);
+      const { rate: _rate, ...payload } = form;
+      const data = await createLead.mutateAsync(payload);
       toast.success("Lead created successfully");
       onOpenChange(false);
       navigate(`/crm/leads/${data.id}/edit`);
@@ -174,15 +178,15 @@ export function QuickCreateLeadDialog({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Occasion" required error={errors["occasion"]}>
-                <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => setForm((f) => ({ ...f, occasion: v }))} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" />
+                <OptionCombobox value={form.occasion} options={occasionOptions} onChange={(v) => setForm((f) => ({ ...f, occasion: v }))} onCreateOption={createOption("occasion", occasionOptions)} placeholder="Select or type occasion" portal />
                 {!occasionOptions.length && <p className="text-xs text-warning">Add an active occasion in CRM Settings.</p>}
               </Field>
               <Field label="Cake type" required error={errors["cake_type"]}>
-                <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => setForm((f) => ({ ...f, cake_type: v }))} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" />
+                <OptionCombobox value={form.cake_type} options={cakeTypeOptions} onChange={(v) => setForm((f) => ({ ...f, cake_type: v }))} onCreateOption={createOption("cake_type", cakeTypeOptions)} placeholder="Select or type cake type" portal />
                 {!cakeTypeOptions.length && <p className="text-xs text-warning">Add an active cake type in CRM Settings.</p>}
               </Field>
               <Field label="Flavour">
-                <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => setForm((f) => ({ ...f, flavour: v }))} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" />
+                <OptionCombobox value={form.flavour} options={flavourOptions} onChange={(v) => setForm((f) => ({ ...f, flavour: v }))} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" portal />
               </Field>
               <Field label="Quantity" required>
                 <Input
@@ -191,17 +195,33 @@ export function QuickCreateLeadDialog({
                   step={quantityStep(form.unit_type)}
                   value={form.quantity}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, quantity: e.target.value }))
+                    setForm((f) => ({
+                      ...f,
+                      quantity: e.target.value,
+                      estimated_amount: f.rate ? amountFromRate(e.target.value, f.rate, f.unit_type) : f.estimated_amount,
+                    }))
                   }
                 />
               </Field>
               <Field label="Unit" required>
-                <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(unit_type) => setForm((f) => ({ ...f, unit_type: unit_type as SaleUnit }))} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" />
+                <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(unit_type) => setForm((f) => ({
+                  ...f,
+                  unit_type: unit_type as SaleUnit,
+                  estimated_amount: f.rate ? amountFromRate(f.quantity, f.rate, unit_type as SaleUnit) : f.estimated_amount,
+                }))} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
               </Field>
               <Field label="Rate">
-                <OptionCombobox type="number" min={0} value={form.estimated_amount} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, estimated_amount: v }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" />
+                <OptionCombobox type="number" min={0} value={form.rate} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, rate: v, estimated_amount: amountFromRate(f.quantity, v, f.unit_type) }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" portal />
               </Field>
-              <Field label="Amount"><Input readOnly value={(Number(form.quantity || 0) * Number(form.estimated_amount || 0)).toFixed(2)} /></Field>
+              <Field label="Amount">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={form.estimated_amount}
+                  onChange={(e) => setForm((f) => ({ ...f, estimated_amount: e.target.value }))}
+                />
+              </Field>
               <Field label="Event date" required error={errors["event_date"]}>
                 <Input
                   type="date"

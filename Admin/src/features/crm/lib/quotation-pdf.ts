@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { CompanyConfig, Quotation } from "@/features/crm/quotations-hooks";
+import { pricingQuantity } from "@/features/crm/sale-units";
 import { formatTimeOfDay } from "@/lib/format-time";
 import { addressOrFallback } from "./address-fallback";
 import {
@@ -48,11 +49,11 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   }];
   const hasItemRows = Boolean(q.items?.length);
   const calculatedSubtotal = hasItemRows
-    ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.rate) || 0), 0)
+    ? items.reduce((sum, item) => sum + (Number(item.amount ?? item.subtotal ?? 0) || pricingQuantity(item.quantity || 0, item.unit_type) * (Number(item.rate) || 0)), 0)
     : Number(q.subtotal || 0);
   const calculatedGst = hasItemRows
     ? items.reduce((sum, item) => {
-        const lineAmount = (Number(item.quantity) || 0) * (Number(item.rate) || 0);
+        const lineAmount = Number(item.amount ?? item.subtotal ?? 0) || pricingQuantity(item.quantity || 0, item.unit_type) * (Number(item.rate) || 0);
         return sum + lineAmount * (Number(item.gst_percentage) || 0) / 100;
       }, 0)
     : Number(q.gst_amount || 0);
@@ -71,12 +72,13 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
       y = drawTableHeader(doc, y, headers);
     }
     const qty = Number(item.quantity) || 0, rate = Number(item.rate) || 0, gst = Number(item.gst_percentage) || 0;
+    const lineAmount = Number(item.amount ?? item.subtotal ?? 0) || pricingQuantity(item.quantity || 0, item.unit_type) * rate;
     drawTableRowBackground(doc, y, rowHeight, index % 2 === 1);
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(...PDF.ink);
     doc.text(String(index + 1), 24, y + 6, { align: "center" }); doc.text(productLines, 31, y + 6); doc.text(flavourLines, 86, y + 6);
     doc.text(String(qty), 118, y + 6, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6, { align: "center" });
     doc.text(money(rate), 158, y + 6, { align: "right" }); doc.text(`${gst}%`, 169, y + 6, { align: "center" });
-    doc.setFont("helvetica", "bold"); doc.text(money(qty * rate), 190, y + 6, { align: "right" });
+    doc.setFont("helvetica", "bold"); doc.text(money(lineAmount), 190, y + 6, { align: "right" });
     y += rowHeight;
   });
 
