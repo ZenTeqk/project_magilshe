@@ -196,6 +196,7 @@ export type Lead = {
   delivery_type: string | null;
   delivery_address: string | null;
   budget: string | null;
+  rate: string | null;
   estimated_amount: string | null;
   cake_message: string | null;
   customer_notes: string | null;
@@ -268,7 +269,6 @@ export function toLeadPayload(form: Record<string, unknown>) {
     "created_by",
     "updated_by",
     "updated_on",
-    "rate",
   ]);
   const payload = Object.fromEntries(
     Object.entries(form)

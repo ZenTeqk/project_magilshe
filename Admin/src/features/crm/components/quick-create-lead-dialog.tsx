@@ -25,7 +25,7 @@ import {
   type CrmCustomerSearchResult,
 } from "@/features/crm/hooks";
 import { CustomerMatchPicker } from "./customer-match-picker";
-import { calculateLineItem, defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { calculateLineItem, defaultQuantity, hasRate, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
@@ -116,8 +116,7 @@ export function QuickCreateLeadDialog({
     if (Object.keys(clientErrors).length) return;
 
     try {
-      const { rate: _rate, ...payload } = form;
-      const data = await createLead.mutateAsync(payload);
+      const data = await createLead.mutateAsync(form);
       toast.success("Lead created successfully");
       onOpenChange(false);
       navigate(`/crm/leads/${data.id}/edit`);
@@ -211,7 +210,7 @@ export function QuickCreateLeadDialog({
                 }))} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
               </Field>
               <Field label="Rate">
-                <OptionCombobox type="number" min={0} value={form.rate} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, rate: v, estimated_amount: amountFromRate(f.quantity, v, f.unit_type) }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" portal />
+                <OptionCombobox type="number" min={0} value={form.rate} options={productRateOptions} onChange={(v) => setForm((f) => ({ ...f, rate: v, estimated_amount: hasRate(v) ? amountFromRate(f.quantity, v, f.unit_type) : "" }))} onCreateOption={createOption("product_rate", productRateOptions)} placeholder="Select or type rate" portal disabled={!hasRate(form.rate) && form.estimated_amount !== ""} />
               </Field>
               <Field label="Amount">
                 <Input
@@ -219,6 +218,7 @@ export function QuickCreateLeadDialog({
                   min={0}
                   step={0.01}
                   value={form.estimated_amount}
+                  readOnly={hasRate(form.rate)}
                   onChange={(e) => setForm((f) => ({ ...f, estimated_amount: e.target.value }))}
                 />
               </Field>

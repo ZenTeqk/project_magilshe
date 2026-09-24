@@ -17,6 +17,7 @@ type OptionComboboxProps = {
   step?: number;
   className?: string;
   portal?: boolean;
+  disabled?: boolean;
 };
 
 export function OptionCombobox({
@@ -31,6 +32,7 @@ export function OptionCombobox({
   step,
   className,
   portal = false,
+  disabled = false,
 }: OptionComboboxProps) {
   const [open, setOpen] = useState(false);
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -69,6 +71,7 @@ export function OptionCombobox({
   };
 
   const openMenu = () => {
+    if (disabled) return;
     setShowAllOptions(true);
     setOpen(true);
   };
@@ -145,6 +148,7 @@ export function OptionCombobox({
         step={step}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onFocus={openMenu}
         onChange={(event) => {
           setShowAllOptions(false);
@@ -163,6 +167,7 @@ export function OptionCombobox({
         type="button"
         variant="ghost"
         size="icon"
+        disabled={disabled}
         className="absolute right-1 top-1 h-8 w-8 text-muted-foreground hover:text-foreground"
         onPointerDown={(event) => event.preventDefault()}
         onMouseDown={(event) => event.preventDefault()}

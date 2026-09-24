@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { CompanyConfig, Quotation } from "@/features/crm/quotations-hooks";
-import { pricingQuantity } from "@/features/crm/sale-units";
+import { hasRate, pricingQuantity } from "@/features/crm/sale-units";
 import { formatTimeOfDay } from "@/lib/format-time";
 import { addressOrFallback } from "./address-fallback";
 import {
@@ -35,16 +35,17 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
   const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 110, y, cardWidth, cardHeight);
   y = Math.max(customerBottom, detailsBottom) + 4;
 
+  const showRate = q.items?.length ? q.items.some((item) => hasRate(item.rate)) : hasRate(q.rate);
   const headers = [
     { text: "#", x: 24, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 31 }, { text: "FLAVOUR", x: 86 },
     { text: "QTY", x: 118, align: "center" as const }, { text: "UNIT", x: 132, align: "center" as const },
-    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 169, align: "center" as const },
+    ...(showRate ? [{ text: "RATE", x: 158, align: "right" as const }] : []), { text: "GST", x: 169, align: "center" as const },
     { text: "AMOUNT", x: 190, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
   const items = q.items?.length ? q.items : [{
     item_name: q.cake_type || "Custom cake", description: null, flavour: q.flavour, weight: null,
-    quantity: q.quantity || 0, unit_type: "kg", rate: q.rate || 0, gst_percentage: q.gst_percentage,
+    quantity: q.quantity || 0, unit_type: "kg", rate: q.rate ?? null, gst_percentage: q.gst_percentage,
     amount: q.subtotal,
   }];
   const hasItemRows = Boolean(q.items?.length);
@@ -77,7 +78,7 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(...PDF.ink);
     doc.text(String(index + 1), 24, y + 6, { align: "center" }); doc.text(productLines, 31, y + 6); doc.text(flavourLines, 86, y + 6);
     doc.text(String(qty), 118, y + 6, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6, { align: "center" });
-    doc.text(money(rate), 158, y + 6, { align: "right" }); doc.text(`${gst}%`, 169, y + 6, { align: "center" });
+    if (showRate) doc.text(hasRate(item.rate) ? money(rate) : "-", 158, y + 6, { align: "right" }); doc.text(`${gst}%`, 169, y + 6, { align: "center" });
     doc.setFont("helvetica", "bold"); doc.text(money(lineAmount), 190, y + 6, { align: "right" });
     y += rowHeight;
   });

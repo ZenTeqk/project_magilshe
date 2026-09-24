@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { CompanyConfig, Quotation } from "@/features/crm/quotations-hooks";
+import { hasRate } from "@/features/crm/sale-units";
 import { formatTimeOfDay } from "@/lib/format-time";
 import { addressOrFallback } from "./address-fallback";
 import {
@@ -34,16 +35,17 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     ], PDF.left, y, PDF.right - PDF.left) + 5;
   }
 
+  const showRate = q.items?.length ? q.items.some((item) => hasRate(item.rate)) : hasRate(q.rate);
   const headers = [
     { text: "#", x: 15, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 22 }, { text: "FLAVOUR", x: 81 },
     { text: "QTY", x: 116, align: "center" as const }, { text: "UNIT", x: 130, align: "center" as const },
-    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 168, align: "center" as const },
+    ...(showRate ? [{ text: "RATE", x: 158, align: "right" as const }] : []), { text: "GST", x: 168, align: "center" as const },
     { text: "AMOUNT", x: 196, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
   const items = q.items?.length ? q.items : [{
     item_name: q.cake_type || "Custom cake", description: null, flavour: q.flavour, weight: null,
-    quantity: q.quantity || 0, unit_type: "kg", rate: q.rate || 0, gst_percentage: q.gst_percentage,
+    quantity: q.quantity || 0, unit_type: "kg", rate: q.rate ?? null, gst_percentage: q.gst_percentage,
     amount: q.subtotal,
   }];
 
@@ -62,7 +64,7 @@ export async function buildQuotationPdf(q: Quotation, company?: CompanyConfig, b
     [20, 79, 109, 123, 138, 160, 176].forEach((x) => { doc.setDrawColor(...PDF.rule); doc.line(x, y, x, y + rowHeight); });
     doc.text(String(index + 1), 15, y + 6.5, { align: "center" }); doc.text(productLines, 22, y + 6.5); doc.text(flavourLines, 81, y + 6.5);
     doc.text(String(qty), 116, y + 6.5, { align: "center" }); doc.text(displayUnit(item.unit_type), 130, y + 6.5, { align: "center" });
-    doc.text(money(rate), 158, y + 6.5, { align: "right" }); doc.text(`${gst}%`, 168, y + 6.5, { align: "center" });
+    if (showRate) doc.text(hasRate(item.rate) ? money(rate) : "-", 158, y + 6.5, { align: "right" }); doc.text(`${gst}%`, 168, y + 6.5, { align: "center" });
     doc.setFont("helvetica", "bold"); doc.text(money(item.amount ?? item.subtotal ?? 0), 196, y + 6.5, { align: "right" });
     y += rowHeight;
   });

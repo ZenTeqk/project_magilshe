@@ -10,19 +10,28 @@ export type UnitFactors = Record<string, number>;
 /** Unit names treated as grams when no CRM Settings conversion factor is configured for them. */
 const GRAM_ALIASES = new Set(["g", "gm", "gms", "gram", "grams"]);
 
+/** A rate counts as entered only when the field is non-blank. */
+export function hasRate(rate: string | number | null | undefined) {
+  return rate !== null && rate !== undefined && String(rate).trim() !== "";
+}
+
 export function calculateLineItem(
   quantity: string | number,
-  rate: string | number,
+  rate: string | number | null | undefined,
   gstPercentage: string | number = 0,
   unitType: SaleUnit = "kg",
   factors: UnitFactors = {},
+  manualAmount: string | number | null | undefined = null,
 ) {
   const parsedQuantity = pricingQuantity(quantity, unitType, factors);
   const parsedRate = Number(rate);
   const parsedGst = Number(gstPercentage);
-  const baseAmount = Number.isFinite(parsedQuantity) && Number.isFinite(parsedRate)
-    ? parsedQuantity * parsedRate
-    : 0;
+  // Without a rate the amount is whatever was typed in manually.
+  const baseAmount = !hasRate(rate)
+    ? (Number.isFinite(Number(manualAmount)) ? Number(manualAmount) : 0)
+    : Number.isFinite(parsedQuantity) && Number.isFinite(parsedRate)
+      ? parsedQuantity * parsedRate
+      : 0;
   const gstAmount = Number.isFinite(parsedGst) ? baseAmount * parsedGst / 100 : 0;
   return { baseAmount, gstAmount, totalAmount: baseAmount + gstAmount };
 }

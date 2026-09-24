@@ -512,8 +512,9 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         )
         if created:
             lead_amount = Decimal(lead.estimated_amount or lead.budget or lead.expected_price or 0)
-            lead_pricing_quantity = pricing_quantity(lead.quantity or 1, lead.unit_type)
-            lead_rate = lead_amount / lead_pricing_quantity if lead_pricing_quantity else lead_amount
+            # Only carry a rate forward when the lead actually has one; otherwise
+            # the lead amount is a manually entered line amount.
+            lead_rate = lead.rate
             QuotationItem.objects.create(
                 quotation=quotation,
                 cake=lead.cake,
@@ -524,6 +525,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 quantity=lead.quantity or 1,
                 unit_type=lead.unit_type,
                 rate=lead_rate,
+                manual_amount=None if lead_rate is not None else lead_amount,
                 gst_percentage=0,
             )
             QuotationActivity.objects.create(

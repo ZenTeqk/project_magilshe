@@ -72,6 +72,7 @@ class Lead(models.Model):
     delivery_type = models.CharField(max_length=50, null=True, blank=True)
     delivery_address = models.TextField(null=True, blank=True)
     budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     estimated_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     customer_notes = models.TextField(null=True, blank=True)
     internal_notes = models.TextField(null=True, blank=True)
@@ -269,7 +270,9 @@ class QuotationItem(models.Model):
     weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
     unit_type = models.CharField(max_length=30, default="kg")
-    rate = models.DecimalField(max_digits=12, decimal_places=2)
+    # rate is optional: when blank, manual_amount is the line amount.
+    rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    manual_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     sort_order = models.PositiveIntegerField(default=0)
 
@@ -278,6 +281,8 @@ class QuotationItem(models.Model):
 
     @property
     def subtotal(self):
+        if self.rate is None:
+            return Decimal(self.manual_amount or 0).quantize(Decimal("0.01"))
         return (pricing_quantity(self.quantity, self.unit_type) * Decimal(self.rate)).quantize(Decimal("0.01"))
 
     @property
@@ -438,7 +443,7 @@ class CRMOrderItem(models.Model):
     weight = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     quantity = models.DecimalField(max_digits=10, decimal_places=3, default=1)
     unit_type = models.CharField(max_length=30, default="kg")
-    rate = models.DecimalField(max_digits=12, decimal_places=2)
+    rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     sort_order = models.PositiveIntegerField(default=0)

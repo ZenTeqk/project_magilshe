@@ -1077,6 +1077,19 @@ class SaleUnitAmountCalculationTests(TestCase):
         self.assertEqual(quotation.subtotal, Decimal("5850.00"))
         self.assertEqual(quotation.total_amount, Decimal("5850.00"))
 
+    def test_item_without_rate_uses_manual_amount(self):
+        quotation = Quotation.objects.create(
+            customer_name="Unit Customer", phone="9000000098", cake_type="Cake",
+            quantity=2, rate=None, total_amount="0",
+        )
+        item = QuotationItem.objects.create(
+            quotation=quotation, item_name="Cake", quantity="2", unit_type="kg",
+            rate=None, manual_amount="750.00", gst_percentage="0",
+        )
+        quotation.calculate_totals()
+        self.assertEqual(item.amount, Decimal("750.00"))
+        self.assertEqual(quotation.total_amount, Decimal("750.00"))
+
     def test_gram_quantity_250_at_500_per_kg_totals_125(self):
         item, quotation = self.quotation_total("gram", "250", "500.00")
         self.assertEqual(item.amount, Decimal("125.00"))

@@ -31,10 +31,11 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
   const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 105, y, 95, cardHeight);
   y = Math.max(customerBottom, orderBottom) + 5;
 
+  const showRate = (invoice.items || []).some((item) => item.rate !== null && item.rate !== undefined && String(item.rate).trim() !== "");
   const headers = [
     { text: "#", x: 17 }, { text: "PRODUCT / DESCRIPTION", x: 23 }, { text: "FLAVOUR", x: 82 },
     { text: "QTY", x: 116, align: "right" as const }, { text: "UNIT", x: 121 },
-    { text: "RATE", x: 153, align: "right" as const }, { text: "GST", x: 169, align: "right" as const },
+    ...(showRate ? [{ text: "RATE", x: 153, align: "right" as const }] : []), { text: "GST", x: 169, align: "right" as const },
     { text: "AMOUNT", x: 193, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
@@ -53,7 +54,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.3); doc.setTextColor(...PDF.ink);
     doc.text(String(index + 1), 17, y + 6.5); doc.text(productLines, 23, y + 6.5); doc.text(flavourLines, 82, y + 6.5);
     doc.text(String(quantity), 116, y + 6.5, { align: "right" }); doc.text(displayUnit(item.unit_type), 121, y + 6.5);
-    doc.text(money(item.rate), 153, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "right" });
+    if (showRate) doc.text(item.rate === null || item.rate === undefined || String(item.rate).trim() === "" ? "-" : money(item.rate), 153, y + 6.5, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6.5, { align: "right" });
     doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 193, y + 6.5, { align: "right" });
     y += rowHeight;
   });

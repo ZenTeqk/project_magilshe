@@ -41,7 +41,8 @@ export type QuotationItem = {
   weight: string | null;
   quantity: number | string;
   unit_type: SaleUnit;
-  rate: string | number;
+  rate: string | number | null;
+  manual_amount?: string | number | null;
   gst_percentage: string | number;
   sort_order?: number;
   subtotal?: string | number;

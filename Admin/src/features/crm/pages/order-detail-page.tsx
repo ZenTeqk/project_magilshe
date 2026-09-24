@@ -143,7 +143,7 @@ function OrderDetailPage() {
                   <td className="px-5 py-3 font-medium">{item.item_name}</td>
                   <td className="px-5 py-3 text-muted-foreground">{item.flavour ?? "—"}</td>
                   <td className="px-5 py-3 tabular">{formatSaleQuantity(item.quantity, item.unit_type)}</td>
-                  <td className="px-5 py-3 tabular">{inr(Number(item.rate))}</td>
+                  <td className="px-5 py-3 tabular">{item.rate === null || item.rate === undefined || item.rate === "" ? "-" : inr(Number(item.rate))}</td>
                   <td className="px-5 py-3 tabular">{item.gst_percentage}%</td>
                   <td className="px-5 py-3 text-right tabular font-medium">{inr(Number(item.amount))}</td>
                 </tr>

@@ -13,12 +13,12 @@ import { inr } from "@/lib/data";
 import { type CrmCustomerSearchResult, useCrmOptions } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
-import { calculateLineItem, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 
-const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", gst_percentage: "" };
+const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", manual_amount: "", gst_percentage: "" };
 
 function DirectOrderPage() {
   const { units: saleUnits, factors: unitFactors } = useSaleUnits();
@@ -66,8 +66,8 @@ function DirectOrderPage() {
     setBillingAddress(primary ? [primary.address, primary.city, primary.pincode].filter(Boolean).join(", ") : billingAddress);
   };
 
-  const subtotal = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors).baseAmount, 0);
-  const gst = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors).gstAmount, 0);
+  const subtotal = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors, it.manual_amount).baseAmount, 0);
+  const gst = items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors, it.manual_amount).gstAmount, 0);
   const total = Math.max(0, subtotal + gst - (Number(discountAmount) || 0));
 
   const setItem = (i: number, patch: Partial<DirectOrderItem>) => setItems((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
@@ -80,7 +80,7 @@ function DirectOrderPage() {
     if (!/^[6-9]\d{9}$/.test(phoneDigits)) clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!customerName.trim()) clientErrors["customer_name"] = "Customer name is required.";
     if (!cakeType.trim()) clientErrors["cake_type"] = "Cake type is required.";
-    if (!items.some((it) => it.item_name.trim() && Number(it.rate) > 0)) clientErrors["items"] = "Add at least one item with a name and rate.";
+    if (!items.some((it) => it.item_name.trim() && (hasRate(it.rate) ? Number(it.rate) > 0 : Number(it.manual_amount) > 0))) clientErrors["items"] = "Add at least one item with a name and a rate or amount.";
     if (items.some((it) => it.item_name.trim() && it.quantity === "")) clientErrors["items"] = "Quantity is required for every item.";
     const advance = Number(advanceAmount);
     if (!advance || advance <= 0) clientErrors["advance_amount"] = "Collect the advance payment before confirming this order.";
@@ -98,7 +98,7 @@ function DirectOrderPage() {
         cake_type: cakeType,
         occasion: occasion || undefined,
         event_date: eventDate || undefined,
-        items: items.filter((it) => it.item_name.trim()).map((it) => ({ ...it, quantity: Number(it.quantity) || 1, rate: Number(it.rate) || 0, gst_percentage: Number(it.gst_percentage) || 0 })),
+        items: items.filter((it) => it.item_name.trim()).map((it) => ({ ...it, quantity: Number(it.quantity) || 1, rate: hasRate(it.rate) ? Number(it.rate) : null, manual_amount: hasRate(it.rate) ? null : Number(it.manual_amount) || 0, gst_percentage: Number(it.gst_percentage) || 0 })),
         discount_amount: discountAmount,
         advance_amount: advance,
         payment_date: paymentDate,
@@ -164,16 +164,16 @@ function DirectOrderPage() {
             </thead>
             <tbody>
               {items.map((item, i) => {
-                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors).baseAmount;
+                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors, item.manual_amount).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2"><OptionCombobox value={item.item_name} options={productOptions} onChange={(value) => setItem(i, { item_name: value })} onCreateOption={createOption("cake_product", productOptions)} placeholder="Select or type product" portal /></td>
                     <td className="py-2 pr-2"><OptionCombobox value={item.flavour ?? ""} options={flavourOptions} onChange={(value) => setItem(i, { flavour: value })} onCreateOption={createOption("cake_flavour", flavourOptions)} placeholder="Select or type flavour" portal /></td>
                     <td className="py-2 pr-2"><Input type="number" min={quantityMin(item.unit_type)} step={quantityStep(item.unit_type)} value={item.quantity} onChange={(e) => setItem(i, { quantity: e.target.value })} /></td>
                     <td className="py-2 pr-2"><OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as DirectOrderItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal /></td>
-                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal /></td>
+                    <td className="py-2 pr-2"><OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value, manual_amount: "" })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal disabled={!hasRate(item.rate) && hasRate(item.manual_amount)} /></td>
                     <td className="py-2 pr-2"><OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" portal /></td>
-                    <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
+                    <td className="py-2 pr-2 text-right tabular font-medium">{hasRate(item.rate) ? inr(amount) : <Input type="number" min={0} step={0.01} className="text-right" placeholder="Amount" value={item.manual_amount ?? ""} onChange={(e) => setItem(i, { manual_amount: e.target.value })} />}</td>
                     <td className="py-2 text-right"><Button variant="ghost" size="icon" className="size-8" disabled={items.length === 1} onClick={() => removeItem(i)}><Trash2 className="size-4" /></Button></td>
                   </tr>
                 );

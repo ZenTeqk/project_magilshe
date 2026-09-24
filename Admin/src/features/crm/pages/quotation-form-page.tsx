@@ -55,7 +55,7 @@ import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeli
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
-import { calculateLineItem, pricingQuantity, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
+import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
 
@@ -190,8 +190,7 @@ function QuotationFormPage() {
   useEffect(() => {
     if (isEdit || !leadForPrefill) return;
     const leadAmount = Number(leadForPrefill.estimated_amount ?? leadForPrefill.budget ?? 0);
-    const leadQuantity = pricingQuantity(leadForPrefill.quantity ?? 1, leadForPrefill.unit_type ?? "kg", unitFactors);
-    const leadRate = leadAmount && leadQuantity ? leadAmount / leadQuantity : "";
+    const leadRate = hasRate(leadForPrefill.rate) ? String(leadForPrefill.rate) : "";
     setForm((f) => ({
       ...f,
       customer: leadForPrefill.customer_id ?? null,
@@ -216,6 +215,7 @@ function QuotationFormPage() {
           quantity: leadForPrefill.quantity ?? 1,
           unit_type: leadForPrefill.unit_type ?? "kg",
           rate: leadRate,
+          manual_amount: leadRate === "" && leadAmount ? String(leadAmount) : "",
           gst_percentage: "",
         },
       ],
@@ -246,8 +246,8 @@ function QuotationFormPage() {
   };
 
   const totals = useMemo(() => {
-    const subtotal = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors).baseAmount, 0);
-    const gst = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors).gstAmount, 0);
+    const subtotal = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, 0, it.unit_type, unitFactors, it.manual_amount).baseAmount, 0);
+    const gst = form.items.reduce((sum, it) => sum + calculateLineItem(it.quantity, it.rate, it.gst_percentage, it.unit_type, unitFactors, it.manual_amount).gstAmount, 0);
     const discount = Number(form.discount_amount) || 0;
     const total = Math.max(0, subtotal + gst - discount);
     return { subtotal, gst, total };
@@ -298,7 +298,8 @@ function QuotationFormPage() {
       .map((it, i) => ({
         ...it,
         quantity: Number(it.quantity) || 1,
-        rate: Number(it.rate) || 0,
+        rate: hasRate(it.rate) ? Number(it.rate) : null,
+        manual_amount: hasRate(it.rate) ? null : Number(it.manual_amount) || 0,
         gst_percentage: Number(it.gst_percentage) || 0,
         sort_order: i,
       })),
@@ -334,7 +335,8 @@ function QuotationFormPage() {
       weight: item.weight === "" || item.weight == null ? null : Number(item.weight),
       quantity: Number(item.quantity),
       unit_type: item.unit_type,
-      rate: Number(item.rate),
+      rate: hasRate(item.rate) ? Number(item.rate) : null,
+      manual_amount: hasRate(item.rate) ? null : (hasRate(item.manual_amount) ? Number(item.manual_amount) : null),
       gst_percentage: Number(item.gst_percentage),
       sort_order: item.sort_order ?? 0,
     })),
@@ -360,8 +362,8 @@ function QuotationFormPage() {
     const phoneDigits = form.phone.replace(/\D/g, "");
     if (!/^[6-9]\d{9}$/.test(phoneDigits)) clientErrors["phone"] = "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
     if (!form.customer_name.trim()) clientErrors["customer_name"] = "Customer name is required.";
-    if (!form.items.some((it) => it.item_name.trim() && Number(it.rate) > 0))
-      clientErrors["items"] = "Add at least one item with a name and rate.";
+    if (!form.items.some((it) => it.item_name.trim() && (hasRate(it.rate) ? Number(it.rate) > 0 : Number(it.manual_amount) > 0)))
+      clientErrors["items"] = "Add at least one item with a name and a rate or amount.";
     if (form.items.some((it) => it.item_name.trim() && it.quantity === ""))
       clientErrors["items"] = "Quantity is required for every item.";
     setErrors(clientErrors);
@@ -749,7 +751,7 @@ function QuotationFormPage() {
             </thead>
             <tbody>
               {form.items.map((item, i) => {
-                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors).baseAmount;
+                const amount = calculateLineItem(item.quantity, item.rate, 0, item.unit_type, unitFactors, item.manual_amount).baseAmount;
                 return (
                   <tr key={i} className="border-t border-border">
                     <td className="py-2 pr-2">
@@ -777,12 +779,16 @@ function QuotationFormPage() {
                       <OptionCombobox value={item.unit_type} options={saleUnits} onChange={(unit_type) => setItem(i, { unit_type: unit_type as QuotationItem["unit_type"] })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
                     </td>
                     <td className="py-2 pr-2">
-                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal />
+                      <OptionCombobox type="number" min={0} value={String(item.rate ?? "")} options={rateOptions} onChange={(value) => setItem(i, { rate: value, manual_amount: "" })} onCreateOption={createOption("product_rate", rateOptions)} placeholder="Select or type rate" portal disabled={!hasRate(item.rate) && hasRate(item.manual_amount)} />
                     </td>
                     <td className="py-2 pr-2">
                       <OptionCombobox type="number" min={0} max={100} value={String(item.gst_percentage ?? "")} options={gstOptions} onChange={(value) => setItem(i, { gst_percentage: value })} onCreateOption={createOption("tax_setting", gstOptions)} placeholder="Select or type GST" portal />
                     </td>
-                    <td className="py-2 pr-2 text-right tabular font-medium">{inr(amount)}</td>
+                    <td className="py-2 pr-2 text-right tabular font-medium">
+                      {hasRate(item.rate) ? inr(amount) : (
+                        <Input type="number" min={0} step={0.01} className="text-right" placeholder="Amount" value={item.manual_amount ?? ""} onChange={(e) => setItem(i, { manual_amount: e.target.value })} />
+                      )}
+                    </td>
                     <td className="py-2 text-right">
                       <Button
                         variant="ghost"
@@ -1003,7 +1009,7 @@ function QuotationFormPage() {
                                 <tr key={`${version.id}-${itemIndex}`} className="border-t border-border">
                                   <td className="px-2 py-2">{item.item_name}</td>
                                   <td className="px-2 py-2 tabular">{item.quantity} {item.unit_type}</td>
-                                  <td className="px-2 py-2 tabular">{inr(Number(item.rate ?? 0))}</td>
+                                  <td className="px-2 py-2 tabular">{hasRate(item.rate) ? inr(Number(item.rate)) : "-"}</td>
                                   <td className="px-2 py-2 tabular">{Number(item.gst_percentage ?? 0)}</td>
                                   <td className="px-2 py-2 text-right tabular">{inr(Number(item.amount ?? item.subtotal ?? 0))}</td>
                                 </tr>

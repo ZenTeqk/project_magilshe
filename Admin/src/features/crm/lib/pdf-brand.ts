@@ -38,7 +38,7 @@ export const displayUnit = (value: unknown) => {
   const unit = String(value ?? "").trim().toLowerCase();
   if (unit === "kg") return "kg";
   if (unit === "piece") return "Piece";
-  return "-";
+  return String(value ?? "").trim() || "-";
 };
 
 function drawBrandFallback(doc: jsPDF, company?: CompanyConfig) {

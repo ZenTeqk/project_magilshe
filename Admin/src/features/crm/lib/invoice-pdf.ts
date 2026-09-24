@@ -31,10 +31,11 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
   const customerBottom = drawInfoBlock(doc, "Customer details", customerRows, 110, y, 84, cardHeight);
   y = Math.max(customerBottom, orderBottom) + 5;
 
+  const showRate = (invoice.items || []).some((item) => item.rate !== null && item.rate !== undefined && String(item.rate).trim() !== "");
   const headers = [
     { text: "#", x: 24, align: "center" as const }, { text: "PRODUCT / DESCRIPTION", x: 31 }, { text: "FLAVOUR", x: 86 },
     { text: "QTY", x: 118, align: "center" as const }, { text: "UNIT", x: 132, align: "center" as const },
-    { text: "RATE", x: 158, align: "right" as const }, { text: "GST", x: 169, align: "center" as const },
+    ...(showRate ? [{ text: "RATE", x: 158, align: "right" as const }] : []), { text: "GST", x: 169, align: "center" as const },
     { text: "AMOUNT", x: 190, align: "right" as const },
   ];
   y = drawTableHeader(doc, y, headers);
@@ -53,7 +54,7 @@ export async function buildInvoicePdf(invoice: CrmInvoice, company?: CompanyConf
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.6); doc.setTextColor(...PDF.ink);
     doc.text(String(index + 1), 24, y + 6, { align: "center" }); doc.text(productLines, 31, y + 6); doc.text(flavourLines, 86, y + 6);
     doc.text(String(quantity), 118, y + 6, { align: "center" }); doc.text(displayUnit(item.unit_type), 132, y + 6, { align: "center" });
-    doc.text(money(item.rate), 158, y + 6, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6, { align: "center" });
+    if (showRate) doc.text(item.rate === null || item.rate === undefined || String(item.rate).trim() === "" ? "-" : money(item.rate), 158, y + 6, { align: "right" }); doc.text(`${Number(item.gst_percentage) || 0}%`, 169, y + 6, { align: "center" });
     doc.setFont("helvetica", "bold"); doc.text(money(item.amount), 190, y + 6, { align: "right" });
     y += rowHeight;
   });

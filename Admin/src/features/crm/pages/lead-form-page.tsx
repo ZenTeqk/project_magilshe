@@ -32,7 +32,7 @@ import { LeadWorkflowTracker } from "@/features/crm/components/lead-workflow-tra
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { hasPermission, useCurrentAccess } from "@/features/auth/rbac";
-import { defaultQuantity, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
+import { calculateLineItem, defaultQuantity, hasRate, quantityMin, quantityStep, useSaleUnits, type SaleUnit } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
@@ -62,6 +62,7 @@ const blank = {
   delivery_date: "",
   delivery_time: "",
   budget: "",
+  rate: "" as string | null,
   estimated_amount: "",
   cake_message: "",
   customer_notes: "",
@@ -86,7 +87,7 @@ const statusChoicesByOriginal: Record<string, LeadStatus[]> = {
 };
 
 function LeadFormPage() {
-  const { units: saleUnits } = useSaleUnits();
+  const { units: saleUnits, factors: unitFactors } = useSaleUnits();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -120,7 +121,7 @@ function LeadFormPage() {
   const occasionOptions = optionsWithCurrent(occasions, isEdit ? form.occasion : "");
   const cakeTypeOptions = optionsWithCurrent(cakeTypes, isEdit ? form.cake_type : "");
   const flavourOptions = optionsWithCurrent(flavours, isEdit ? form.flavour : "");
-  const productRateOptions = optionsWithCurrent(productRates, isEdit ? form.estimated_amount : "");
+  const productRateOptions = optionsWithCurrent(productRates, isEdit ? String(form.rate ?? "") : "");
   const leadSourceOptions = optionsWithCurrent(leadSources, isEdit ? form.lead_source : "");
   const winningReasonOptions = optionsWithCurrent(winningReasons, isEdit ? form.winning_reason : "");
   const lossReasonOptions = optionsWithCurrent(lossReasons, isEdit ? form.loss_reason : "");
@@ -147,6 +148,15 @@ function LeadFormPage() {
 
   const set = <K extends keyof typeof blank>(key: K, value: (typeof blank)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  const rateEntered = hasRate(form.rate);
+  const amountFor = (quantity: string | number, rate: string | null, unit: string) =>
+    calculateLineItem(quantity, rate, 0, unit, unitFactors).baseAmount.toFixed(2);
+  const setQuantityOrUnit = (patch: { quantity?: string | number; unit_type?: SaleUnit }) =>
+    setForm((f) => {
+      const next = { ...f, ...patch };
+      return hasRate(next.rate) ? { ...next, estimated_amount: amountFor(next.quantity, next.rate, next.unit_type) } : next;
+    });
 
   const applyMatch = (customer: CrmCustomerSearchResult) => {
     setMatched(customer);
@@ -403,11 +413,11 @@ function LeadFormPage() {
               min={quantityMin(form.unit_type)}
               step={quantityStep(form.unit_type)}
               value={form.quantity}
-              onChange={(e) => set("quantity", e.target.value)}
+              onChange={(e) => setQuantityOrUnit({ quantity: e.target.value })}
             />
           </Field>
           <Field label="Unit" required>
-            <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(value) => set("unit_type", value as SaleUnit)} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
+            <OptionCombobox value={form.unit_type} options={saleUnits} onChange={(value) => setQuantityOrUnit({ unit_type: value as SaleUnit })} onCreateOption={createOption("sale_unit", saleUnits)} placeholder="Select or type unit" portal />
           </Field>
           <Field label="Theme">
             <Input value={form.theme} onChange={(e) => set("theme", e.target.value)} />
@@ -504,8 +514,21 @@ function LeadFormPage() {
               onChange={(e) => set("budget", e.target.value)}
             />
           </Field>
+          <Field label="Rate">
+            <OptionCombobox
+              type="number"
+              min={0}
+              value={String(form.rate ?? "")}
+              options={productRateOptions}
+              onChange={(v) => setForm((f) => ({ ...f, rate: v, estimated_amount: hasRate(v) ? amountFor(f.quantity, v, f.unit_type) : "" }))}
+              onCreateOption={createOption("product_rate", productRateOptions)}
+              placeholder="Select or type rate"
+              portal
+              disabled={!rateEntered && String(form.estimated_amount ?? "") !== ""}
+            />
+          </Field>
           <Field label="Amount">
-            <Input type="number" min={0} step={0.01} value={form.estimated_amount} onChange={(e) => set("estimated_amount", e.target.value)} />
+            <Input type="number" min={0} step={0.01} value={form.estimated_amount ?? ""} readOnly={rateEntered} onChange={(e) => set("estimated_amount", e.target.value)} />
           </Field>
         </div>
       </SectionCard>

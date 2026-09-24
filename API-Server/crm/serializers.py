@@ -536,11 +536,12 @@ class QuotationSerializer(serializers.ModelSerializer):
             if gst_enabled:
                 resulting_total += resulting_total * gst_percentage / 100
         if attrs.get("items"):
-            subtotal = sum(pricing_quantity(item["quantity"], item.get("unit_type")) * item["rate"] for item in attrs["items"])
-            gst = sum(
-                pricing_quantity(item["quantity"], item.get("unit_type")) * item["rate"] * (item.get("gst_percentage") or 0) / 100
-                for item in attrs["items"]
-            )
+            def line_amount(item):
+                if item.get("rate") is None:
+                    return item.get("manual_amount") or Decimal("0")
+                return pricing_quantity(item["quantity"], item.get("unit_type")) * item["rate"]
+            subtotal = sum(line_amount(item) for item in attrs["items"])
+            gst = sum(line_amount(item) * (item.get("gst_percentage") or 0) / 100 for item in attrs["items"])
             resulting_total = subtotal + gst - attrs.get(
                 "discount_amount",
                 self.instance.discount_amount if self.instance else 0,
@@ -570,7 +571,7 @@ class QuotationSerializer(serializers.ModelSerializer):
             validated_data.setdefault("cake_type", first_item.get("item_name", ""))
             validated_data.setdefault("flavour", first_item.get("flavour", ""))
             validated_data.setdefault("quantity", first_item.get("quantity", 1))
-            validated_data.setdefault("rate", first_item.get("rate", 0))
+            validated_data.setdefault("rate", first_item.get("rate"))
             gst_percentage = first_item.get("gst_percentage", 0) or 0
             validated_data.setdefault("gst_percentage", gst_percentage)
             validated_data.setdefault("gst_enabled", gst_percentage > 0)
@@ -626,6 +627,8 @@ class CRMOrderItemSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def get_amount(self, obj):
+        if obj.rate is None:
+            return Decimal(obj.amount or 0).quantize(Decimal("0.01"))
         return (pricing_quantity(obj.quantity, obj.unit_type) * Decimal(obj.rate)).quantize(Decimal("0.01"))
 
     def validate(self, attrs):
