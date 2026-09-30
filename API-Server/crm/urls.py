@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from .views import (
-    CRMCustomerViewSet, CRMDeliveryViewSet, CRMInvoiceViewSet, CRMOptionViewSet, CRMOrderViewSet,
+    CRMAgendaView, CRMCustomerViewSet, CRMDeliveryViewSet, CRMInvoiceViewSet, CRMOptionViewSet, CRMOrderViewSet,
     CustomerRecurringEventViewSet, LeadViewSet, QuotationViewSet,
 )
 
@@ -15,4 +15,7 @@ router.register("deliveries", CRMDeliveryViewSet, basename="crm-delivery")
 router.register("options", CRMOptionViewSet, basename="crm-option")
 router.register("customer-events", CustomerRecurringEventViewSet, basename="crm-customer-event")
 
-urlpatterns = [path("", include(router.urls))]
+urlpatterns = [
+    path("agenda/", CRMAgendaView.as_view(), name="crm-agenda"),
+    path("", include(router.urls)),
+]

@@ -20,6 +20,8 @@ import { paymentSummaryStyles } from "@/features/crm/components/payment-summary-
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
 import { addressOrFallback } from "@/features/crm/lib/address-fallback";
+import { useQuotation } from "@/features/crm/quotations-hooks";
+import { PaymentReceiptButton } from "@/features/crm/components/payment-receipt-button";
 
 const nonCancellable = new Set(["Delivery", "Out for Delivery", "Delivered", "Completed", "Closed", "Cancelled"]);
 
@@ -27,6 +29,8 @@ function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: order, isLoading } = useOrder(id);
+  // Payments are recorded against the order's quotation; load them for receipts.
+  const { data: quotation } = useQuotation(order?.quotation);
 
   const workflowAction = useOrderWorkflowAction();
   const updateNotes = useUpdateOrderNotes();
@@ -130,6 +134,35 @@ function OrderDetailPage() {
           </dl>
         </SectionCard>
       </div>
+
+      <SectionCard
+        title="Payments & receipts"
+        description="Every payment recorded for this order. Download a receipt to share with the customer."
+      >
+        {!quotation ? (
+          <p className="text-sm text-muted-foreground">Loading payments…</p>
+        ) : !quotation.payments?.length ? (
+          <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {quotation.payments.map((payment) => (
+              <li key={payment.id} className="flex flex-wrap items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                <div className="min-w-0 flex-1 text-sm">
+                  <p className="font-medium">
+                    {inr(Number(payment.amount))} · {payment.payment_method}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {payment.payment_date?.slice(0, 10)}
+                    {payment.transaction_reference ? ` · Ref ${payment.transaction_reference}` : ""}
+                    {payment.collected_by_name ? ` · by ${payment.collected_by_name}` : ""}
+                  </p>
+                </div>
+                <PaymentReceiptButton quotation={quotation} payment={payment} order={order} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </SectionCard>
 
       <SectionCard title="Items" padded={false}>
         <div className="scroll-slim overflow-x-auto">

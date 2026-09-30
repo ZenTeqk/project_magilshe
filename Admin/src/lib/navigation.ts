@@ -90,6 +90,12 @@ export const navigation: NavEntry[] = [
     icon: Target,
     items: [
       {
+        label: "Calendar",
+        to: "/crm/calendar",
+        icon: CalendarDays,
+        aliases: ["schedule", "agenda", "day-wise", "upcoming orders", "payment pending", "reminders"],
+      },
+      {
         label: "Leads",
         to: "/crm/leads",
         icon: Target,

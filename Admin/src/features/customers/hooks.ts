@@ -202,6 +202,11 @@ export type CustomerRecurringEvent = {
   reminder_days_before: number;
   last_reminder_sent_on: string | null;
   source_lead: number | null;
+  source_lead_no?: string | null;
+  source_quotation?: number | null;
+  source_quotation_no?: string | null;
+  source_order?: number | null;
+  source_order_no?: string | null;
   next_occurrence: string;
   reminder_date: string;
   days_until: number;

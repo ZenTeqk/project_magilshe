@@ -38,5 +38,8 @@ export const statusTone: Record<string, Tone> = {
   Subscribed: "primary",
   Upcoming: "info",
   "Reminder Due": "warning",
+  Booked: "success",
+  Passed: "neutral",
+  "Payment Pending": "danger",
   Overdue: "danger",
 };

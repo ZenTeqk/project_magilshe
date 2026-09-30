@@ -158,10 +158,13 @@ class CRMCustomerUpdateSerializer(serializers.ModelSerializer):
 
 class CustomerRecurringEventSerializer(serializers.ModelSerializer):
     """Manual CRUD for customer occasions/reminders, on top of the same model
-    auto-populated from Lead history by recurring_events.sync_recurring_event."""
+    auto-populated from Lead/Quotation/Order history by recurring_events.sync_recurring_event."""
 
     event_type = serializers.CharField()
     event_date = serializers.DateField(write_only=True, required=False)
+    source_lead_no = serializers.CharField(source="source_lead.lead_no", read_only=True, default=None)
+    source_quotation_no = serializers.CharField(source="source_quotation.quotation_no", read_only=True, default=None)
+    source_order_no = serializers.CharField(source="source_order.order_no", read_only=True, default=None)
     next_occurrence = serializers.SerializerMethodField()
     reminder_date = serializers.SerializerMethodField()
     days_until = serializers.SerializerMethodField()
@@ -173,12 +176,13 @@ class CustomerRecurringEventSerializer(serializers.ModelSerializer):
         fields = (
             "id", "customer", "event_type", "event_month", "event_day", "original_date",
             "notes", "reminder_days_before", "last_reminder_sent_on", "source_lead",
+            "source_lead_no", "source_quotation", "source_quotation_no", "source_order", "source_order_no",
             "event_date", "next_occurrence", "reminder_date", "days_until", "is_completed", "status",
             "created_on", "updated_on",
         )
         read_only_fields = (
             "event_month", "event_day", "original_date", "last_reminder_sent_on",
-            "source_lead", "created_on", "updated_on",
+            "source_lead", "source_quotation", "source_order", "created_on", "updated_on",
         )
 
     def _status(self, obj):

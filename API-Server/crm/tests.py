@@ -2315,3 +2315,235 @@ class OrderDirectCreationAndCancellationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         order.refresh_from_db()
         self.assertNotEqual(order.status, "Cancelled")
+
+
+class CustomerEventSyncTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(username="customer-event-sync-admin", password="password")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.event_date = timezone.localdate() + timedelta(days=12)
+
+    def quotation_payload(self, phone, occasion="Birthday", **extra):
+        return {
+            "customer_name": "Event Sync Customer", "phone": phone,
+            "occasion": occasion, "event_date": self.event_date.isoformat(),
+            "items": [{"item_name": "Cake", "quantity": 1, "rate": "1000.00", "gst_percentage": 0}],
+            "delivery_type": "Pickup", "address": "Bakery counter",
+            **extra,
+        }
+
+    def test_quotation_creates_event_for_any_occasion(self):
+        response = self.client.post("/crm/quotations/", self.quotation_payload("9876522001", occasion="Housewarming"), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        quotation = Quotation.objects.get(pk=response.data["id"])
+        event = CustomerRecurringEvent.objects.get(customer=quotation.customer)
+        self.assertEqual(event.event_type, "Housewarming")
+        self.assertEqual(event.original_date, self.event_date)
+        self.assertEqual(event.source_quotation, quotation)
+
+    def test_direct_order_creates_event_linked_to_order(self):
+        payload = self.quotation_payload(
+            "9876522002", advance_amount="500.00", payment_method="Cash",
+            payment_date=timezone.localdate().isoformat(),
+        )
+        response = self.client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        order = CRMOrder.objects.get(pk=response.data["data"]["id"])
+        event = CustomerRecurringEvent.objects.get(customer=order.customer)
+        self.assertEqual(event.event_type, "Birthday")
+        self.assertEqual(event.source_order, order)
+        self.assertEqual(event.source_quotation, order.quotation)
+        profile = self.client.get(f"/crm/customers/{order.customer_id}/")
+        self.assertEqual(profile.status_code, 200, profile.data)
+        self.assertEqual(profile.data["recurring_events"][0]["source_order_no"], order.order_no)
+
+    def test_confirmed_order_links_existing_quotation_event(self):
+        response = self.client.post(
+            "/crm/quotations/",
+            self.quotation_payload("9876522003", status="Advance Received", advance_received=True, advance_amount="500.00"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        confirmed = self.client.post(f"/crm/quotations/{response.data['id']}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        event = CustomerRecurringEvent.objects.get(source_quotation_id=response.data["id"])
+        self.assertEqual(event.source_order_id, confirmed.data["data"]["id"])
+        self.assertEqual(CustomerRecurringEvent.objects.filter(customer=event.customer).count(), 1)
+
+    def test_changing_lead_event_date_moves_the_event_instead_of_duplicating(self):
+        response = self.client.post("/crm/leads/", {
+            "customer_name": "Lead Event Customer", "phone": "9876522004", "occasion": "Anniversary",
+            "event_date": self.event_date.isoformat(), "cake_type": "Cake", "quantity": 1, "unit_type": "kg",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        new_date = self.event_date + timedelta(days=3)
+        updated = self.client.patch(f"/crm/leads/{response.data['id']}/", {"event_date": new_date.isoformat()}, format="json")
+        self.assertEqual(updated.status_code, 200, updated.data)
+        events = CustomerRecurringEvent.objects.filter(source_lead_id=response.data["id"])
+        self.assertEqual(events.count(), 1)
+        self.assertEqual(events.get().original_date, new_date)
+
+    def test_deleted_event_is_not_recreated_by_order_confirmation_or_unrelated_edits(self):
+        response = self.client.post(
+            "/crm/quotations/",
+            self.quotation_payload("9876522005", status="Advance Received", advance_received=True, advance_amount="500.00"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        event = CustomerRecurringEvent.objects.get(source_quotation_id=response.data["id"])
+        self.assertEqual(self.client.delete(f"/crm/customer-events/{event.id}/").status_code, 204)
+        self.client.patch(f"/crm/quotations/{response.data['id']}/", {"notes": "Less sugar"}, format="json")
+        confirmed = self.client.post(f"/crm/quotations/{response.data['id']}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        self.assertFalse(CustomerRecurringEvent.objects.filter(customer=event.customer).exists())
+
+    def test_lead_import_creates_event(self):
+        upload = SimpleUploadedFile(
+            "leads.csv",
+            (
+                "Customer Name,Phone,Occasion,event_date,cake_type,quantity,unit_type\n"
+                f"Import Event,9876522006,Birthday,{self.event_date.isoformat()},Cake,1,kg\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
+        response = self.client.post("/crm/leads/import/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["success_count"], 1, response.data)
+        lead = Lead.objects.get(phone="9876522006")
+        event = CustomerRecurringEvent.objects.get(source_lead=lead)
+        self.assertEqual(event.customer_id, lead.customer_id)
+        self.assertEqual(event.event_type, "Birthday")
+
+    def test_quick_entry_lead_for_existing_customer_creates_event(self):
+        customer = get_user_model().objects.create_user(
+            username="9876522007", phone="9876522007", first_name="Quick", last_name="Entry",
+        )
+        response = self.client.post("/crm/leads/", {
+            "customer_id": customer.id, "customer_name": "Quick Entry", "phone": "9876522007",
+            "occasion": "Birthday", "cake_type": "Cake", "flavour": "", "weight": "",
+            "quantity": 1, "unit_type": "kg", "rate": "", "estimated_amount": "",
+            "event_date": self.event_date.isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        event = CustomerRecurringEvent.objects.get(source_lead_id=response.data["id"])
+        self.assertEqual(event.customer, customer)
+        self.assertEqual(event.original_date, self.event_date)
+
+    def test_quotation_form_from_lead_syncs_changed_event_date(self):
+        lead = self.client.post("/crm/leads/", {
+            "customer_name": "Lead Quote", "phone": "9876522008", "occasion": "Anniversary",
+            "event_date": self.event_date.isoformat(), "cake_type": "Cake", "quantity": 1, "unit_type": "kg",
+        }, format="json")
+        self.assertEqual(lead.status_code, 201, lead.data)
+        converted = self.client.post(f"/crm/leads/{lead.data['id']}/convert/", {}, format="json")
+        self.assertEqual(converted.status_code, 200, converted.data)
+        quotation_id = converted.data["data"]["id"]
+        new_date = self.event_date + timedelta(days=5)
+        versioned = self.client.post(
+            f"/crm/quotations/{quotation_id}/generate-version/",
+            {"event_date": new_date.isoformat()}, format="json",
+        )
+        self.assertEqual(versioned.status_code, 200, versioned.data)
+        event = CustomerRecurringEvent.objects.get(source_quotation_id=quotation_id)
+        self.assertEqual(event.original_date, new_date)
+        self.assertEqual(event.source_lead_id, lead.data["id"])
+        self.assertEqual(CustomerRecurringEvent.objects.filter(customer=event.customer).count(), 1)
+
+
+class CRMAgendaTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser(username="agenda-admin", password="password")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.today = timezone.localdate()
+
+    def direct_order(self, phone, delivery_date, occasion="Birthday"):
+        response = self.client.post("/crm/orders/direct/", {
+            "customer_name": "Agenda Customer", "phone": phone,
+            "occasion": occasion, "event_date": delivery_date.isoformat(),
+            "delivery_date": delivery_date.isoformat(), "delivery_time": "16:30",
+            "items": [{"item_name": "Cake", "quantity": 1, "rate": "1000.00", "gst_percentage": 0}],
+            "delivery_type": "Pickup", "address": "Bakery counter",
+            "advance_amount": "400.00", "payment_method": "Cash", "payment_date": self.today.isoformat(),
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        return CRMOrder.objects.get(pk=response.data["data"]["id"])
+
+    def agenda(self, **params):
+        response = self.client.get("/crm/agenda/", {
+            "start": self.today.isoformat(), "end": (self.today + timedelta(days=6)).isoformat(), **params,
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def test_agenda_returns_day_wise_items_for_every_type(self):
+        tomorrow = self.today + timedelta(days=1)
+        order = self.direct_order("9876533001", tomorrow)
+        Lead.objects.create(
+            customer=order.customer, customer_name="Agenda Customer", phone="9876533001",
+            status="Follow-up", follow_up_date=self.today, occasion="Anniversary", cake_type="Cake",
+        )
+        event = CustomerRecurringEvent.objects.get(source_order=order)
+        # A yearly event whose reminder (7 days before) lands inside the week.
+        next_week = self.today + timedelta(days=9)
+        CustomerRecurringEvent.objects.create(
+            customer=order.customer, event_type="Anniversary", event_month=next_week.month,
+            event_day=next_week.day, original_date=next_week.replace(year=next_week.year - 3),
+        )
+
+        data = self.agenda()
+        by_type = {}
+        for item in data["items"]:
+            by_type.setdefault(item["type"], []).append(item)
+
+        self.assertEqual(by_type["order"][0]["date"], tomorrow.isoformat())
+        self.assertEqual(by_type["order"][0]["time"], "16:30")
+        self.assertEqual(by_type["order"][0]["customer"]["id"], order.customer_id)
+        self.assertEqual(by_type["payment"][0]["amount"], "600.00")
+        self.assertEqual(by_type["follow_up"][0]["date"], self.today.isoformat())
+        self.assertEqual([item["link_id"] for item in by_type["event"]], [event.customer_id])
+        self.assertEqual(by_type["reminder"][0]["date"], (next_week - timedelta(days=7)).isoformat())
+        self.assertEqual(by_type["completed"][0]["completed_kind"], "payment")
+        self.assertEqual(data["summary"]["payment_pending_amount"], "600.00")
+
+    def test_overdue_items_are_listed_separately(self):
+        order = self.direct_order("9876533002", self.today + timedelta(days=2))
+        CRMOrder.objects.filter(pk=order.pk).update(delivery_date=self.today - timedelta(days=2))
+        data = self.agenda()
+        self.assertEqual({item["type"] for item in data["overdue"]}, {"order", "payment"})
+        self.assertTrue(all(item["overdue"] for item in data["overdue"]))
+        self.assertFalse(any(item["type"] == "order" for item in data["items"]))
+
+    def test_customer_scope_only_returns_that_customers_items(self):
+        mine = self.direct_order("9876533003", self.today + timedelta(days=1))
+        self.direct_order("9876533004", self.today + timedelta(days=1))
+        data = self.agenda(customer=mine.customer_id)
+        self.assertTrue(data["items"])
+        self.assertEqual({item["customer"]["id"] for item in data["items"]}, {mine.customer_id})
+
+    def test_customer_dashboard_permission_is_enough_and_no_permission_is_rejected(self):
+        from customer.models import AccessPermission, AccessRole
+        role = AccessRole.objects.create(name="Customer Dashboard Only")
+        role.permissions.add(AccessPermission.objects.get(code="customers.analytics.view"))
+        analyst = get_user_model().objects.create_user(
+            username="agenda-analyst", password="password", is_staff=True, role=role,
+        )
+        client = APIClient(); client.force_authenticate(analyst)
+        self.assertEqual(client.get("/crm/agenda/").status_code, 200)
+
+        empty_role = AccessRole.objects.create(name="No Agenda Access")
+        outsider = get_user_model().objects.create_user(
+            username="agenda-outsider", password="password", is_staff=True, role=empty_role,
+        )
+        client.force_authenticate(outsider)
+        self.assertEqual(client.get("/crm/agenda/").status_code, 403)
+
+    def test_invalid_or_oversized_ranges_are_rejected(self):
+        self.assertEqual(self.client.get("/crm/agenda/", {"start": "bad"}).status_code, 400)
+        self.assertEqual(self.client.get("/crm/agenda/", {
+            "start": self.today.isoformat(), "end": (self.today - timedelta(days=1)).isoformat(),
+        }).status_code, 400)
+        self.assertEqual(self.client.get("/crm/agenda/", {
+            "start": self.today.isoformat(), "end": (self.today + timedelta(days=90)).isoformat(),
+        }).status_code, 400)

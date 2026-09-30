@@ -53,6 +53,8 @@ import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
 import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeline";
 import { buildQuotationPdf } from "@/features/crm/lib/pdf-template";
+import { PaymentReceiptButton } from "@/features/crm/components/payment-receipt-button";
+import { useOrder } from "@/features/crm/orders-hooks";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
 import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
@@ -111,6 +113,8 @@ function QuotationFormPage() {
   const { data: deliveryMethods } = useCrmOptions("delivery_method");
   const { data: deliveryTimeSlots } = useCrmOptions("delivery_time_slot");
   const { data: company } = useCompanyConfig();
+  // Linked order (if confirmed) so payment receipts can include order details.
+  const { data: linkedOrder } = useOrder(existingQuotation?.order_id ?? undefined);
 
   const createQuotation = useCreateQuotation();
   const updateQuotation = useUpdateQuotation();
@@ -837,7 +841,7 @@ function QuotationFormPage() {
       ) : null}
 
       {existingQuotation?.payments?.length ? (
-        <SectionCard title="Payment history" description="Payments and uploaded proof recorded against this quotation.">
+        <SectionCard title="Payment history" description="Payments and uploaded proof recorded against this quotation. Download a receipt to share with the customer.">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {existingQuotation.payments.map((payment) => (
               <div key={payment.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
@@ -851,6 +855,12 @@ function QuotationFormPage() {
                   <p className="text-xs text-muted-foreground">{payment.payment_date?.slice(0, 10)}</p>
                   {payment.proof ? <a href={payment.proof} target="_blank" rel="noreferrer" className="text-xs text-primary underline">View proof</a> : <span className="text-xs text-muted-foreground">No proof uploaded</span>}
                 </div>
+                <PaymentReceiptButton
+                  quotation={existingQuotation}
+                  payment={payment}
+                  order={linkedOrder}
+                  className="ml-auto shrink-0"
+                />
               </div>
             ))}
           </div>

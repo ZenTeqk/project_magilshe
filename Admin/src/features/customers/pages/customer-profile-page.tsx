@@ -47,6 +47,7 @@ import {
 } from "@/features/customers/hooks";
 import { EditCustomerDialog } from "@/features/customers/components/edit-customer-dialog";
 import { CustomerEventDialog } from "@/features/customers/components/customer-event-dialog";
+import { AgendaBoard } from "@/features/crm/components/agenda-board";
 
 function initials(name: string) {
   return (
@@ -63,6 +64,11 @@ function fmtDate(value: string | null | undefined) {
   if (!value) return "—";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Most specific CRM record the event was captured from (order > quotation > lead).
+function eventSource(event: CustomerRecurringEvent) {
+  return event.source_order_no || event.source_quotation_no || event.source_lead_no || null;
 }
 
 function CustomerProfilePage() {
@@ -191,7 +197,12 @@ function CustomerProfilePage() {
           <TabsTrigger value="invoices">Invoices ({customer.history.invoices.length})</TabsTrigger>
           <TabsTrigger value="deliveries">Deliveries ({customer.history.deliveries.length})</TabsTrigger>
           <TabsTrigger value="events">Events ({customer.recurring_events.length})</TabsTrigger>
+          <TabsTrigger value="schedule">Schedule</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="schedule" className="pt-4">
+          <AgendaBoard embedded customerId={customer.id} defaultView="month" />
+        </TabsContent>
 
         <TabsContent value="overview" className="space-y-4 pt-4">
           <div className="grid gap-4 lg:grid-cols-3">
@@ -548,7 +559,7 @@ function CustomerProfilePage() {
         <TabsContent value="events" className="pt-4">
           <SectionCard
             title="Customer events & reminders"
-            description="Recurring occasions (birthday, anniversary, …) with an internal staff reminder"
+            description="Occasions captured from leads, quotations and orders (birthday, anniversary, …) with an internal staff reminder. Delete any that aren't needed."
             actions={
               <Button size="sm" onClick={() => setEventDialog({ open: true, event: null })}>
                 <Plus className="size-4" /> Add event
@@ -580,6 +591,7 @@ function CustomerProfilePage() {
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {fmtDate(event.next_occurrence)} · Reminder {fmtDate(event.reminder_date)}
+                        {eventSource(event) ? ` · From ${eventSource(event)}` : ""}
                         {event.notes ? ` · ${event.notes}` : ""}
                       </p>
                     </div>

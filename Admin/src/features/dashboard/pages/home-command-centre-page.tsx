@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import {
   ArrowUpRight,
+  CalendarClock,
   ChevronRight,
   CircleAlert,
   Gift,
@@ -56,6 +57,30 @@ const palette = [
   "var(--chart-5)",
 ];
 
+const OPEN_ORDER_STATUSES = new Set([
+  "Delivered",
+  "Completed",
+  "Closed",
+  "Cancelled",
+]);
+
+function orderUrgency(dueDate: string) {
+  const due = new Date(dueDate);
+  const dueDay = due.toDateString();
+  const today = new Date();
+  const todayDay = today.toDateString();
+  const tomorrowDay = new Date(today.getTime() + 86400000).toDateString();
+  if (due < today && dueDay !== todayDay) {
+    return { label: "Overdue", tone: "danger" as const };
+  }
+  if (dueDay === todayDay) return { label: "Today", tone: "danger" as const };
+  if (dueDay === tomorrowDay) return { label: "Tomorrow", tone: "warning" as const };
+  return {
+    label: due.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+    tone: "info" as const,
+  };
+}
+
 function HomeCommandCentrePage() {
   const [range, setRange] = useState(lastNDays(0));
   const access = useCurrentAccess();
@@ -95,6 +120,16 @@ function HomeCommandCentrePage() {
     [analytics.data?.products],
   );
   const maxProduct = Math.max(1, ...products.map((product) => product.revenue));
+  const upcomingOrders = useMemo(
+    () =>
+      (orders.data ?? [])
+        .filter((order) => !OPEN_ORDER_STATUSES.has(order.status))
+        .map((order) => ({ ...order, dueDate: order.delivery_date || order.event_date }))
+        .filter((order) => order.dueDate)
+        .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))
+        .slice(0, 6),
+    [orders.data],
+  );
   const occasions = (analytics.data?.occasions ?? []).filter((item) => item.value > 0).slice(0, 6);
   const occasionTotal = occasions.reduce((sum, item) => sum + item.value, 0);
 
@@ -228,6 +263,72 @@ function HomeCommandCentrePage() {
             </span>
           </Link>
         ))}
+      </Surface>
+
+      <Surface className="relative">
+        <span className="absolute inset-x-0 top-0 h-1 bg-danger" />
+        <SurfaceTitle
+          eyebrow="Priority queue"
+          title="Upcoming orders"
+          detail={`${upcomingOrders.length} orders due for delivery`}
+          action={
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/crm/orders">
+                All orders <ArrowUpRight className="size-3.5" />
+              </Link>
+            </Button>
+          }
+        />
+        {orders.isLoading ? (
+          <div className="p-4">
+            <CardSkeleton />
+          </div>
+        ) : upcomingOrders.length === 0 ? (
+          <EmptyState title="No upcoming orders" description="Nothing due for delivery soon." />
+        ) : (
+          <div className="grid gap-px border-t border-border bg-border sm:grid-cols-2 xl:grid-cols-3">
+            {upcomingOrders.map((order) => {
+              const urgency = orderUrgency(order.dueDate!);
+              return (
+                <Link
+                  key={String(order.id)}
+                  to={`/crm/orders/${order.id}`}
+                  className={`flex flex-col gap-2 bg-card p-4 transition-colors hover:bg-surface-muted ${
+                    urgency.tone === "danger" ? "bg-danger-soft/30" : ""
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
+                        urgency.tone === "danger"
+                          ? "bg-danger-soft text-danger"
+                          : urgency.tone === "warning"
+                            ? "bg-warning-soft text-warning"
+                            : "bg-info-soft text-info"
+                      }`}
+                    >
+                      <CalendarClock className="size-3" /> {urgency.label}
+                    </span>
+                    <StatusChip status={order.status} className="px-1.5 py-0.5 text-[9px]" />
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block truncate text-sm">{order.customer_name}</strong>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {order.order_no} · {order.cake_type}
+                      {order.flavour ? ` · ${order.flavour}` : ""}
+                    </span>
+                  </span>
+                  <span className="flex items-center justify-between text-xs">
+                    <span className="tabular font-semibold">{inr(Number(order.total_amount))}</span>
+                    {Number(order.balance_amount) > 0 && (
+                      <span className="tabular text-warning">Due {inr(Number(order.balance_amount))}</span>
+                    )}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </Surface>
 
       <div className="grid items-start gap-4 xl:grid-cols-12">

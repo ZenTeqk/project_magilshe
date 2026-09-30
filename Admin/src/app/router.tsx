@@ -12,6 +12,7 @@ const CrmDashboardPage = lazy(() => import("@/features/crm/pages/crm-dashboard-p
 const LeadsPage = lazy(() => import("@/features/crm/pages/leads-page"));
 const LeadFormPage = lazy(() => import("@/features/crm/pages/lead-form-page"));
 const FollowUpsPage = lazy(() => import("@/features/crm/pages/follow-ups-page"));
+const CrmCalendarPage = lazy(() => import("@/features/crm/pages/crm-calendar-page"));
 const QuotationsPage = lazy(() => import("@/features/crm/pages/quotations-page"));
 const QuotationFormPage = lazy(() => import("@/features/crm/pages/quotation-form-page"));
 const CrmOrdersPage = lazy(() => import("@/features/crm/pages/crm-orders-page"));
@@ -85,6 +86,7 @@ export function AppRouter() {
             <Route path="/" element={<HomeDashboardPage />} />
 
             <Route path="/crm" element={<CrmDashboardPage />} />
+            <Route path="/crm/calendar" element={<CrmCalendarPage />} />
             <Route path="/crm/leads" element={<LeadsPage />} />
             <Route path="/crm/leads/follow-ups" element={<FollowUpsPage />} />
             <Route path="/crm/leads/new" element={<LeadFormPage />} />

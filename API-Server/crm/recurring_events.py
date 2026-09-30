@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from .models import CRMOption, CustomerRecurringEvent
+from .models import CRMOption, CRMOrder, CustomerRecurringEvent, Lead, Quotation
 
 RECURRING_KEYWORDS = (
     ("birthday", "Birthday"),
@@ -24,22 +24,79 @@ def match_recurring_event_type(occasion):
     return None
 
 
-def sync_recurring_event(lead):
-    """Detects a recurring occasion on a Lead and records/refreshes it for one-click reminders next year."""
-    if not lead.customer_id or not lead.event_date:
+def event_type_for_occasion(occasion):
+    """Every occasion becomes a customer event: known recurring occasions are
+    normalised to their label, anything else keeps the entered text."""
+    matched = match_recurring_event_type(occasion)
+    if matched:
+        return matched[:50]
+    return str(occasion or "").strip()[:50] or "Other"
+
+
+def _event_details(source):
+    """(customer_id, event_date, occasion, notes, own link field, source links)
+    for a Lead, Quotation or CRMOrder."""
+    if isinstance(source, Lead):
+        return (
+            source.customer_id, source.event_date, source.occasion, source.event_notes,
+            "source_lead", {"source_lead": source},
+        )
+    if isinstance(source, Quotation):
+        lead = source.lead
+        return (
+            source.customer_id, source.event_date or (lead.event_date if lead else None),
+            source.occasion or (lead.occasion if lead else None),
+            lead.event_notes if lead else None,
+            "source_quotation", {"source_quotation": source, "source_lead": lead},
+        )
+    if isinstance(source, CRMOrder):
+        quotation = source.quotation
+        lead = quotation.lead if quotation else None
+        occasion = (quotation.occasion if quotation else None) or (lead.occasion if lead else None)
+        return (
+            source.customer_id, source.event_date, occasion,
+            lead.event_notes if lead else None,
+            "source_order", {"source_order": source, "source_quotation": quotation, "source_lead": lead},
+        )
+    raise TypeError(f"Unsupported customer event source: {type(source).__name__}")
+
+
+def sync_recurring_event(source, create=True):
+    """Records/refreshes the customer event for a Lead, Quotation or CRMOrder.
+
+    The event already linked to this source is moved when its date/occasion
+    changes (instead of leaving a stale duplicate behind). With create=False
+    only an existing event is updated/linked, so an event staff deleted from
+    the Customer Events tab is not silently recreated."""
+    customer_id, event_date, occasion, notes, own_field, links = _event_details(source)
+    if not customer_id or not event_date:
         return None
-    event_type = match_recurring_event_type(lead.occasion)
-    if not event_type:
-        return None
-    event, _ = CustomerRecurringEvent.objects.update_or_create(
-        customer_id=lead.customer_id, event_type=event_type,
-        event_month=lead.event_date.month, event_day=lead.event_date.day,
-        defaults={
-            "original_date": lead.event_date,
-            "source_lead": lead,
-            "notes": lead.event_notes,
-        },
-    )
+    key = {
+        "customer_id": customer_id,
+        "event_type": event_type_for_occasion(occasion),
+        "event_month": event_date.month,
+        "event_day": event_date.day,
+    }
+    linked = CustomerRecurringEvent.objects.filter(**{own_field: source}).first()
+    existing = CustomerRecurringEvent.objects.filter(**key).first()
+    if linked and existing and linked.pk != existing.pk:
+        # The source moved onto an event that already exists: merge into it.
+        linked.delete()
+        linked = None
+    event = existing or linked
+    if event is None:
+        if not create:
+            return None
+        event = CustomerRecurringEvent()
+    for field, value in key.items():
+        setattr(event, field, value)
+    event.original_date = event_date
+    if notes:
+        event.notes = notes
+    for field, value in links.items():
+        if value is not None and (field == own_field or getattr(event, f"{field}_id") is None):
+            setattr(event, field, value)
+    event.save()
     return event
 
 
@@ -75,6 +132,12 @@ def recurring_event_summary(event, today=None):
     return {
         "id": event.id,
         "event_type": event.event_type,
+        "source_lead": event.source_lead_id,
+        "source_lead_no": event.source_lead.lead_no if event.source_lead_id else None,
+        "source_quotation": event.source_quotation_id,
+        "source_quotation_no": event.source_quotation.quotation_no if event.source_quotation_id else None,
+        "source_order": event.source_order_id,
+        "source_order_no": event.source_order.order_no if event.source_order_id else None,
         "original_date": event.original_date,
         "notes": event.notes,
         "reminder_days_before": event.reminder_days_before,

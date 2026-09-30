@@ -661,7 +661,7 @@ class CRMOption(models.Model):
 
 
 class CustomerRecurringEvent(models.Model):
-    """A yearly recurring occasion (birthday, anniversary, etc.) detected from a customer's order history."""
+    """A customer occasion (birthday, anniversary, etc.) captured from the customer's leads, quotations and orders."""
 
     EVENT_TYPE_CHOICES = (
         ("Birthday", "Birthday"),
@@ -681,6 +681,12 @@ class CustomerRecurringEvent(models.Model):
     original_date = models.DateField()
     source_lead = models.ForeignKey(
         Lead, null=True, blank=True, on_delete=models.SET_NULL, related_name="recurring_events",
+    )
+    source_quotation = models.ForeignKey(
+        Quotation, null=True, blank=True, on_delete=models.SET_NULL, related_name="recurring_events",
+    )
+    source_order = models.ForeignKey(
+        CRMOrder, null=True, blank=True, on_delete=models.SET_NULL, related_name="recurring_events",
     )
     notes = models.TextField(null=True, blank=True)
     reminder_days_before = models.PositiveSmallIntegerField(default=7)

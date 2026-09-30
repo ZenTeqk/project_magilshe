@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { inr } from "@/lib/data";
 import { lastNDays } from "@/features/reports/reports-hooks";
 import { useCrmCustomerAnalytics, useSendCustomerReminder, useUpcomingCustomerEvents } from "@/features/customers/hooks";
+import { AgendaBoard } from "@/features/crm/components/agenda-board";
 const month = (value: string) =>
   new Date(value).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
 const chartColors = [
@@ -206,6 +207,7 @@ export default function CustomerIntelligencePage() {
           </div>
         ))}
       </Surface>
+      <AgendaBoard embedded defaultView="week" />
       <Surface>
         <Heading
           eyebrow="Customer composition"

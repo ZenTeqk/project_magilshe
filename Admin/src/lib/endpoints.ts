@@ -95,6 +95,8 @@ export const endpoints = {
     customerUpcomingEvents: "crm/customers/upcoming-events/",
     customerSendReminder: (id: string | number) => `crm/customers/${id}/send-reminder/`,
 
+    agenda: "crm/agenda/",
+
     customerEvents: "crm/customer-events/",
     customerEvent: (id: string | number) => `crm/customer-events/${id}/`,
     customerEventComplete: (id: string | number) => `crm/customer-events/${id}/complete/`,

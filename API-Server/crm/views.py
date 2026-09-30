@@ -12,7 +12,9 @@ from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from cakery.common import aws_domain_name, get_s3_session
 from cakery.file_upload_to_aws import put_image_to_s3
 from customer.rbac import effective_permissions, is_super_admin
@@ -22,6 +24,7 @@ from .models import (
     pricing_quantity,
 )
 from .customer_matching import find_existing_customer, sync_customer_from_crm_details
+from .agenda import MAX_RANGE_DAYS, build_agenda
 from .actionable import (
     DELIVERY_ACTIONABLE_STATUSES, INVOICE_ACTIONABLE_STATUSES,
     LEAD_ACTIONABLE_STATUSES, ORDER_ACTIONABLE_STATUSES,
@@ -67,6 +70,11 @@ def _require_super_admin(request):
     if not is_super_admin(request.user):
         return Response({"detail": "Only Super Admin can perform this action."}, status=status.HTTP_403_FORBIDDEN)
     return None
+
+
+def _event_fields(instance, *fields):
+    """Snapshot of the fields that decide a record's customer event."""
+    return tuple(getattr(instance, field) for field in fields)
 
 
 class ArchivedLifecycleMixin:
@@ -325,6 +333,8 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         previous_status = serializer.instance.status
+        previous_event = _event_fields(serializer.instance, "occasion", "event_date", "customer_id")
+        previous_notes = serializer.instance.event_notes
         save_kwargs = {"updated_by": self.request.user}
         if "customer" in serializer.validated_data or "phone" in serializer.validated_data:
             synced_customer = sync_customer_from_crm_details(
@@ -344,7 +354,10 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 save_kwargs["customer"] = synced_customer
         lead = serializer.save(**save_kwargs)
         LeadActivity.objects.create(lead=lead, action="Lead Edited", staff=self.request.user)
-        sync_recurring_event(lead)
+        if _event_fields(lead, "occasion", "event_date", "customer_id") != previous_event:
+            sync_recurring_event(lead)
+        elif lead.event_notes != previous_notes:
+            sync_recurring_event(lead, create=False)
         if previous_status != lead.status:
             LeadActivity.objects.create(
                 lead=lead, action="Status Changed", staff=self.request.user,
@@ -465,6 +478,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 description=f"{previous_status} to Won · Won & Generate Quotation",
             )
         primary_address = None
+        customer_newly_linked = False
         if lead.customer is None:
             lead.customer = sync_customer_from_crm_details({
                 "customer_name": lead.customer_name,
@@ -476,6 +490,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             }, request.user)
             if lead.customer is not None:
                 lead.save(update_fields=("customer", "updated_on"))
+                customer_newly_linked = True
         if lead.customer:
             primary_address = lead.customer.customeraddress_set.order_by("-is_primary", "id").first()
         quotation, created = Quotation.objects.get_or_create(
@@ -539,6 +554,9 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             quotation.calculate_totals()
             quotation.save(update_fields=("subtotal", "gst_amount", "total_amount", "updated_on"))
             create_quotation_version(quotation, request.user)
+            # The lead already synced its event; only create one here when the
+            # customer was linked just now, otherwise just link the quotation.
+            sync_recurring_event(quotation, create=customer_newly_linked)
         return Response({
             "message": "Quotation created." if created else "Quotation already exists.",
             "data": QuotationSerializer(quotation).data,
@@ -626,6 +644,7 @@ class LeadViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                     customer=sync_customer_from_crm_details(serializer.validated_data, request.user),
                 )
                 LeadActivity.objects.create(lead=lead, action="Lead Imported", staff=request.user)
+                sync_recurring_event(lead)
             successes += 1
         return Response({"success_count": successes, "failed_count": len(failures), "errors": failures})
 
@@ -1087,7 +1106,10 @@ class CRMCustomerViewSet(
                 "created_on": log.created_on,
             } for log in customer.communication_logs.select_related("staff").all()[:100]],
         }
-        data["recurring_events"] = [recurring_event_summary(event) for event in customer.recurring_events.all()]
+        data["recurring_events"] = [
+            recurring_event_summary(event)
+            for event in customer.recurring_events.select_related("source_lead", "source_quotation", "source_order")
+        ]
         data["purchase_summary"] = self._purchase_summary(customer)
         return Response(data)
 
@@ -1172,7 +1194,9 @@ class CustomerRecurringEventViewSet(viewsets.ModelViewSet):
     Same model the Lead pipeline already auto-populates via sync_recurring_event —
     this just exposes it as a real, staff-editable resource."""
     serializer_class = CustomerRecurringEventSerializer
-    queryset = CustomerRecurringEvent.objects.select_related("customer", "source_lead").all()
+    queryset = CustomerRecurringEvent.objects.select_related(
+        "customer", "source_lead", "source_quotation", "source_order",
+    ).all()
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -1198,6 +1222,7 @@ def _confirm_quotation_order(quotation, user):
     CRMOrderViewSet.create_direct so a directly-created order goes through the
     exact same item/activity pipeline as a normal quotation-confirmed order."""
     lead = quotation.lead
+    customer_newly_linked = False
     if quotation.customer is None:
         customer = sync_customer_from_crm_details({
             "customer_name": quotation.customer_name or (lead.customer_name if lead else ""),
@@ -1208,6 +1233,7 @@ def _confirm_quotation_order(quotation, user):
         if customer is not None:
             quotation.customer = customer
             quotation.save(update_fields=("customer", "updated_on"))
+            customer_newly_linked = True
     order, created = CRMOrder.objects.get_or_create(
         quotation=quotation,
         defaults={
@@ -1247,6 +1273,7 @@ def _confirm_quotation_order(quotation, user):
             quotation=quotation, action="Order Confirmed",
             description=order.order_no, staff=user,
         )
+        sync_recurring_event(order, create=customer_newly_linked)
     return order, created
 
 
@@ -1297,13 +1324,17 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             description="Manual quotation", staff=self.request.user,
         )
         create_quotation_version(quotation, self.request.user)
+        sync_recurring_event(quotation)
 
     def perform_update(self, serializer):
         previous = serializer.instance.status
+        previous_event = _event_fields(serializer.instance, "occasion", "event_date", "customer_id")
         customer = serializer.validated_data.get("customer", serializer.instance.customer)
         if customer is None and any(field in serializer.validated_data for field in ("customer_name", "phone", "email", "address", "billing_address")):
             customer = sync_customer_from_crm_details(serializer.validated_data, self.request.user)
         quotation = serializer.save(customer=customer) if customer is not None else serializer.save()
+        if _event_fields(quotation, "occasion", "event_date", "customer_id") != previous_event:
+            sync_recurring_event(quotation)
         if previous != quotation.status and quotation.lead:
             LeadActivity.objects.create(
                 lead=quotation.lead, action=f"Quotation {quotation.status}",
@@ -1320,9 +1351,12 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         """Validate/save the edited quotation and explicitly freeze a new document version."""
         with transaction.atomic():
             quotation = Quotation.objects.select_for_update().get(pk=self.get_object().pk)
+            previous_event = _event_fields(quotation, "occasion", "event_date", "customer_id")
             serializer = self.get_serializer(quotation, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             quotation = serializer.save()
+            if _event_fields(quotation, "occasion", "event_date", "customer_id") != previous_event:
+                sync_recurring_event(quotation)
             version = create_quotation_version(quotation, request.user)
             QuotationActivity.objects.create(
                 quotation=quotation, action="Quotation Generated",
@@ -1585,6 +1619,7 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             if customer is None:
                 customer = sync_customer_from_crm_details(create_serializer.validated_data, request.user)
             quotation = create_serializer.save(created_by=request.user, customer=customer)
+            sync_recurring_event(quotation)
             confirm_serializer = QuotationSerializer(
                 quotation,
                 data={"status": "Advance Received", "advance_received": True, "advance_amount": str(advance_value)},
@@ -2033,3 +2068,38 @@ class CRMOptionViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get("active") in {"true", "1"}:
             queryset = queryset.filter(is_active=True)
         return queryset
+
+
+class CanViewAgenda(BasePermission):
+    """The agenda is shown on the CRM Calendar, the Customers dashboard and the
+    Customer 360 profile, so any of those pages' view permissions grants it."""
+    message = "You do not have permission to view the CRM calendar."
+    codes = {"crm.dashboard.view", "customers.analytics.view", "customers.data.view"}
+
+    def has_permission(self, request, view):
+        return is_super_admin(request.user) or bool(self.codes & effective_permissions(request.user))
+
+
+class CRMAgendaView(APIView):
+    """GET crm/agenda/?start=YYYY-MM-DD&end=YYYY-MM-DD[&customer=<id>]
+    Day-wise orders, deliveries, pending payments, follow-ups, customer
+    events/reminders and completed work (see crm/agenda.py)."""
+    permission_classes = (IsAuthenticated, CanViewAgenda)
+
+    def get(self, request):
+        today = timezone.localdate()
+        try:
+            start = datetime.strptime(request.query_params.get("start") or today.isoformat(), "%Y-%m-%d").date()
+            end = datetime.strptime(
+                request.query_params.get("end") or (start + timedelta(days=6)).isoformat(), "%Y-%m-%d",
+            ).date()
+        except ValueError:
+            return Response({"message": "start and end must be dates (YYYY-MM-DD)."}, status=400)
+        if end < start:
+            return Response({"message": "end must be on or after start."}, status=400)
+        if (end - start).days >= MAX_RANGE_DAYS:
+            return Response({"message": f"The range can span at most {MAX_RANGE_DAYS} days."}, status=400)
+        customer = request.query_params.get("customer")
+        if customer and not str(customer).isdigit():
+            return Response({"message": "customer must be a customer id."}, status=400)
+        return Response(build_agenda(start, end, customer_id=int(customer) if customer else None, today=today))
