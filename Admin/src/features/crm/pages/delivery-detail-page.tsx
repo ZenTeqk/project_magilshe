@@ -26,6 +26,7 @@ import {
 import { MarkDamagedDialog } from "@/features/crm/components/mark-damaged-dialog";
 import { MarkFailedDialog } from "@/features/crm/components/mark-failed-dialog";
 import { useDeliveryPersons, useDeliveryPlatforms } from "@/features/operations/operations-hooks";
+import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
 const deliveryTypeHints: Record<DeliveryType, string> = {
   "Customer Pickup": "Someone visits the bakery and collects the order.",
@@ -317,10 +318,14 @@ function DeliveryDetailPage() {
             )}
             {delivery.delivery_status === "Out for Delivery" && (
               <>
+                <SendWhatsAppButton event="out_for_delivery" recordId={delivery.id} />
                 <Button size="sm" onClick={() => runAction("deliver")} disabled={busy}>{deliverLabel}</Button>
                 <Button size="sm" variant="outline" onClick={() => setDamageOpen(true)} disabled={busy}>Mark Damaged</Button>
                 <Button size="sm" variant="outline" className="text-danger" onClick={() => setFailedOpen(true)} disabled={busy}>Mark Failed</Button>
               </>
+            )}
+            {delivery.delivery_status === "Delivered Successfully" && (
+              <SendWhatsAppButton event="delivered" recordId={delivery.id} />
             )}
           </div>
         </div>

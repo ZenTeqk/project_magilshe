@@ -121,7 +121,8 @@ INSTALLED_APPS = [
     'common',
     'tax',
     'banner',
-    'event'
+    'event',
+    'whatsapp',
 ]
 
 REST_FRAMEWORK = {

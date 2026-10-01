@@ -32,6 +32,7 @@ from .actionable import (
 )
 from .recurring_events import recurring_event_summary, sync_recurring_event
 from .uploads import validate_image_upload
+from whatsapp.services import trigger_event as whatsapp_trigger_event
 from .serializers import (
     CRMDeliveryDamageImageSerializer, CRMDeliverySerializer, CRMInvoiceSerializer, CRMOptionSerializer, CRMOrderSerializer,
     CustomerRecurringEventSerializer, LeadReferenceImageSerializer, LeadSerializer,
@@ -1274,6 +1275,7 @@ def _confirm_quotation_order(quotation, user):
             description=order.order_no, staff=user,
         )
         sync_recurring_event(order, create=customer_newly_linked)
+        whatsapp_trigger_event("order_confirmed", order)
     return order, created
 
 
@@ -1345,6 +1347,8 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 quotation=quotation, action=f"Quotation {quotation.status}",
                 staff=self.request.user,
             )
+            if quotation.status == "Sent":
+                whatsapp_trigger_event("quotation_sent", quotation)
 
     @action(detail=True, methods=["post"], url_path="generate-version")
     def generate_version(self, request, pk=None):
@@ -1760,6 +1764,7 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 order.status = "Invoice Pending"
                 order.save(update_fields=("status", "updated_on"))
                 QuotationActivity.objects.create(quotation=quotation, action="Invoice Generated", description=invoice.invoice_no, staff=request.user)
+                whatsapp_trigger_event("invoice_generated", invoice)
         return Response({"message": "Invoice generated." if created else "Invoice already exists.", "data": CRMInvoiceSerializer(invoice).data}, status=201 if created else 200)
 
 
@@ -2006,7 +2011,10 @@ class CRMDeliveryViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             delivery.save(update_fields=update_fields)
             order = delivery.order
             QuotationActivity.objects.create(quotation=order.quotation, action=activity, description=delivery.delivery_no, staff=request.user)
+            if delivery.delivery_status == "Out for Delivery":
+                whatsapp_trigger_event("out_for_delivery", delivery)
             if delivery.delivery_status == "Delivered Successfully":
+                whatsapp_trigger_event("delivered", delivery)
                 order.status = "Closed"
                 order.save(update_fields=("status", "updated_on"))
                 invoice = order.invoice

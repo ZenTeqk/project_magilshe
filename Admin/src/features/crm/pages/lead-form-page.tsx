@@ -37,6 +37,7 @@ import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrent } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
+import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
 const blank = {
   customer_id: null as number | null,
@@ -262,6 +263,7 @@ function LeadFormPage() {
         }
         actions={
           <>
+            {existingLead && <SendWhatsAppButton event="follow_up" recordId={existingLead.id} label="Follow-up Reminder" />}
             {existingLead && canGenerateQuotation && !existingLead.quotation_id && (
               <Button
                 variant="outline"

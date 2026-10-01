@@ -64,6 +64,11 @@ const DeliveryPersonReportsPage = lazy(
 );
 const OccasionReportsPage = lazy(() => import("@/features/reports/pages/occasion-reports-page"));
 
+const WhatsAppTemplatesPage = lazy(() => import("@/features/whatsapp/pages/templates-page"));
+const WhatsAppTemplateFormPage = lazy(() => import("@/features/whatsapp/pages/template-form-page"));
+const WhatsAppMessageLogPage = lazy(() => import("@/features/whatsapp/pages/message-log-page"));
+const WhatsAppSettingsPage = lazy(() => import("@/features/whatsapp/pages/whatsapp-settings-page"));
+
 const ConfigurationPage = lazy(() => import("@/features/settings/pages/configuration-page"));
 const TermsPage = lazy(() => import("@/features/settings/pages/terms-conditions-page"));
 const SettingsPage = lazy(() => import("@/features/settings/pages/settings-page"));
@@ -143,6 +148,12 @@ export function AppRouter() {
             <Route path="/user_wise_reports" element={<UserWiseReportsPage />} />
             <Route path="/delivery_person_reports" element={<DeliveryPersonReportsPage />} />
             <Route path="/occasion_reports" element={<OccasionReportsPage />} />
+
+            <Route path="/whatsapp/templates" element={<WhatsAppTemplatesPage />} />
+            <Route path="/whatsapp/templates/new" element={<WhatsAppTemplateFormPage />} />
+            <Route path="/whatsapp/templates/:id/edit" element={<WhatsAppTemplateFormPage />} />
+            <Route path="/whatsapp/messages" element={<WhatsAppMessageLogPage />} />
+            <Route path="/whatsapp/settings" element={<WhatsAppSettingsPage />} />
 
             <Route path="/configuration" element={<ConfigurationPage />} />
             <Route path="/terms_conditions" element={<TermsPage />} />

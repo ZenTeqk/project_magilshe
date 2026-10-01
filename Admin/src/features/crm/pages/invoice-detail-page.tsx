@@ -20,6 +20,7 @@ import { CrmHistoryTimeline } from "@/features/crm/components/crm-history-timeli
 import { buildInvoicePdf } from "@/features/crm/lib/pdf-template";
 import { addressOrFallback } from "@/features/crm/lib/address-fallback";
 import { formatSaleQuantity } from "@/features/crm/sale-units";
+import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
 function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -105,6 +106,8 @@ function InvoiceDetailPage() {
             <Button size="sm" variant="outline" onClick={previewPdf}>Preview</Button>
             <Button size="sm" variant="outline" onClick={downloadPdf}>Download PDF</Button>
             <Button size="sm" variant="outline" onClick={() => window.print()}>Print</Button>
+            <SendWhatsAppButton event="invoice_generated" recordId={invoice.id} />
+            {balance > 0 && <SendWhatsAppButton event="payment_reminder" recordId={invoice.id} label="Payment Reminder" />}
             {["Generated", "Issued"].includes(invoice.status) && <Button size="sm" variant="ghost" className="text-danger" onClick={cancel} disabled={cancelInvoice.isPending}>Cancel</Button>}
             {nextAction === "record_payment" && (
               <Button size="sm" onClick={() => setPaymentOpen(true)} disabled={recordPayment.isPending}>Collect Balance</Button>

@@ -18,6 +18,9 @@ PERMISSION_DEFINITIONS = {
     "configuration": ("Configuration", "Configuration", ("view", "edit")),
     "rbac.users": ("Administration", "Users", ("view", "create", "edit", "deactivate")),
     "rbac.roles": ("Administration", "Roles", ("view", "create", "edit", "delete", "configure")),
+    "whatsapp.templates": ("WhatsApp", "Templates", ("view", "create", "edit", "delete", "process")),
+    "whatsapp.messages": ("WhatsApp", "Message Log", ("view", "send")),
+    "whatsapp.settings": ("WhatsApp", "Settings", ("view", "configure")),
 }
 
 
@@ -60,8 +63,13 @@ def required_permission(request, view):
         "record_payment": "record_payment",
         "damage_images": "process", "delete_damage_image": "process",
         "import_file": "import", "cancel_order": "cancel", "partial_update": "edit", "update": "edit",
+        "submit": "process", "duplicate": "create",
     }
     permission_action = custom.get(action, method_action)
+    if path.startswith("whatsapp/send"):
+        return "whatsapp.messages.send"
+    if path.startswith("whatsapp/event-catalogue"):
+        return "whatsapp.templates.view"
     if action == "analytics":
         return "customers.analytics.view"
     if path.startswith("crm/customers") and action == "import_file":
@@ -84,12 +92,15 @@ def required_permission(request, view):
         ("unit", "catalog"), ("kg", "catalog"), ("items", "catalog"),
         ("order", "operations"), ("purchase", "operations"), ("delivery-person", "operations"),
         ("testimonial", "operations"), ("banner", "marketing"), ("event", "marketing"),
+        ("whatsapp/messages", "whatsapp.messages"), ("whatsapp/settings", "whatsapp.settings"),
+        ("whatsapp/templates", "whatsapp.templates"),
     )
     for prefix, resource in mappings:
         if path.startswith(prefix):
             if action == "cancel":
                 return f"{resource}.{'delete' if resource == 'crm.quotations' else 'process'}"
-            if resource == "crm.settings" and permission_action != "view": permission_action = "configure"
+            if resource in ("crm.settings", "whatsapp.settings") and permission_action != "view":
+                permission_action = "configure"
             return f"{resource}.{permission_action}"
     return None
 

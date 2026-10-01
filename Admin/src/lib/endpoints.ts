@@ -193,4 +193,14 @@ export const endpoints = {
     cakeCreate: "cake/create/",
     cakeDelete: (id: string | number) => `cake/delete/${id}/`,
   },
+  whatsapp: {
+    templates: "whatsapp/templates/",
+    template: (id: string | number) => `whatsapp/templates/${id}/`,
+    submitTemplate: (id: string | number) => `whatsapp/templates/${id}/submit/`,
+    duplicateTemplate: (id: string | number) => `whatsapp/templates/${id}/duplicate/`,
+    messages: "whatsapp/messages/",
+    send: "whatsapp/send/",
+    settings: "whatsapp/settings/",
+    eventCatalogue: "whatsapp/event-catalogue/",
+  },
 } as const;

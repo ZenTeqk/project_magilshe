@@ -48,6 +48,8 @@ const routes: Array<[string, string]> = [
   ["/orders", "operations.view"], ["/manual-order", "operations.view"], ["/purchase", "operations.view"], ["/delivery-management", "operations.view"], ["/delivery_person", "operations.view"], ["/feedback", "operations.view"], ["/customers", "operations.view"],
   ["/offers", "marketing.view"], ["/banner", "marketing.view"], ["/events", "marketing.view"], ["/event-orders", "marketing.view"],
   ["/configuration", "configuration.view"], ["/terms_conditions", "configuration.view"], ["/settings", "configuration.view"],
+  ["/whatsapp/templates", "whatsapp.templates.view"], ["/whatsapp/messages", "whatsapp.messages.view"],
+  ["/whatsapp/settings", "whatsapp.settings.view"],
 ];
 
 export function permissionForRoute(pathname: string) {

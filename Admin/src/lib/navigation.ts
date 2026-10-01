@@ -8,6 +8,8 @@ import {
   ReceiptText,
   Truck,
   Settings2,
+  MessageCircle,
+  ListChecks,
   Boxes,
   FolderTree,
   Layers,
@@ -137,6 +139,15 @@ export const navigation: NavEntry[] = [
         icon: Settings2,
         aliases: ["configuration"],
       },
+    ],
+  },
+  {
+    label: "WhatsApp",
+    icon: MessageCircle,
+    items: [
+      { label: "Templates", to: "/whatsapp/templates", icon: MessageCircle, aliases: ["messages", "meta"] },
+      { label: "Message Log", to: "/whatsapp/messages", icon: ListChecks, aliases: ["sent", "history"] },
+      { label: "Settings", to: "/whatsapp/settings", icon: Settings2, aliases: ["connection", "credentials"] },
     ],
   },
   {

@@ -60,6 +60,7 @@ import { CustomerMatchPicker } from "@/features/crm/components/customer-match-pi
 import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
+import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
 const emptyItem: QuotationItem = {
   item_name: "",
@@ -554,6 +555,7 @@ function QuotationFormPage() {
                   Send
                 </Button>
               )}
+              {status !== "Draft" && <SendWhatsAppButton event="quotation_sent" recordId={existingQuotation.id} />}
               {status === "Sent" && (
                 <Button size="sm" onClick={() => runWorkflow("accept")}>
                   Accept

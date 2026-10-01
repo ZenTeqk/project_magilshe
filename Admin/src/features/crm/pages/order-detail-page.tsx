@@ -22,6 +22,7 @@ import { formatSaleQuantity } from "@/features/crm/sale-units";
 import { addressOrFallback } from "@/features/crm/lib/address-fallback";
 import { useQuotation } from "@/features/crm/quotations-hooks";
 import { PaymentReceiptButton } from "@/features/crm/components/payment-receipt-button";
+import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
 const nonCancellable = new Set(["Delivery", "Out for Delivery", "Delivered", "Completed", "Closed", "Cancelled"]);
 
@@ -97,6 +98,7 @@ function OrderDetailPage() {
             </span>
           </div>
           <div className="flex min-h-8 flex-wrap items-center justify-end gap-2">
+            <SendWhatsAppButton event="order_confirmed" recordId={order.id} />
             {(status === "Confirmed" || status === "Production") && <Button size="sm" onClick={startProcessing} disabled={workflowAction.isPending}>Start Processing</Button>}
             {status === "Processing" && <Button size="sm" onClick={markReady} disabled={workflowAction.isPending}>Mark Ready</Button>}
             {(status === "Ready" || status === "Invoice Pending" || status === "Invoice Generated") && (
