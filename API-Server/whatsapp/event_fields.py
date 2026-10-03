@@ -7,9 +7,10 @@ page offer a dropdown of real fields instead of free text, and what keeps
 a template from being assigned variables that don't exist on the record
 that will actually trigger it.
 
-Adding a new trigger point later means: one entry in EVENT_CHOICES, one
-entry in FIELDS_FOR_EVENT below, and one call to services.trigger_event()
-at the point in crm/views.py where that status actually changes.
+Adding a new trigger point later means: one entry in EVENT_CHOICES (and
+AUTO_SENDABLE_EVENTS / EVENT_GROUPS), one entry each in FIELDS_FOR_EVENT and
+SOURCE_MODEL_FOR_EVENT below, and one call to services.trigger_event() at
+the point in crm/views.py where that status actually changes.
 """
 
 from datetime import date, datetime
@@ -41,20 +42,56 @@ def _delivery_recipient(delivery):
     return delivery.recipient_phone or _order_recipient(delivery.order)
 
 
+_QUOTATION_BASE = {
+    "customer_name": ("Customer name", lambda q: _text(q.customer_name)),
+    "quotation_no": ("Quotation number", lambda q: _text(q.quotation_no)),
+}
+_ORDER_BASE = {
+    "customer_name": ("Customer name", lambda o: _text(o.customer_name)),
+    "order_no": ("Order number", lambda o: _text(o.order_no)),
+}
+
 FIELDS_FOR_EVENT = {
     "quotation_sent": {
-        "customer_name": ("Customer name", lambda q: _text(q.customer_name)),
-        "quotation_no": ("Quotation number", lambda q: _text(q.quotation_no)),
+        **_QUOTATION_BASE,
         "total_amount": ("Total amount", lambda q: _money(q.total_amount)),
         "valid_until": ("Valid until", lambda q: _date(q.valid_until)),
         "event_date": ("Event date", lambda q: _date(q.event_date)),
         "cake_type": ("Cake type", lambda q: _text(q.cake_type)),
     },
+    "quotation_accepted": {
+        **_QUOTATION_BASE,
+        "total_amount": ("Total amount", lambda q: _money(q.total_amount)),
+        "valid_until": ("Valid until", lambda q: _date(q.valid_until)),
+        "event_date": ("Event date", lambda q: _date(q.event_date)),
+    },
+    "quotation_advance_received": {
+        **_QUOTATION_BASE,
+        "advance_amount": ("Advance paid", lambda q: _money(q.advance_amount)),
+        "balance_amount": ("Balance due", lambda q: _money(q.balance_amount)),
+        "total_amount": ("Total amount", lambda q: _money(q.total_amount)),
+    },
+    "quotation_cancelled": {
+        **_QUOTATION_BASE,
+    },
     "order_confirmed": {
-        "customer_name": ("Customer name", lambda o: _text(o.customer_name)),
-        "order_no": ("Order number", lambda o: _text(o.order_no)),
+        **_ORDER_BASE,
         "delivery_date": ("Delivery date", lambda o: _date(o.delivery_date)),
         "total_amount": ("Total amount", lambda o: _money(o.total_amount)),
+    },
+    "order_processing": {
+        **_ORDER_BASE,
+        "cake_type": ("Cake type", lambda o: _text(o.cake_type)),
+        "delivery_date": ("Delivery date", lambda o: _date(o.delivery_date)),
+    },
+    "order_ready": {
+        **_ORDER_BASE,
+        "balance_amount": ("Balance due", lambda o: _money(o.balance_amount)),
+        "delivery_date": ("Delivery date", lambda o: _date(o.delivery_date)),
+    },
+    "order_cancelled": {
+        **_ORDER_BASE,
+        "cancellation_reason": ("Cancellation reason", lambda o: _text(o.cancellation_reason)),
     },
     "follow_up": {
         "customer_name": ("Customer name", lambda l: _text(l.customer_name)),
@@ -86,39 +123,50 @@ FIELDS_FOR_EVENT = {
     },
 }
 
-RECIPIENT_FOR_EVENT = {
-    "quotation_sent": lambda q: q.phone,
-    "order_confirmed": _order_recipient,
-    "follow_up": _lead_recipient,
-    "out_for_delivery": _delivery_recipient,
-    "delivered": _delivery_recipient,
-    "invoice_generated": lambda i: i.phone,
-    "payment_reminder": lambda i: i.phone,
-}
-
-LABEL_FOR_EVENT = {
-    "quotation_sent": lambda q: q.quotation_no,
-    "order_confirmed": lambda o: o.order_no,
-    "follow_up": lambda l: l.lead_no,
-    "out_for_delivery": lambda d: d.delivery_no,
-    "delivered": lambda d: d.delivery_no,
-    "invoice_generated": lambda i: i.invoice_no,
-    "payment_reminder": lambda i: i.invoice_no,
-}
-
-CUSTOMER_NAME_FOR_EVENT = {
-    "quotation_sent": lambda q: q.customer_name,
-    "order_confirmed": lambda o: o.customer_name,
-    "follow_up": lambda l: l.customer_name,
-    "out_for_delivery": lambda d: d.order.customer_name,
-    "delivered": lambda d: d.order.customer_name,
-    "invoice_generated": lambda i: i.customer_name,
-    "payment_reminder": lambda i: i.customer_name,
+# What each kind of CRM record needs for sending and logging, described
+# once per record type rather than once per event.
+_RECORD_TYPES = {
+    "quotation": {
+        "model": ("crm", "Quotation"),
+        "recipient": lambda q: q.phone,
+        "label": lambda q: q.quotation_no,
+        "customer_name": lambda q: q.customer_name,
+    },
+    "crmorder": {
+        "model": ("crm", "CRMOrder"),
+        "recipient": _order_recipient,
+        "label": lambda o: o.order_no,
+        "customer_name": lambda o: o.customer_name,
+    },
+    "lead": {
+        "model": ("crm", "Lead"),
+        "recipient": _lead_recipient,
+        "label": lambda l: l.lead_no,
+        "customer_name": lambda l: l.customer_name,
+    },
+    "crmdelivery": {
+        "model": ("crm", "CRMDelivery"),
+        "recipient": _delivery_recipient,
+        "label": lambda d: d.delivery_no,
+        "customer_name": lambda d: d.order.customer_name,
+    },
+    "crminvoice": {
+        "model": ("crm", "CRMInvoice"),
+        "recipient": lambda i: i.phone,
+        "label": lambda i: i.invoice_no,
+        "customer_name": lambda i: i.customer_name,
+    },
 }
 
 SOURCE_MODEL_FOR_EVENT = {
     "quotation_sent": "quotation",
+    "quotation_accepted": "quotation",
+    "quotation_advance_received": "quotation",
+    "quotation_cancelled": "quotation",
     "order_confirmed": "crmorder",
+    "order_processing": "crmorder",
+    "order_ready": "crmorder",
+    "order_cancelled": "crmorder",
     "follow_up": "lead",
     "out_for_delivery": "crmdelivery",
     "delivered": "crmdelivery",
@@ -126,16 +174,10 @@ SOURCE_MODEL_FOR_EVENT = {
     "payment_reminder": "crminvoice",
 }
 
-
-MODEL_FOR_EVENT = {
-    "quotation_sent": ("crm", "Quotation"),
-    "order_confirmed": ("crm", "CRMOrder"),
-    "follow_up": ("crm", "Lead"),
-    "out_for_delivery": ("crm", "CRMDelivery"),
-    "delivered": ("crm", "CRMDelivery"),
-    "invoice_generated": ("crm", "CRMInvoice"),
-    "payment_reminder": ("crm", "CRMInvoice"),
-}
+RECIPIENT_FOR_EVENT = {e: _RECORD_TYPES[t]["recipient"] for e, t in SOURCE_MODEL_FOR_EVENT.items()}
+LABEL_FOR_EVENT = {e: _RECORD_TYPES[t]["label"] for e, t in SOURCE_MODEL_FOR_EVENT.items()}
+CUSTOMER_NAME_FOR_EVENT = {e: _RECORD_TYPES[t]["customer_name"] for e, t in SOURCE_MODEL_FOR_EVENT.items()}
+MODEL_FOR_EVENT = {e: _RECORD_TYPES[t]["model"] for e, t in SOURCE_MODEL_FOR_EVENT.items()}
 
 
 def resolve_variables(event_key, variable_map, record):

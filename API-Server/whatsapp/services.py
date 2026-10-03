@@ -8,9 +8,11 @@ binding (see event_fields.py) -- magilshe's templates attach to a CRM
 document (a quotation, an order...), not a generic contact.
 """
 
+import logging
 import re
 
 import requests
+from django.db import transaction
 from django.utils import timezone
 
 from .event_fields import (
@@ -18,6 +20,8 @@ from .event_fields import (
     SOURCE_MODEL_FOR_EVENT, resolve_variables,
 )
 from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, WhatsAppSettings
+
+logger = logging.getLogger("cakery")
 
 GRAPH_API_VERSION = "v21.0"
 GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
@@ -262,18 +266,30 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
 def trigger_event(event_key, record):
     """Called from crm/views.py at the moment a CRM status actually changes.
 
-    Only fires if the event is in WhatsAppSettings.auto_send_events (staff
-    opted in from Settings) and exactly one Active template is assigned to
-    it. More than one Active template for the same event is intentionally
-    not auto-sent -- that's ambiguous, and is instead left for a manual
-    Send with a template picker.
+    Fires only when the master switch is on, the event is opted in from
+    Settings, and exactly one Active template is assigned to it. More than
+    one Active template for the same event is intentionally not auto-sent --
+    that's ambiguous, and is left for a manual Send with a template picker.
+
+    The send is deferred until the surrounding transaction commits, so a
+    customer is never messaged about a status change that then rolled back,
+    and the Meta API call doesn't run while CRM rows are locked. Any failure
+    is logged, never raised: WhatsApp must not be able to break the CRM
+    action that triggered it.
     """
     if event_key not in AUTO_SENDABLE_EVENTS:
-        return None
+        return
     settings_row = WhatsAppSettings.load()
-    if event_key not in (settings_row.auto_send_events or []):
-        return None
+    if not settings_row.auto_send_enabled or event_key not in (settings_row.auto_send_events or []):
+        return
     templates = list(MessageTemplate.objects.filter(event=event_key, status=MessageTemplate.STATUS_APPROVED))
     if len(templates) != 1:
-        return None
-    return send_template_message(template=templates[0], record=record, event_key=event_key, user=None)
+        return
+
+    def send():
+        try:
+            send_template_message(template=templates[0], record=record, event_key=event_key, user=None)
+        except Exception:
+            logger.exception("Automatic WhatsApp send failed for %s", event_key)
+
+    transaction.on_commit(send)

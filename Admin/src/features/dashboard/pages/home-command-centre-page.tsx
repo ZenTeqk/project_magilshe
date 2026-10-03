@@ -82,10 +82,10 @@ function orderUrgency(dueDate: string) {
 }
 
 function HomeCommandCentrePage() {
-  const [range, setRange] = useState(lastNDays(0));
+  const [range, setRange] = useState(lastNDays(7));
   const access = useCurrentAccess();
   const analytics = useCrmAnalytics(range);
-  const crm = useCrmDashboard();
+  const crm = useCrmDashboard(range);
   const orders = useOrders();
   const deliveries = useDeliveries();
   const events = useUpcomingCustomerEvents(30);
@@ -148,14 +148,14 @@ function HomeCommandCentrePage() {
   const statuses = useMemo(
     () =>
       Array.from(
-        (orders.data ?? []).reduce((map, order) => {
-          const status = displayOrderStatus(order.status);
-          map.set(status, (map.get(status) ?? 0) + 1);
+        Object.entries(crm.data?.status_counts.orders ?? {}).reduce((map, [raw, count]) => {
+          const status = displayOrderStatus(raw);
+          map.set(status, (map.get(status) ?? 0) + count);
           return map;
         }, new Map<string, number>()),
         ([status, value]) => ({ status, value }),
       ).sort((a, b) => b.value - a.value),
-    [orders.data],
+    [crm.data?.status_counts.orders],
   );
   const statusTotal = Math.max(
     1,
@@ -208,10 +208,11 @@ function HomeCommandCentrePage() {
           {
             label: "Orders today",
             value: String(analytics.data?.current.today_orders ?? 0),
-            detail: `${orders.data?.length ?? 0} total`,
+            detail: `${orders.data?.length ?? 0} all time`,
             to: "/crm/orders",
             icon: ShoppingBag,
             tone: "text-success",
+            live: true,
           },
           {
             label: "New leads",
@@ -225,17 +226,19 @@ function HomeCommandCentrePage() {
             label: "Payments pending",
             value: String(analytics.data?.current.payments_pending.count ?? 0),
             detail: inr(analytics.data?.current.payments_pending.amount ?? 0),
-            to: "/crm/invoices",
+            to: "/crm/orders",
             icon: ReceiptText,
             tone: "text-warning",
+            live: true,
           },
           {
             label: "Active deliveries",
-            value: String(crm.data?.actionable.deliveries ?? 0),
+            value: String(pendingDeliveries.length),
             detail: `${todayDeliveries.length} today`,
             to: "/crm/delivery",
             icon: Truck,
             tone: "text-info",
+            live: true,
           },
         ].map((metric, index) => (
             <Link
@@ -253,8 +256,16 @@ function HomeCommandCentrePage() {
               <metric.icon className="size-4" />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <span className="flex items-center gap-1.5 truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
                 {metric.label}
+                {"live" in metric && metric.live && (
+                  <span
+                    title="Always shows the current position, not the selected date range"
+                    className="rounded bg-success-soft px-1 text-[9px] text-success"
+                  >
+                    Live
+                  </span>
+                )}
               </span>
               <strong className="mt-1 block truncate text-xl tabular">{metric.value}</strong>
               <span className="block truncate text-[10px] text-muted-foreground">
@@ -623,7 +634,7 @@ function HomeCommandCentrePage() {
             </div>
           </div>
           <div className="mt-5 grid grid-cols-2 border-t border-border">
-            <Link to="/crm/invoices" className="p-4 hover:bg-surface-muted">
+            <Link to="/crm/orders" className="p-4 hover:bg-surface-muted">
               <ReceiptText className="size-4 text-warning" />
               <strong className="mt-2 block text-xl tabular">{analytics.data?.current.payments_pending.count ?? 0}</strong>
               <span className="text-[10px] text-muted-foreground">Payments pending</span>

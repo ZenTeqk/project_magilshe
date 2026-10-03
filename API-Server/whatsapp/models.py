@@ -9,7 +9,13 @@ from django.db import models
 EVENT_CHOICES = (
     ("", "Unassigned (manual send only)"),
     ("quotation_sent", "Quotation Sent"),
+    ("quotation_accepted", "Quotation Accepted"),
+    ("quotation_advance_received", "Advance Received"),
+    ("quotation_cancelled", "Quotation Cancelled"),
     ("order_confirmed", "Order Confirmed"),
+    ("order_processing", "Order Processing"),
+    ("order_ready", "Order Ready"),
+    ("order_cancelled", "Order Cancelled"),
     ("follow_up", "Follow-up Reminder"),
     ("out_for_delivery", "Out for Delivery"),
     ("delivered", "Delivered"),
@@ -17,9 +23,24 @@ EVENT_CHOICES = (
     ("payment_reminder", "Payment Reminder"),
 )
 
+# Follow-up and payment reminders are deliberately absent: their timing is a
+# staff judgment call, not a status change, so they're manual-send only.
 AUTO_SENDABLE_EVENTS = (
-    "quotation_sent", "order_confirmed", "out_for_delivery", "delivered", "invoice_generated",
+    "quotation_sent", "quotation_accepted", "quotation_advance_received", "quotation_cancelled",
+    "order_confirmed", "order_processing", "order_ready", "order_cancelled",
+    "invoice_generated", "out_for_delivery", "delivered",
 )
+
+# Section each event belongs to, for grouping on the Settings page.
+EVENT_GROUPS = {
+    "quotation_sent": "Quotation", "quotation_accepted": "Quotation",
+    "quotation_advance_received": "Quotation", "quotation_cancelled": "Quotation",
+    "order_confirmed": "Order", "order_processing": "Order",
+    "order_ready": "Order", "order_cancelled": "Order",
+    "invoice_generated": "Invoice", "payment_reminder": "Invoice",
+    "out_for_delivery": "Delivery", "delivered": "Delivery",
+    "follow_up": "Lead",
+}
 
 
 class WhatsAppSettings(models.Model):
@@ -35,8 +56,11 @@ class WhatsAppSettings(models.Model):
     webhook_verify_token = models.CharField(max_length=128, blank=True)
     business_display_name = models.CharField(max_length=150, blank=True)
     business_display_phone = models.CharField(max_length=20, blank=True)
-    # Which AUTO_SENDABLE_EVENTS currently fire automatically. An event not
-    # listed here only ever sends when a staff member clicks Send.
+    # Master switch. Off = nothing auto-sends, whatever auto_send_events says.
+    # Manual Send buttons are unaffected either way.
+    auto_send_enabled = models.BooleanField(default=False)
+    # Which AUTO_SENDABLE_EVENTS fire automatically while the master switch
+    # is on. An event not listed here only sends when staff click Send.
     auto_send_events = models.JSONField(default=list, blank=True)
     updated_on = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(

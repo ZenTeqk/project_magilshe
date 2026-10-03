@@ -50,7 +50,7 @@ export type MessageTemplate = {
 };
 
 export type EventCatalogue = {
-  events: { value: string; label: string }[];
+  events: { value: string; label: string; group: string }[];
   auto_sendable_events: string[];
   fields_by_event: Record<string, { value: string; label: string }[]>;
 };
@@ -79,6 +79,7 @@ export type WhatsAppSettings = {
   webhook_verify_token: string;
   business_display_name: string;
   business_display_phone: string;
+  auto_send_enabled: boolean;
   auto_send_events: string[];
   is_connected: boolean;
   updated_on: string;

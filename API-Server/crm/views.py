@@ -1279,6 +1279,17 @@ def _confirm_quotation_order(quotation, user):
     return order, created
 
 
+# Quotation status -> WhatsApp event. Shared by every path that changes a
+# quotation's status, so the automatic message can't depend on which
+# endpoint a given button happens to use.
+QUOTATION_STATUS_EVENTS = {
+    "Sent": "quotation_sent",
+    "Accepted": "quotation_accepted",
+    "Advance Received": "quotation_advance_received",
+    "Cancelled": "quotation_cancelled",
+}
+
+
 class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
     lifecycle_label = "Quotation"
     serializer_class = QuotationSerializer
@@ -1347,8 +1358,8 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 quotation=quotation, action=f"Quotation {quotation.status}",
                 staff=self.request.user,
             )
-            if quotation.status == "Sent":
-                whatsapp_trigger_event("quotation_sent", quotation)
+            if quotation.status in QUOTATION_STATUS_EVENTS:
+                whatsapp_trigger_event(QUOTATION_STATUS_EVENTS[quotation.status], quotation)
 
     @action(detail=True, methods=["post"], url_path="generate-version")
     def generate_version(self, request, pk=None):
@@ -1481,6 +1492,8 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 lead=quotation.lead, action=activity, staff=request.user,
                 description=quotation.quotation_no,
             )
+        if new_status in QUOTATION_STATUS_EVENTS:
+            whatsapp_trigger_event(QUOTATION_STATUS_EVENTS[new_status], quotation)
         return Response(self.get_serializer(quotation).data)
 
     @action(detail=True, methods=["post"], url_path="record-payment")
@@ -1512,6 +1525,7 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 quotation=quotation, action="Advance Payment Recorded",
                 staff=request.user, description=str(payment.amount),
             )
+            whatsapp_trigger_event("quotation_advance_received", quotation)
         return Response(self.get_serializer(quotation).data, status=201)
 
     @action(detail=True, methods=["post"], url_path="confirm-order")
@@ -1532,6 +1546,16 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
              "data": CRMOrderSerializer(order).data},
             status=201 if created else 200,
         )
+
+
+# Order workflow action -> WhatsApp event. dispatch_delivery and
+# complete_delivery are deliberately absent: the Delivery screen already
+# sends Out for Delivery / Delivered at those moments, so mapping them here
+# would message the customer twice.
+ORDER_ACTION_EVENTS = {
+    "start_processing": "order_processing",
+    "mark_ready": "order_ready",
+}
 
 
 class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
@@ -1704,6 +1728,7 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 quotation=order.quotation, action="Order Cancelled",
                 description=reason, staff=request.user,
             )
+            whatsapp_trigger_event("order_cancelled", order)
             return Response(self.get_serializer(order).data)
         transitions = {
             "start_processing": ({"Confirmed", "Production"}, "Processing"),
@@ -1739,6 +1764,8 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             quotation=order.quotation, action=f"Order {new_status}",
             description=order.order_no, staff=request.user,
         )
+        if action_name in ORDER_ACTION_EVENTS:
+            whatsapp_trigger_event(ORDER_ACTION_EVENTS[action_name], order)
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"], url_path="generate-invoice")

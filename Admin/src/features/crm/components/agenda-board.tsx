@@ -40,6 +40,9 @@ import {
 type View = "day" | "week" | "month";
 
 const iso = (value: Date) => format(value, "yyyy-MM-dd");
+// Week columns show this many items, then "+N more" opens the full day, so
+// one busy day can't stretch its column far past the rest of the week.
+const WEEK_DAY_LIMIT = 4;
 const weekOptions = { weekStartsOn: 1 as const };
 
 function rangeFor(view: View, anchor: Date) {
@@ -495,9 +498,22 @@ function WeekGrid({
             </button>
             <ul className="flex-1 space-y-1.5 p-1.5 pt-0">
               {items.length ? (
-                items.map((item) => (
-                  <ItemRow key={item.key} item={item} showCustomer={showCustomer} compact />
-                ))
+                <>
+                  {items.slice(0, WEEK_DAY_LIMIT).map((item) => (
+                    <ItemRow key={item.key} item={item} showCustomer={showCustomer} compact />
+                  ))}
+                  {items.length > WEEK_DAY_LIMIT && (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => onOpenDay(day)}
+                        className="w-full rounded-lg px-2 py-1.5 text-center text-xs font-medium text-primary hover:bg-surface-muted"
+                      >
+                        +{items.length - WEEK_DAY_LIMIT} more
+                      </button>
+                    </li>
+                  )}
+                </>
               ) : (
                 <li className="px-2 py-4 text-center text-[11px] text-muted-foreground">Free</li>
               )}

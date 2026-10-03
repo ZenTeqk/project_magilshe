@@ -133,13 +133,16 @@ class CRMAnalyticsReport(APIView):
             is_archived=False,
             confirmed_on__date=timezone.localdate(),
         ).exclude(status="Cancelled").count()
-        pending_invoices = CRMInvoice.objects.filter(
-            is_archived=False,
-            balance_amount__gt=0,
-        ).exclude(status__in=["Cancelled", "Paid"])
-        payments_pending_amount = pending_invoices.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
+        # Every live order with money still owed, invoiced or not. An order
+        # only gets an invoice after it reaches Ready, so counting invoices
+        # alone would hide the balance on every Confirmed/Processing order --
+        # the same balance the Home page's "Due" labels already show.
+        pending_orders = CRMOrder.objects.filter(is_archived=False).exclude(status="Cancelled").annotate(
+            balance_due=F("total_amount") - F("advance_paid"),
+        ).filter(balance_due__gt=0)
+        payments_pending_amount = pending_orders.aggregate(value=Sum("balance_due"))["value"] or Decimal("0")
         payments_pending = {
-            "count": pending_invoices.count(),
+            "count": pending_orders.count(),
             "amount": Decimal(payments_pending_amount).quantize(Decimal("0.01")),
         }
         # payment_date is already a plain DateField (day granularity), so no

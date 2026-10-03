@@ -24,6 +24,16 @@ import { useQuotation } from "@/features/crm/quotations-hooks";
 import { PaymentReceiptButton } from "@/features/crm/components/payment-receipt-button";
 import { SendWhatsAppButton } from "@/features/whatsapp/components/send-whatsapp-button";
 
+/** Order status -> the WhatsApp stage whose templates the Send button offers.
+ * Later stages are covered by the Invoice and Delivery pages' own buttons. */
+const ORDER_WHATSAPP_EVENT: Record<string, string> = {
+  Confirmed: "order_confirmed",
+  Production: "order_processing",
+  Processing: "order_processing",
+  Ready: "order_ready",
+  Cancelled: "order_cancelled",
+};
+
 const nonCancellable = new Set(["Delivery", "Out for Delivery", "Delivered", "Completed", "Closed", "Cancelled"]);
 
 function OrderDetailPage() {
@@ -98,7 +108,7 @@ function OrderDetailPage() {
             </span>
           </div>
           <div className="flex min-h-8 flex-wrap items-center justify-end gap-2">
-            <SendWhatsAppButton event="order_confirmed" recordId={order.id} />
+            {ORDER_WHATSAPP_EVENT[status] && <SendWhatsAppButton event={ORDER_WHATSAPP_EVENT[status]!} recordId={order.id} />}
             {(status === "Confirmed" || status === "Production") && <Button size="sm" onClick={startProcessing} disabled={workflowAction.isPending}>Start Processing</Button>}
             {status === "Processing" && <Button size="sm" onClick={markReady} disabled={workflowAction.isPending}>Mark Ready</Button>}
             {(status === "Ready" || status === "Invoice Pending" || status === "Invoice Generated") && (

@@ -18,7 +18,7 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         fields = (
             "id", "waba_id", "phone_number_id", "access_token", "has_access_token",
             "webhook_verify_token", "business_display_name", "business_display_phone",
-            "auto_send_events", "is_connected", "updated_on",
+            "auto_send_enabled", "auto_send_events", "is_connected", "updated_on",
         )
         read_only_fields = ("id", "updated_on")
 

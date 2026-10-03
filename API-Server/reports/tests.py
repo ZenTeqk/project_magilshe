@@ -75,8 +75,24 @@ class CRMAnalyticsReportTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["current"]["today_orders"], 3)
+        # Order 12 (invoiced, 1000 due) and order 13 (not invoiced yet, 1000
+        # due). Order 11 is fully paid; order 14 is cancelled.
+        self.assertEqual(response.data["current"]["payments_pending"]["count"], 2)
+        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "2000.00")
+
+    def test_confirmed_order_without_an_invoice_counts_as_payment_pending(self):
+        quotation = Quotation.objects.create(
+            customer_name="Not Invoiced", phone="9000000031",
+            cake_type="Cake", quantity=1, rate="800.00", total_amount="800.00",
+        )
+        CRMOrder.objects.create(
+            quotation=quotation, customer_name=quotation.customer_name, phone=quotation.phone,
+            total_amount="800.00", advance_paid="400.00", status="Confirmed",
+        )
+        response = self.client.get("/reports/crm-analytics")
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["current"]["payments_pending"]["count"], 1)
-        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "1000.00")
+        self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "400.00")
 
     def test_archived_crm_records_are_excluded_from_dashboard_analytics(self):
         active_quotation = Quotation.objects.create(

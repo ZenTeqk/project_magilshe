@@ -68,6 +68,12 @@ export const navigation: NavEntry[] = [
   { label: "Home", to: "/", icon: LayoutDashboard, aliases: ["dashboard", "overview"] },
   { label: "CRM Dashboard", to: "/crm", icon: Gauge, aliases: ["pipeline", "funnel"] },
   {
+    label: "Calendar",
+    to: "/crm/calendar",
+    icon: CalendarDays,
+    aliases: ["schedule", "agenda", "day-wise", "upcoming orders", "payment pending", "reminders"],
+  },
+  {
     label: "Customers",
     to: "/crm/customers",
     icon: Contact,
@@ -91,12 +97,6 @@ export const navigation: NavEntry[] = [
     label: "CRM Pipeline",
     icon: Target,
     items: [
-      {
-        label: "Calendar",
-        to: "/crm/calendar",
-        icon: CalendarDays,
-        aliases: ["schedule", "agenda", "day-wise", "upcoming orders", "payment pending", "reminders"],
-      },
       {
         label: "Leads",
         to: "/crm/leads",

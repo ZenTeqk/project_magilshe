@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .event_fields import FIELDS_FOR_EVENT, MODEL_FOR_EVENT
-from .models import AUTO_SENDABLE_EVENTS, EVENT_CHOICES, MessageLog, MessageTemplate, WhatsAppSettings
+from .models import AUTO_SENDABLE_EVENTS, EVENT_CHOICES, EVENT_GROUPS, MessageLog, MessageTemplate, WhatsAppSettings
 from .serializers import MessageLogSerializer, MessageTemplateSerializer, WhatsAppSettingsSerializer
 from .services import WhatsAppAPIError, WhatsAppError, apply_template_review_event, send_template_message, submit_template_for_review
 
@@ -34,7 +34,10 @@ class EventCatalogueView(APIView):
 
     def get(self, request):
         return Response({
-            "events": [{"value": value, "label": label} for value, label in EVENT_CHOICES if value],
+            "events": [
+                {"value": value, "label": label, "group": EVENT_GROUPS.get(value, "")}
+                for value, label in EVENT_CHOICES if value
+            ],
             "auto_sendable_events": list(AUTO_SENDABLE_EVENTS),
             "fields_by_event": {
                 event: [{"value": key, "label": label} for key, (label, _getter) in fields.items()]
