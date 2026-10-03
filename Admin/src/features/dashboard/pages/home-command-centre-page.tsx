@@ -224,8 +224,8 @@ function HomeCommandCentrePage() {
           },
           {
             label: "Payments pending",
-            value: String(analytics.data?.current.payments_pending.count ?? 0),
-            detail: inr(analytics.data?.current.payments_pending.amount ?? 0),
+            value: inr(analytics.data?.current.payments_pending.amount ?? 0),
+            detail: `${analytics.data?.current.payments_pending.count ?? 0} ${analytics.data?.current.payments_pending.count === 1 ? "order" : "orders"}`,
             to: "/crm/orders",
             icon: ReceiptText,
             tone: "text-warning",
@@ -636,8 +636,10 @@ function HomeCommandCentrePage() {
           <div className="mt-5 grid grid-cols-2 border-t border-border">
             <Link to="/crm/orders" className="p-4 hover:bg-surface-muted">
               <ReceiptText className="size-4 text-warning" />
-              <strong className="mt-2 block text-xl tabular">{analytics.data?.current.payments_pending.count ?? 0}</strong>
-              <span className="text-[10px] text-muted-foreground">Payments pending</span>
+              <strong className="mt-2 block text-xl tabular">{inr(analytics.data?.current.payments_pending.amount ?? 0)}</strong>
+              <span className="text-[10px] text-muted-foreground">
+                Payments pending · {analytics.data?.current.payments_pending.count ?? 0} {analytics.data?.current.payments_pending.count === 1 ? "order" : "orders"}
+              </span>
             </Link>
             <Link to="/crm/delivery" className="border-l border-border p-4 hover:bg-surface-muted">
               <Truck className="size-4 text-info" />
