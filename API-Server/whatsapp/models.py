@@ -21,6 +21,7 @@ EVENT_CHOICES = (
     ("delivered", "Delivered"),
     ("invoice_generated", "Invoice Generated"),
     ("payment_reminder", "Payment Reminder"),
+    ("occasion_reminder", "Occasion Reminder"),
 )
 
 # Follow-up and payment reminders are deliberately absent: their timing is a
@@ -40,7 +41,15 @@ EVENT_GROUPS = {
     "invoice_generated": "Invoice", "payment_reminder": "Invoice",
     "out_for_delivery": "Delivery", "delivered": "Delivery",
     "follow_up": "Lead",
+    "occasion_reminder": "Customer",
 }
+
+OCCASION_MODE_REVIEW = "review"
+OCCASION_MODE_AUTOMATIC = "automatic"
+OCCASION_MODE_CHOICES = (
+    (OCCASION_MODE_REVIEW, "Review before sending"),
+    (OCCASION_MODE_AUTOMATIC, "Send automatically"),
+)
 
 
 class WhatsAppSettings(models.Model):
@@ -54,6 +63,9 @@ class WhatsAppSettings(models.Model):
     phone_number_id = models.CharField(max_length=64, blank=True)
     access_token = models.TextField(blank=True)
     webhook_verify_token = models.CharField(max_length=128, blank=True)
+    # Meta App Secret. When set, webhook calls must carry a matching
+    # X-Hub-Signature-256, so only Meta can update template/message status.
+    app_secret = models.CharField(max_length=128, blank=True)
     business_display_name = models.CharField(max_length=150, blank=True)
     business_display_phone = models.CharField(max_length=20, blank=True)
     # Master switch. Off = nothing auto-sends, whatever auto_send_events says.
@@ -62,6 +74,15 @@ class WhatsAppSettings(models.Model):
     # Which AUTO_SENDABLE_EVENTS fire automatically while the master switch
     # is on. An event not listed here only sends when staff click Send.
     auto_send_events = models.JSONField(default=list, blank=True)
+    # Birthday/anniversary reminders, run daily by the
+    # send_occasion_reminders command. Review = staff send from the
+    # Occasion Reminders page; automatic = the daily job sends them itself.
+    occasion_reminders_enabled = models.BooleanField(default=False)
+    occasion_reminder_mode = models.CharField(
+        max_length=20, choices=OCCASION_MODE_CHOICES, default=OCCASION_MODE_REVIEW,
+    )
+    # crm.recurring_events.occasion_key() values, e.g. ["birthday", "anniversary"].
+    occasion_reminder_types = models.JSONField(default=list, blank=True)
     updated_on = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
@@ -212,3 +233,18 @@ class MessageLog(models.Model):
     class Meta:
         ordering = ("-created_on",)
         indexes = [models.Index(fields=["phone", "created_on"])]
+
+
+class OptOut(models.Model):
+    """A phone number that replied STOP: never sent occasion reminders again.
+
+    Only the number is kept -- incoming messages themselves aren't stored.
+    Order/quotation updates still go through, since the customer asked for
+    those by ordering.
+    """
+
+    phone = models.CharField(max_length=20, unique=True)
+    created_on = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.phone

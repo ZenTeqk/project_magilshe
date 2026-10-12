@@ -70,6 +70,8 @@ def required_permission(request, view):
         return "whatsapp.messages.send"
     if path.startswith("whatsapp/event-catalogue"):
         return "whatsapp.templates.view"
+    if path.startswith("whatsapp/occasion-reminders"):
+        return "whatsapp.messages.view" if request.method == "GET" else "whatsapp.messages.send"
     if action == "analytics":
         return "customers.analytics.view"
     if path.startswith("crm/customers") and action == "import_file":

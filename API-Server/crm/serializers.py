@@ -14,7 +14,7 @@ from .models import (
     CRMDelivery, CRMDeliveryDamageImage, CRMInvoice, CRMOrder, CRMOrderItem, QuotationActivity, QuotationItem, QuotationPayment, QuotationVersion,
     pricing_quantity,
 )
-from .recurring_events import recurring_event_status
+from .recurring_events import occasion_key, recurring_event_status
 from .uploads import validate_image_upload
 
 
@@ -214,11 +214,11 @@ class CustomerRecurringEventSerializer(serializers.ModelSerializer):
         if not active_occasions:
             return event_type
 
-        allowed = {name.strip().casefold() for name in active_occasions if str(name).strip()}
-        if event_type.casefold() in allowed:
-            return event_type
+        allowed = {occasion_key(name): name.strip() for name in active_occasions if str(name).strip()}
+        if occasion_key(event_type) in allowed:
+            return allowed[occasion_key(event_type)]
 
-        if self.instance and str(self.instance.event_type).casefold() == event_type.casefold():
+        if self.instance and occasion_key(self.instance.event_type) == occasion_key(event_type):
             return event_type
 
         raise serializers.ValidationError("Select an active occasion from CRM Settings.")

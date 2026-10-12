@@ -147,6 +147,12 @@ export const navigation: NavEntry[] = [
     items: [
       { label: "Templates", to: "/whatsapp/templates", icon: MessageCircle, aliases: ["messages", "meta"] },
       { label: "Message Log", to: "/whatsapp/messages", icon: ListChecks, aliases: ["sent", "history"] },
+      {
+        label: "Occasion Reminders",
+        to: "/whatsapp/occasion-reminders",
+        icon: CalendarCheck,
+        aliases: ["birthday", "anniversary", "occasion"],
+      },
       { label: "Settings", to: "/whatsapp/settings", icon: Settings2, aliases: ["connection", "credentials"] },
     ],
   },

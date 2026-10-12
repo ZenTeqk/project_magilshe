@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 import logging
 
 from django.apps import apps
@@ -10,9 +13,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .event_fields import FIELDS_FOR_EVENT, MODEL_FOR_EVENT
-from .models import AUTO_SENDABLE_EVENTS, EVENT_CHOICES, EVENT_GROUPS, MessageLog, MessageTemplate, WhatsAppSettings
+from .models import AUTO_SENDABLE_EVENTS, EVENT_CHOICES, EVENT_GROUPS, MessageLog, MessageTemplate, OptOut, WhatsAppSettings
+from .occasion_reminders import due_reminders, reminder_template, send_due_reminders
 from .serializers import MessageLogSerializer, MessageTemplateSerializer, WhatsAppSettingsSerializer
-from .services import WhatsAppAPIError, WhatsAppError, apply_template_review_event, send_template_message, submit_template_for_review
+from .services import (
+    WhatsAppAPIError, WhatsAppError, apply_template_review_event, phone_key, send_template_message,
+    submit_template_for_review,
+)
 
 logger = logging.getLogger("cakery")
 
@@ -121,6 +128,56 @@ class SendMessageView(APIView):
         return Response(MessageLogSerializer(log).data, status=201)
 
 
+class OccasionReminderView(APIView):
+    """Today's due birthday/anniversary reminders (GET) and sending them
+    (POST {"ids": [...]}, or no ids for all of them)."""
+
+    def get(self, request):
+        settings_row = WhatsAppSettings.load()
+        template = reminder_template()
+        return Response({
+            "enabled": settings_row.occasion_reminders_enabled,
+            "mode": settings_row.occasion_reminder_mode,
+            "template_name": template.name if template else "",
+            "results": [
+                {key: value for key, value in row.items() if key != "event"}
+                for row in due_reminders()
+            ],
+        })
+
+    def post(self, request):
+        ids = request.data.get("ids")
+        if ids is not None and not (isinstance(ids, list) and all(isinstance(i, int) for i in ids)):
+            return Response({"message": "ids must be a list of occasion ids."}, status=400)
+        try:
+            counts = send_due_reminders(user=request.user, ids=ids)
+        except WhatsAppError as exc:
+            return Response({"message": str(exc)}, status=400)
+        return Response(counts)
+
+
+# Replies that opt a customer out of / back into occasion reminders. Matches
+# a typed message or a template's quick-reply button with that text.
+STOP_REPLIES = {"stop", "stop reminders", "unsubscribe"}
+START_REPLIES = {"start", "start reminders"}
+
+
+def _reply_text(message):
+    for source in (
+        (message.get("button") or {}).get("text"),
+        ((message.get("interactive") or {}).get("button_reply") or {}).get("title"),
+        (message.get("text") or {}).get("body"),
+    ):
+        if source:
+            return " ".join(source.lower().split())
+    return ""
+
+
+def _signature_valid(secret, body, header):
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header or "")
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class WebhookView(APIView):
     """Meta calls this directly -- not a staff-authenticated request."""
@@ -139,7 +196,18 @@ class WebhookView(APIView):
         return HttpResponse(status=403)
 
     def post(self, request):
-        payload = request.data
+        # Raw body, before any parsing: the signature is over the exact bytes.
+        body = request.body
+        settings_row = WhatsAppSettings.load()
+        if settings_row.app_secret and not _signature_valid(
+            settings_row.app_secret, body, request.headers.get("X-Hub-Signature-256"),
+        ):
+            logger.warning("Rejected WhatsApp webhook call with a bad signature")
+            return HttpResponse(status=403)
+        try:
+            payload = json.loads(body or b"{}")
+        except ValueError:
+            return HttpResponse(status=400)
         try:
             for entry in payload.get("entry", []):
                 for change in entry.get("changes", []):
@@ -157,6 +225,17 @@ class WebhookView(APIView):
                             MessageLog.objects.filter(wa_message_id=status_update.get("id")).update(
                                 status=status_update.get("status", "sent")
                             )
+                        # Incoming messages aren't stored; only STOP/START
+                        # replies are acted on.
+                        for message in value.get("messages", []):
+                            phone = phone_key(message.get("from"))
+                            reply = _reply_text(message)
+                            if not phone:
+                                continue
+                            if reply in STOP_REPLIES:
+                                OptOut.objects.get_or_create(phone=phone)
+                            elif reply in START_REPLIES:
+                                OptOut.objects.filter(phone=phone).delete()
         except Exception:
             logger.exception("Failed to process WhatsApp webhook payload")
         return JsonResponse({"received": True})

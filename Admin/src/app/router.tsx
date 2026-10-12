@@ -68,6 +68,7 @@ const WhatsAppTemplatesPage = lazy(() => import("@/features/whatsapp/pages/templ
 const WhatsAppTemplateFormPage = lazy(() => import("@/features/whatsapp/pages/template-form-page"));
 const WhatsAppMessageLogPage = lazy(() => import("@/features/whatsapp/pages/message-log-page"));
 const WhatsAppSettingsPage = lazy(() => import("@/features/whatsapp/pages/whatsapp-settings-page"));
+const OccasionRemindersPage = lazy(() => import("@/features/whatsapp/pages/occasion-reminders-page"));
 
 const ConfigurationPage = lazy(() => import("@/features/settings/pages/configuration-page"));
 const TermsPage = lazy(() => import("@/features/settings/pages/terms-conditions-page"));
@@ -154,6 +155,7 @@ export function AppRouter() {
             <Route path="/whatsapp/templates/:id/edit" element={<WhatsAppTemplateFormPage />} />
             <Route path="/whatsapp/messages" element={<WhatsAppMessageLogPage />} />
             <Route path="/whatsapp/settings" element={<WhatsAppSettingsPage />} />
+            <Route path="/whatsapp/occasion-reminders" element={<OccasionRemindersPage />} />
 
             <Route path="/configuration" element={<ConfigurationPage />} />
             <Route path="/terms_conditions" element={<TermsPage />} />

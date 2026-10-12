@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from crm.recurring_events import occasion_key
+
 from .event_fields import FIELDS_FOR_EVENT
 from .models import MessageLog, MessageTemplate, WhatsAppSettings
 from .services import validate_template_payload
@@ -11,6 +13,9 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
     # without exposing it.
     access_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
     has_access_token = serializers.SerializerMethodField()
+    # Same treatment as the access token.
+    app_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_app_secret = serializers.SerializerMethodField()
     is_connected = serializers.ReadOnlyField()
 
     class Meta:
@@ -18,12 +23,22 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         fields = (
             "id", "waba_id", "phone_number_id", "access_token", "has_access_token",
             "webhook_verify_token", "business_display_name", "business_display_phone",
-            "auto_send_enabled", "auto_send_events", "is_connected", "updated_on",
+            "app_secret", "has_app_secret", "auto_send_enabled", "auto_send_events",
+            "occasion_reminders_enabled", "occasion_reminder_mode", "occasion_reminder_types",
+            "is_connected", "updated_on",
         )
         read_only_fields = ("id", "updated_on")
 
     def get_has_access_token(self, obj):
         return bool(obj.access_token)
+
+    def get_has_app_secret(self, obj):
+        return bool(obj.app_secret)
+
+    def validate_occasion_reminder_types(self, value):
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise serializers.ValidationError("Expected a list of occasion names.")
+        return sorted({occasion_key(item) for item in value if item.strip()})
 
     def update(self, instance, validated_data):
         # An unset/blank access_token on a PATCH means "leave it as is" --
@@ -31,8 +46,9 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         # current value, and clearing a working token by accident on every
         # unrelated settings save (e.g. toggling auto-send) would be a bad
         # failure mode.
-        if not validated_data.get("access_token"):
-            validated_data.pop("access_token", None)
+        for secret in ("access_token", "app_secret"):
+            if not validated_data.get(secret):
+                validated_data.pop(secret, None)
         return super().update(instance, validated_data)
 
 

@@ -202,5 +202,6 @@ export const endpoints = {
     send: "whatsapp/send/",
     settings: "whatsapp/settings/",
     eventCatalogue: "whatsapp/event-catalogue/",
+    occasionReminders: "whatsapp/occasion-reminders/",
   },
 } as const;

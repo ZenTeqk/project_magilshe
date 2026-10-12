@@ -15,6 +15,8 @@ the point in crm/views.py where that status actually changes.
 
 from datetime import date, datetime
 
+from django.utils import timezone
+
 
 def _text(value):
     return str(value).strip() if value not in (None, "") else ""
@@ -40,6 +42,20 @@ def _order_recipient(order):
 
 def _delivery_recipient(delivery):
     return delivery.recipient_phone or _order_recipient(delivery.order)
+
+
+def _customer_name(customer):
+    return _text(customer.get_full_name() or customer.first_name) if customer else ""
+
+
+def _occasion_name(event):
+    """"Birthdays" -> "birthday", for "your birthday is coming up"."""
+    from crm.recurring_events import occasion_key
+    return occasion_key(event.event_type)
+
+
+def _occasion_date(event):
+    return event.next_occurrence(timezone.localdate()).strftime("%d %b")
 
 
 _QUOTATION_BASE = {
@@ -121,6 +137,12 @@ FIELDS_FOR_EVENT = {
         "invoice_no": ("Invoice number", lambda i: _text(i.invoice_no)),
         "balance_amount": ("Balance due", lambda i: _money(i.balance_amount)),
     },
+    "occasion_reminder": {
+        "customer_name": ("Customer name", lambda e: _customer_name(e.customer)),
+        "occasion": ("Occasion (e.g. birthday)", _occasion_name),
+        "occasion_date": ("Occasion date (e.g. 19 Oct)", _occasion_date),
+        "days_until": ("Days to go", lambda e: str((e.next_occurrence(timezone.localdate()) - timezone.localdate()).days)),
+    },
 }
 
 # What each kind of CRM record needs for sending and logging, described
@@ -156,6 +178,12 @@ _RECORD_TYPES = {
         "label": lambda i: i.invoice_no,
         "customer_name": lambda i: i.customer_name,
     },
+    "customerevent": {
+        "model": ("crm", "CustomerRecurringEvent"),
+        "recipient": lambda e: e.customer.phone,
+        "label": lambda e: f"{e.event_type} {_occasion_date(e)}",
+        "customer_name": lambda e: _customer_name(e.customer),
+    },
 }
 
 SOURCE_MODEL_FOR_EVENT = {
@@ -172,6 +200,7 @@ SOURCE_MODEL_FOR_EVENT = {
     "delivered": "crmdelivery",
     "invoice_generated": "crminvoice",
     "payment_reminder": "crminvoice",
+    "occasion_reminder": "customerevent",
 }
 
 RECIPIENT_FOR_EVENT = {e: _RECORD_TYPES[t]["recipient"] for e, t in SOURCE_MODEL_FOR_EVENT.items()}

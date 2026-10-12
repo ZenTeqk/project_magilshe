@@ -11,6 +11,7 @@ urlpatterns = [
     path("settings/", views.WhatsAppSettingsView.as_view()),
     path("event-catalogue/", views.EventCatalogueView.as_view()),
     path("send/", views.SendMessageView.as_view()),
+    path("occasion-reminders/", views.OccasionReminderView.as_view()),
     path("webhook/", views.WebhookView.as_view()),
     path("", include(router.urls)),
 ]

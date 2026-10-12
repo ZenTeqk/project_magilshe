@@ -82,6 +82,7 @@ jobs:
             ~/api/venv/bin/pip install -r requirements.txt
             ~/api/venv/bin/python manage.py migrate --noinput
             ~/api/venv/bin/python manage.py collectstatic --noinput
+            bash deploy/install-cron.sh
           '
 
       - name: Restart API service

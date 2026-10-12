@@ -4,23 +4,40 @@ from .models import CRMOption, CRMOrder, CustomerRecurringEvent, Lead, Quotation
 
 RECURRING_KEYWORDS = (
     ("birthday", "Birthday"),
-    ("anniversary", "Anniversary"),
+    ("anniversar", "Anniversary"),
     ("wedding", "Wedding"),
+    ("engagement", "Engagement"),
     ("baby shower", "Baby Shower"),
     ("corporate", "Corporate Event"),
 )
 
 
+def occasion_key(name):
+    """Spelling-insensitive identity of an occasion name, so "Birthday",
+    "birthdays" and "Birthdays " all compare equal (and "Anniversaries"
+    matches "Anniversary")."""
+    text = " ".join(str(name or "").lower().split())
+    if text.endswith("ies"):
+        return text[:-3] + "y"
+    if text.endswith("s") and not text.endswith("ss"):
+        return text[:-1]
+    return text
+
+
 def match_recurring_event_type(occasion):
-    raw_text = str(occasion or "").strip()
-    text = raw_text.lower()
-    configured = CRMOption.objects.filter(option_type="occasion", is_active=True)
-    for option in configured:
-        if option.name.strip().lower() == text:
-            return option.name.strip()
+    """The occasion's canonical name: the CRM Settings spelling when one
+    matches (so every event for the same occasion is stored identically),
+    else a built-in label for well-known occasions."""
+    text = str(occasion or "").strip().lower()
+    configured = {
+        occasion_key(name): name.strip()
+        for name in CRMOption.objects.filter(option_type="occasion", is_active=True).values_list("name", flat=True)
+    }
+    if occasion_key(text) in configured:
+        return configured[occasion_key(text)]
     for keyword, label in RECURRING_KEYWORDS:
         if keyword in text:
-            return label
+            return configured.get(occasion_key(label), label)
     return None
 
 

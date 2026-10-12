@@ -8,7 +8,13 @@ import { StatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { useEventCatalogue, useSaveWhatsAppSettings, useTemplates, useWhatsAppSettings } from "@/features/whatsapp/hooks";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCrmOptions } from "@/features/crm/hooks";
+import {
+  occasionKey, useEventCatalogue, useSaveWhatsAppSettings, useTemplates, useWhatsAppSettings,
+  type WhatsAppSettings,
+} from "@/features/whatsapp/hooks";
 
 const GROUP_ORDER = ["Quotation", "Order", "Invoice", "Delivery"];
 
@@ -16,16 +22,17 @@ function WhatsAppSettingsPage() {
   const { data: settings } = useWhatsAppSettings();
   const { data: catalogue } = useEventCatalogue();
   const { data: templates } = useTemplates();
+  const { data: occasions } = useCrmOptions("occasion");
   const saveSettings = useSaveWhatsAppSettings();
   const [form, setForm] = useState({
-    waba_id: "", phone_number_id: "", access_token: "", webhook_verify_token: "",
+    waba_id: "", phone_number_id: "", access_token: "", app_secret: "", webhook_verify_token: "",
     business_display_name: "", business_display_phone: "",
   });
 
   useEffect(() => {
     if (settings) {
       setForm({
-        waba_id: settings.waba_id, phone_number_id: settings.phone_number_id, access_token: "",
+        waba_id: settings.waba_id, phone_number_id: settings.phone_number_id, access_token: "", app_secret: "",
         webhook_verify_token: settings.webhook_verify_token,
         business_display_name: settings.business_display_name, business_display_phone: settings.business_display_phone,
       });
@@ -34,11 +41,12 @@ function WhatsAppSettingsPage() {
 
   const saveConnection = async () => {
     try {
-      const payload = { ...form };
-      if (!payload.access_token) delete (payload as Partial<typeof payload>).access_token;
+      const payload: Partial<typeof form> = { ...form };
+      if (!payload.access_token) delete payload.access_token;
+      if (!payload.app_secret) delete payload.app_secret;
       await saveSettings.mutateAsync(payload);
       toast.success("WhatsApp settings saved");
-      setForm((f) => ({ ...f, access_token: "" }));
+      setForm((f) => ({ ...f, access_token: "", app_secret: "" }));
     } catch {
       toast.error("Could not save these settings");
     }
@@ -67,6 +75,26 @@ function WhatsAppSettingsPage() {
     } catch {
       toast.error("Could not update automatic sending");
     }
+  };
+
+  /** Saves one reminder setting, with a toast either way. */
+  const saveReminders = async (patch: Partial<WhatsAppSettings>, message: string) => {
+    try {
+      await saveSettings.mutateAsync(patch);
+      toast.success(message);
+    } catch {
+      toast.error("Could not update occasion reminders");
+    }
+  };
+
+  const reminderTypes = settings?.occasion_reminder_types ?? [];
+  const occasionTemplates = activeCount["occasion_reminder"] ?? 0;
+  const remindersOn = settings?.occasion_reminders_enabled ?? false;
+
+  const toggleOccasion = (name: string, checked: boolean) => {
+    const key = occasionKey(name);
+    const next = checked ? [...reminderTypes, key] : reminderTypes.filter((t) => t !== key);
+    saveReminders({ occasion_reminder_types: next }, checked ? `${name} reminders on` : `${name} reminders off`);
   };
 
   const toggleAutoSend = async (event: string, enabled: boolean) => {
@@ -102,6 +130,14 @@ function WhatsAppSettingsPage() {
           </Field>
           <Field label="Access token" help={settings?.has_access_token ? "A token is already saved. Enter a new one only to replace it." : "Never shown back once saved."}>
             <Input type="password" value={form.access_token} placeholder={settings?.has_access_token ? "••••••••" : ""} onChange={(e) => setForm((f) => ({ ...f, access_token: e.target.value }))} />
+          </Field>
+          <Field
+            label="App secret"
+            help={settings?.has_app_secret
+              ? "Saved. Webhook calls must be signed by Meta. Enter a new one only to replace it."
+              : "From Meta App Dashboard → App settings → Basic. Once saved, only Meta can update message and template status."}
+          >
+            <Input type="password" value={form.app_secret} placeholder={settings?.has_app_secret ? "••••••••" : ""} onChange={(e) => setForm((f) => ({ ...f, app_secret: e.target.value }))} />
           </Field>
           <Field label="Webhook verify token" help="Set this same value when you register the webhook in Meta Business Manager.">
             <Input value={form.webhook_verify_token} onChange={(e) => setForm((f) => ({ ...f, webhook_verify_token: e.target.value }))} />
@@ -171,6 +207,77 @@ function WhatsAppSettingsPage() {
             Follow-up Reminder and Payment Reminder are always sent manually, since their timing is a staff decision rather than a status change.
           </p>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Occasion reminders"
+        description="A WhatsApp message to customers before their birthday or anniversary, inviting them to order. Each occasion gets one reminder a year, sent its reminder days before (7 by default)."
+        actions={<Button size="sm" variant="outline" asChild><Link to="/whatsapp/occasion-reminders">Today's reminders</Link></Button>}
+      >
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface-muted/40 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Send occasion reminders</p>
+            {occasionTemplates === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Needs an Active template for Occasion Reminder &middot; <Link to="/whatsapp/templates/new" className="text-primary hover:underline">Create one</Link>
+              </p>
+            ) : occasionTemplates > 1 ? (
+              <p className="text-xs text-warning">{occasionTemplates} Active templates &middot; nothing sends until only one is left</p>
+            ) : (
+              <p className="text-xs text-success">Template ready</p>
+            )}
+          </div>
+          <Switch
+            checked={remindersOn}
+            disabled={(occasionTemplates === 0 && !remindersOn) || saveSettings.isPending}
+            onCheckedChange={(checked) => saveReminders(
+              { occasion_reminders_enabled: checked },
+              checked ? "Occasion reminders turned on" : "Occasion reminders turned off",
+            )}
+          />
+        </div>
+
+        <div className={`mt-4 grid gap-5 sm:grid-cols-2 ${remindersOn ? "" : "opacity-60"}`}>
+          <Field
+            label="How they're sent"
+            help={settings?.occasion_reminder_mode === "automatic"
+              ? "Sent by themselves every day at 10:00 AM."
+              : "Every day from 10:00 AM, staff check the list and press Send."}
+          >
+            <Select
+              value={settings?.occasion_reminder_mode ?? "review"}
+              onValueChange={(mode) => saveReminders(
+                { occasion_reminder_mode: mode as WhatsAppSettings["occasion_reminder_mode"] },
+                mode === "automatic" ? "Reminders will send automatically" : "Reminders will wait for review",
+              )}
+              disabled={saveSettings.isPending}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="review">Review before sending</SelectItem>
+                <SelectItem value="automatic">Send automatically</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <div>
+            <p className="mb-2 text-sm font-medium">Occasions</p>
+            <div className="flex flex-col gap-2">
+              {(occasions ?? []).map((name) => (
+                <label key={name} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={reminderTypes.includes(occasionKey(name))}
+                    disabled={saveSettings.isPending}
+                    onCheckedChange={(checked) => toggleOccasion(name, checked === true)}
+                  />
+                  {name}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Customers who reply STOP are never sent another reminder (START turns them back on). Order and quotation updates still reach them.
+        </p>
       </SectionCard>
     </>
   );

@@ -79,8 +79,13 @@ export type WhatsAppSettings = {
   webhook_verify_token: string;
   business_display_name: string;
   business_display_phone: string;
+  has_app_secret: boolean;
   auto_send_enabled: boolean;
   auto_send_events: string[];
+  occasion_reminders_enabled: boolean;
+  occasion_reminder_mode: "review" | "automatic";
+  /** Spelling-insensitive keys, e.g. "birthday" -- see occasionKey(). */
+  occasion_reminder_types: string[];
   is_connected: boolean;
   updated_on: string;
 };
@@ -177,7 +182,7 @@ export function useWhatsAppSettings() {
 export function useSaveWhatsAppSettings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: Partial<WhatsAppSettings> & { access_token?: string }) =>
+    mutationFn: async (payload: Partial<WhatsAppSettings> & { access_token?: string; app_secret?: string }) =>
       (await apiClient.patch<WhatsAppSettings>(endpoints.whatsapp.settings, payload)).data,
     onSuccess: (data) => queryClient.setQueryData(["whatsapp", "settings"], data),
   });
@@ -202,5 +207,54 @@ export function useSendWhatsAppMessage() {
     mutationFn: async (payload: { event: string; template_id: number; record_id: number | string }) =>
       (await apiClient.post<MessageLog>(endpoints.whatsapp.send, payload)).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp", "messages"] }),
+  });
+}
+
+/** Mirrors crm.recurring_events.occasion_key on the API: "Birthdays",
+ * "birthday" and "Birthday " are the same occasion. */
+export function occasionKey(name: string) {
+  const text = name.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+  if (text.endsWith("ies")) return `${text.slice(0, -3)}y`;
+  if (text.endsWith("s") && !text.endsWith("ss")) return text.slice(0, -1);
+  return text;
+}
+
+export type OccasionReminder = {
+  id: number;
+  customer_id: number;
+  customer_name: string;
+  phone: string;
+  occasion: string;
+  occasion_date: string;
+  days_until: number;
+  /** Non-empty when this one can't be sent (no phone, replied STOP). */
+  blocked_reason: string;
+};
+
+export type OccasionReminderList = {
+  enabled: boolean;
+  mode: "review" | "automatic";
+  template_name: string;
+  results: OccasionReminder[];
+};
+
+export function useOccasionReminders() {
+  return useQuery({
+    queryKey: ["whatsapp", "occasion-reminders"],
+    queryFn: async () => (await apiClient.get<OccasionReminderList>(endpoints.whatsapp.occasionReminders)).data,
+  });
+}
+
+export function useSendOccasionReminders() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids?: number[]) =>
+      (await apiClient.post<{ sent: number; failed: number; skipped: number }>(
+        endpoints.whatsapp.occasionReminders, ids ? { ids } : {},
+      )).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp", "occasion-reminders"] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp", "messages"] });
+    },
   });
 }

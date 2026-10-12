@@ -19,7 +19,7 @@ from .event_fields import (
     CUSTOMER_NAME_FOR_EVENT, LABEL_FOR_EVENT, RECIPIENT_FOR_EVENT,
     SOURCE_MODEL_FOR_EVENT, resolve_variables,
 )
-from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, WhatsAppSettings
+from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, OptOut, WhatsAppSettings
 
 logger = logging.getLogger("cakery")
 
@@ -32,6 +32,26 @@ TEMPLATE_FOOTER_EMOJI_RE = re.compile(
 )
 MAX_TEMPLATE_BUTTONS = 10
 MEDIA_HEADER_TYPES = (MessageTemplate.HEADER_IMAGE, MessageTemplate.HEADER_VIDEO, MessageTemplate.HEADER_DOCUMENT)
+
+
+def whatsapp_number(phone):
+    """Meta needs the number with its country code. CRM phones are mostly
+    stored as plain 10-digit Indian mobiles, so those get 91 added."""
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        digits = "91" + digits
+    return digits
+
+
+def phone_key(phone):
+    """Last 10 digits: the same number written with or without +91 / 0."""
+    return re.sub(r"\D", "", phone or "")[-10:]
+
+
+def is_opted_out(phone):
+    return bool(phone) and OptOut.objects.filter(phone=phone_key(phone)).exists()
 
 
 class WhatsAppError(Exception):
@@ -233,6 +253,13 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
         log.error_message = "Template is not Active yet."
         log.save(update_fields=["status", "error_message", "updated_on"])
         return log
+    # Opting out (replying STOP) covers promotional reminders only; order and
+    # quotation updates are still sent.
+    if event_key == "occasion_reminder" and is_opted_out(phone):
+        log.status = MessageLog.STATUS_FAILED
+        log.error_message = "Customer replied STOP to reminders."
+        log.save(update_fields=["status", "error_message", "updated_on"])
+        return log
 
     variables = resolve_variables(event_key, template.variable_map, record) if record else {}
     components = []
@@ -246,7 +273,7 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
         result = _graph_request(
             "POST", f"{settings_row.phone_number_id}/messages", settings_row,
             json={
-                "messaging_product": "whatsapp", "to": phone, "type": "template",
+                "messaging_product": "whatsapp", "to": whatsapp_number(phone), "type": "template",
                 "template": {
                     "name": template.name,
                     "language": {"code": template.language},

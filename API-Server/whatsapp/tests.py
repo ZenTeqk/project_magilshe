@@ -5,8 +5,22 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from crm.models import CRMDelivery, CRMInvoice, CRMOrder, Quotation
-from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, WhatsAppSettings
+import hashlib
+import hmac
+import importlib
+import json
+from datetime import timedelta
+from io import StringIO
+
+from django.apps import apps
+from django.core.management import call_command
+
+from crm.models import (
+    CRMDelivery, CRMInvoice, CRMOption, CRMOrder, CustomerCommunicationLog, CustomerRecurringEvent, Quotation,
+)
+from crm.recurring_events import event_type_for_occasion
+from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, OptOut, WhatsAppSettings
+from .occasion_reminders import due_reminders, send_due_reminders
 from .services import (
     WhatsAppError, apply_template_review_event, send_template_message,
     submit_template_for_review, trigger_event, validate_template_payload,
@@ -117,6 +131,8 @@ class SendMessageTests(TestCase):
         sent_payload = mock_request.call_args.kwargs["json"]
         body_params = sent_payload["template"]["components"][0]["parameters"]
         self.assertEqual([p["text"] for p in body_params], ["Priya", "Q/1"])
+        # Stored as a 10-digit mobile; Meta needs the country code.
+        self.assertEqual(sent_payload["to"], "919876543210")
 
     def _enable_auto_send(self, *events, master=True):
         settings_row = WhatsAppSettings.load()
@@ -292,3 +308,222 @@ class CRMEventTriggerIntegrationTests(TestCase):
         quotation.refresh_from_db()
         self.assertEqual(quotation.status, "Sent")
         self.assertEqual(response.status_code, 200)
+
+
+def connect(**extra):
+    settings_row = WhatsAppSettings.load()
+    settings_row.waba_id = "waba-1"
+    settings_row.phone_number_id = "phone-1"
+    settings_row.access_token = "token"
+    for field, value in extra.items():
+        setattr(settings_row, field, value)
+    settings_row.save()
+    return settings_row
+
+
+class OccasionReminderTests(TestCase):
+    def setUp(self):
+        self.today = timezone.localdate()
+        self.customer = get_user_model().objects.create_user(
+            username="occasion-customer", password="x", first_name="Priya", phone="9876500001",
+        )
+        connect(occasion_reminders_enabled=True, occasion_reminder_types=["birthday", "anniversary"])
+        self.template = make_template(
+            name="occasion_reminder_v1", category=MessageTemplate.CATEGORY_MARKETING, event="occasion_reminder",
+            status=MessageTemplate.STATUS_APPROVED, body="Hi {{1}}, your {{2}} is on {{3}}!",
+            variable_map={"1": "customer_name", "2": "occasion", "3": "occasion_date"},
+        )
+
+    def event_in(self, days, event_type="Birthdays", customer=None):
+        when = self.today + timedelta(days=days)
+        return CustomerRecurringEvent.objects.create(
+            customer=customer or self.customer, event_type=event_type,
+            event_month=when.month, event_day=when.day, original_date=when,
+        )
+
+    def test_only_selected_occasions_inside_the_reminder_window_are_due(self):
+        due = self.event_in(5)
+        self.event_in(10, event_type="Anniversaries")  # outside the 7-day window
+        self.event_in(3, event_type="Engagements")  # not a selected occasion
+        self.assertEqual([row["id"] for row in due_reminders()], [due.id])
+
+    def test_sending_fills_the_template_and_marks_the_occasion_done(self):
+        event = self.event_in(5)
+        with patch("whatsapp.services._graph_request") as mock_request:
+            mock_request.return_value = {"messages": [{"id": "wamid.occ"}]}
+            counts = send_due_reminders()
+        self.assertEqual(counts, {"sent": 1, "failed": 0, "skipped": 0})
+        payload = mock_request.call_args.kwargs["json"]
+        params = [p["text"] for p in payload["template"]["components"][0]["parameters"]]
+        self.assertEqual(params[:2], ["Priya", "birthday"])
+        self.assertEqual(payload["to"], "919876500001")
+        event.refresh_from_db()
+        self.assertEqual(event.last_reminder_sent_on, self.today)
+        self.assertTrue(CustomerCommunicationLog.objects.filter(recurring_event=event).exists())
+        # Once a year: a second run sends nothing.
+        self.assertEqual(due_reminders(), [])
+
+    def test_failed_send_is_retried_on_the_next_run(self):
+        event = self.event_in(5)
+        from .services import WhatsAppAPIError
+        with patch("whatsapp.services._graph_request", side_effect=WhatsAppAPIError("boom")):
+            counts = send_due_reminders()
+        self.assertEqual(counts["failed"], 1)
+        event.refresh_from_db()
+        self.assertIsNone(event.last_reminder_sent_on)
+        self.assertEqual(len(due_reminders()), 1)
+
+    def test_opted_out_customer_is_listed_but_never_sent(self):
+        self.event_in(5)
+        OptOut.objects.create(phone="9876500001")
+        rows = due_reminders()
+        self.assertEqual(rows[0]["blocked_reason"], "Replied STOP")
+        with patch("whatsapp.services._graph_request") as mock_request:
+            counts = send_due_reminders()
+        mock_request.assert_not_called()
+        self.assertEqual(counts, {"sent": 0, "failed": 0, "skipped": 1})
+
+    def test_review_mode_job_sends_nothing(self):
+        self.event_in(5)
+        with patch("whatsapp.services._graph_request") as mock_request:
+            call_command("send_occasion_reminders", stdout=StringIO())
+        mock_request.assert_not_called()
+
+    def test_automatic_mode_job_sends(self):
+        self.event_in(5)
+        connect(occasion_reminder_mode="automatic")
+        with patch("whatsapp.services._graph_request") as mock_request:
+            mock_request.return_value = {"messages": [{"id": "wamid.auto"}]}
+            call_command("send_occasion_reminders", stdout=StringIO())
+        mock_request.assert_called_once()
+
+    def test_reminders_turned_off_job_sends_nothing(self):
+        self.event_in(5)
+        connect(occasion_reminders_enabled=False, occasion_reminder_mode="automatic")
+        with patch("whatsapp.services._graph_request") as mock_request:
+            call_command("send_occasion_reminders", stdout=StringIO())
+        mock_request.assert_not_called()
+
+    def test_review_page_lists_and_sends_selected(self):
+        first = self.event_in(2)
+        other = get_user_model().objects.create_user(username="occ-2", password="x", first_name="Ravi", phone="9876500002")
+        self.event_in(4, customer=other)
+        admin = get_user_model().objects.create_superuser(username="occ-admin", password="x")
+        client = APIClient()
+        client.force_authenticate(admin)
+        listing = client.get("/whatsapp/occasion-reminders/")
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(len(listing.data["results"]), 2)
+        self.assertEqual(listing.data["template_name"], "occasion_reminder_v1")
+        with patch("whatsapp.services._graph_request") as mock_request:
+            mock_request.return_value = {"messages": [{"id": "wamid.sel"}]}
+            response = client.post("/whatsapp/occasion-reminders/", {"ids": [first.id]}, format="json")
+        self.assertEqual(response.data, {"sent": 1, "failed": 0, "skipped": 0})
+        self.assertEqual(len(client.get("/whatsapp/occasion-reminders/").data["results"]), 1)
+
+    def test_staff_without_whatsapp_permission_cannot_list_or_send(self):
+        staff = get_user_model().objects.create_user(username="occ-staff", password="x", is_staff=True)
+        client = APIClient()
+        client.force_authenticate(staff)
+        self.assertEqual(client.get("/whatsapp/occasion-reminders/").status_code, 403)
+        self.assertEqual(client.post("/whatsapp/occasion-reminders/", {}, format="json").status_code, 403)
+
+    def test_without_exactly_one_active_template_nothing_sends(self):
+        self.event_in(5)
+        self.template.status = MessageTemplate.STATUS_DRAFT
+        self.template.save()
+        with self.assertRaises(WhatsAppError):
+            send_due_reminders()
+
+
+class OccasionNameTests(TestCase):
+    def setUp(self):
+        # Mirror production's CRM Settings list (the test DB seeds singulars).
+        CRMOption.objects.filter(option_type="occasion").delete()
+        for name in ("Birthdays", "Anniversaries", "Others", "Engagements"):
+            CRMOption.objects.create(option_type="occasion", name=name, is_active=True)
+
+    def test_any_spelling_maps_to_the_crm_settings_name(self):
+        self.assertEqual(event_type_for_occasion("Birthday"), "Birthdays")
+        self.assertEqual(event_type_for_occasion("birthday party"), "Birthdays")
+        self.assertEqual(event_type_for_occasion("Anniversary"), "Anniversaries")
+        self.assertEqual(event_type_for_occasion("Other"), "Others")
+        self.assertEqual(event_type_for_occasion("Housewarming"), "Housewarming")
+
+    def test_migration_renames_and_merges_duplicates(self):
+        customer = get_user_model().objects.create_user(username="dup-customer", password="x")
+        older = CustomerRecurringEvent.objects.create(
+            customer=customer, event_type="Birthdays", event_month=9, event_day=9, original_date="2020-09-09",
+        )
+        duplicate = CustomerRecurringEvent.objects.create(
+            customer=customer, event_type="Birthday", event_month=9, event_day=9, original_date="2020-09-09",
+            notes="Likes chocolate",
+        )
+        CustomerCommunicationLog.objects.create(customer=customer, channel="whatsapp", recurring_event=duplicate)
+        lone = CustomerRecurringEvent.objects.create(
+            customer=customer, event_type="Anniversary", event_month=3, event_day=1, original_date="2020-03-01",
+        )
+        migration = importlib.import_module("crm.migrations.0037_normalise_customer_event_types")
+        migration.normalise(apps, None)
+
+        self.assertFalse(CustomerRecurringEvent.objects.filter(pk=duplicate.pk).exists())
+        older.refresh_from_db()
+        self.assertEqual(older.notes, "Likes chocolate")
+        self.assertEqual(older.communications.count(), 1)
+        lone.refresh_from_db()
+        self.assertEqual(lone.event_type, "Anniversaries")
+
+
+class WebhookSecurityAndOptOutTests(TestCase):
+    def post(self, payload, secret=None, signature=None):
+        body = json.dumps(payload).encode()
+        headers = {}
+        if signature is not None:
+            headers["HTTP_X_HUB_SIGNATURE_256"] = signature
+        elif secret:
+            headers["HTTP_X_HUB_SIGNATURE_256"] = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return APIClient().post("/whatsapp/webhook/", body, content_type="application/json", **headers)
+
+    def reply(self, text, sender="919876500009", kind="text"):
+        message = {"from": sender, "type": kind}
+        if kind == "button":
+            message["button"] = {"text": text, "payload": text}
+        else:
+            message["text"] = {"body": text}
+        return {"entry": [{"changes": [{"field": "messages", "value": {"messages": [message]}}]}]}
+
+    def test_unsigned_call_is_rejected_once_app_secret_is_set(self):
+        connect(app_secret="s3cret")
+        response = self.post(self.reply("STOP"), signature="sha256=bad")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(OptOut.objects.exists())
+
+    def test_signed_call_is_accepted(self):
+        connect(app_secret="s3cret")
+        response = self.post(self.reply("STOP"), secret="s3cret")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(OptOut.objects.filter(phone="9876500009").exists())
+
+    def test_stop_button_and_start_text(self):
+        self.post(self.reply("Stop reminders", kind="button"))
+        self.assertTrue(OptOut.objects.filter(phone="9876500009").exists())
+        self.post(self.reply("start"))
+        self.assertFalse(OptOut.objects.exists())
+
+    def test_ordinary_message_is_ignored(self):
+        self.assertEqual(self.post(self.reply("hi")).status_code, 200)
+        self.assertFalse(OptOut.objects.exists())
+
+    def test_settings_never_echo_the_app_secret(self):
+        connect(app_secret="s3cret")
+        admin = get_user_model().objects.create_superuser(username="secret-admin", password="x")
+        client = APIClient()
+        client.force_authenticate(admin)
+        data = client.get("/whatsapp/settings/").data
+        self.assertNotIn("app_secret", data)
+        self.assertTrue(data["has_app_secret"])
+        # Saving other settings leaves the stored secret alone.
+        client.patch("/whatsapp/settings/", {"app_secret": "", "occasion_reminder_types": ["Birthdays"]}, format="json")
+        settings_row = WhatsAppSettings.load()
+        self.assertEqual(settings_row.app_secret, "s3cret")
+        self.assertEqual(settings_row.occasion_reminder_types, ["birthday"])
