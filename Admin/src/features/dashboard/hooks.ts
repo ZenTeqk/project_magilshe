@@ -54,6 +54,8 @@ export type CrmAnalyticsResponse = {
     balance_collected: number;
     average_order: number;
     trend: Array<{ day: string; value: number }>;
+    payments_count?: number;
+    booked_value?: number;
   };
   funnel: Array<{
     key: string;

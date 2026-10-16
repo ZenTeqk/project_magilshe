@@ -13,13 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -57,6 +50,9 @@ import { PaymentReceiptButton } from "@/features/crm/components/payment-receipt-
 import { useOrder } from "@/features/crm/orders-hooks";
 import { WorkflowTracker } from "@/features/crm/components/workflow-tracker";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { NewCustomerButton } from "@/features/crm/components/new-customer-button";
+import { SaveAddressCheckbox, SavedAddressSelect } from "@/features/crm/components/saved-address-select";
+import { useSaveAddressToCustomer } from "@/features/crm/saved-address";
 import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
@@ -136,6 +132,8 @@ function QuotationFormPage() {
   const [form, setForm] = useState(blank);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
+  const [saveBillingToCustomer, setSaveBillingToCustomer] = useState(false);
+  const saveAddressToCustomer = useSaveAddressToCustomer();
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [gstDialogOpen, setGstDialogOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -242,6 +240,15 @@ function QuotationFormPage() {
       if (customer) setMatched(customer);
     });
   }, [leadForPrefill]);
+
+  // Editing: look up the linked customer so the saved-address dropdown is filled.
+  useEffect(() => {
+    if (!existingQuotation?.customer || !existingQuotation.phone) return;
+    searchCrmCustomers(existingQuotation.phone).then((results) => {
+      const customer = results.find((row) => row.id === existingQuotation.customer);
+      if (customer) setMatched(customer);
+    }).catch(() => undefined);
+  }, [existingQuotation?.customer, existingQuotation?.phone]);
 
   const applyMatch = (customer: CrmCustomerSearchResult) => {
     setMatched(customer);
@@ -382,19 +389,31 @@ function QuotationFormPage() {
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
 
+    const saveTypedAddress = async () => {
+      if (!saveBillingToCustomer) return;
+      const saved = await saveAddressToCustomer(matched, form.billing_address, "Billing address");
+      if (saved) {
+        setSaveBillingToCustomer(false);
+        setMatched((current) => current && { ...current, addresses: [...current.addresses, saved] });
+      }
+    };
+
     try {
       if (isEdit) {
         await updateQuotation.mutateAsync({ id: id!, payload: buildPayload() });
         toast.success("Changes saved", { description: "Create a new quotation version when the document is ready." });
+        await saveTypedAddress();
       } else if (leadId) {
         const result = await convertLead.mutateAsync({ id: leadId });
         const created = result.data as unknown as { id: number };
         await generateQuotationVersion.mutateAsync({ id: created.id, payload: buildPayload() });
         toast.success("Quotation created");
+        await saveTypedAddress();
         navigate(`/crm/quotations/${created.id}/edit`);
       } else {
         const created = await createQuotation.mutateAsync(buildPayload());
         toast.success("Quotation created");
+        await saveTypedAddress();
         navigate(`/crm/quotations/${created.id}/edit`);
       }
     } catch (err: unknown) {
@@ -639,22 +658,15 @@ function QuotationFormPage() {
           </Field>
         </div>
         {!isEdit && <CustomerMatchPicker term={form.phone.length >= 3 ? form.phone : form.customer_name} selected={matched} onSelect={applyMatch} onChange={() => { setMatched(null); setForm((f) => ({ ...f, customer: null })); }}/>} 
+        {!isEdit && !matched && <div className="mt-3"><NewCustomerButton onCreated={applyMatch} /></div>}
       </SectionCard>
 
       <SectionCard title="Address">
         <div className="grid gap-4">
-          {matched?.addresses?.length ? (
-            <Field label="Saved billing address">
-              <Select onValueChange={(id) => {
-                const selected = matched.addresses.find((address) => String(address.id) === id);
-                const text = selected ? [selected.address, selected.city, selected.pincode].filter(Boolean).join(", ") : "";
-                setForm((f) => ({ ...f, billing_address: text, ...(f.shipping_same_as_billing ? { address: text } : {}) }));
-              }}>
-                <SelectTrigger><SelectValue placeholder="Select saved address" /></SelectTrigger>
-                <SelectContent>{matched.addresses.map((address) => <SelectItem key={address.id} value={String(address.id)}>{address.title || "Address"}{address.is_primary ? " · Primary" : ""}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-          ) : null}
+          <SavedAddressSelect
+            customer={matched}
+            onPick={(text) => setForm((f) => ({ ...f, billing_address: text, ...(f.shipping_same_as_billing ? { address: text } : {}) }))}
+          />
           <Field label="Billing address">
             <Textarea
               rows={2}
@@ -662,6 +674,12 @@ function QuotationFormPage() {
               onChange={(e) => setForm((f) => ({ ...f, billing_address: e.target.value }))}
             />
           </Field>
+          <SaveAddressCheckbox
+            customer={matched}
+            text={form.billing_address}
+            checked={saveBillingToCustomer}
+            onCheckedChange={setSaveBillingToCustomer}
+          />
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={form.shipping_same_as_billing}

@@ -13,6 +13,9 @@ import { inr } from "@/lib/data";
 import { type CrmCustomerSearchResult, useCrmOptions } from "@/features/crm/hooks";
 import { useCreateDirectOrder, type DirectOrderItem } from "@/features/crm/orders-hooks";
 import { CustomerMatchPicker } from "@/features/crm/components/customer-match-picker";
+import { NewCustomerButton } from "@/features/crm/components/new-customer-button";
+import { SaveAddressCheckbox, SavedAddressSelect } from "@/features/crm/components/saved-address-select";
+import { useSaveAddressToCustomer } from "@/features/crm/saved-address";
 import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
@@ -55,6 +58,8 @@ function DirectOrderPage() {
   const [transactionReference, setTransactionReference] = useState("");
   const [customerRemarks, setCustomerRemarks] = useState("");
   const [matched, setMatched] = useState<CrmCustomerSearchResult | null>(null);
+  const [saveAddressChecked, setSaveAddressChecked] = useState(false);
+  const saveAddressToCustomer = useSaveAddressToCustomer();
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const applyMatch = (customer: CrmCustomerSearchResult) => {
@@ -107,6 +112,7 @@ function DirectOrderPage() {
         customer_remarks: customerRemarks || undefined,
       });
       toast.success(result.message, { description: result.data.order_no });
+      if (saveAddressChecked) await saveAddressToCustomer(matched, billingAddress, "Delivery address");
       navigate(`/crm/orders/${result.data.id}`);
     } catch (err: unknown) {
       const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
@@ -138,9 +144,12 @@ function DirectOrderPage() {
             <Input value={phone} maxLength={10} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} />
           </Field>
           <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <div className="sm:col-span-2 lg:col-span-3"><SavedAddressSelect customer={matched} onPick={setBillingAddress} /></div>
           <Field label="Billing address" className="sm:col-span-2 lg:col-span-3"><Textarea rows={2} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} /></Field>
+          <div className="sm:col-span-2 lg:col-span-3"><SaveAddressCheckbox customer={matched} text={billingAddress} checked={saveAddressChecked} onCheckedChange={setSaveAddressChecked} /></div>
         </div>
         <CustomerMatchPicker term={phone.length >= 3 ? phone : customerName} selected={matched} onSelect={applyMatch} onChange={() => setMatched(null)}/>
+        {!matched && <div className="mt-3"><NewCustomerButton onCreated={applyMatch} /></div>}
       </SectionCard>
 
       <SectionCard title="Order details">

@@ -125,6 +125,7 @@ class CRMAnalyticsReport(APIView):
         collected = payments.aggregate(value=Sum("amount"))["value"] or Decimal("0")
         advance = payments.filter(Q(quotation__crm_order__isnull=True) | Q(created_on__lte=F("quotation__crm_order__confirmed_on"))).aggregate(value=Sum("amount"))["value"] or Decimal("0")
         outstanding = invoices.aggregate(value=Sum("balance_amount"))["value"] or Decimal("0")
+        booked_value = orders.aggregate(value=Sum("total_amount"))["value"] or Decimal("0")
         # These are current operational metrics, deliberately independent of
         # the selected reporting range. CRMOrder is the financial source of
         # truth before and after an invoice exists; payment endpoints keep
@@ -187,7 +188,7 @@ class CRMAnalyticsReport(APIView):
             },
             "overview": {"leads": _crm_status_counts(leads), "quotations": _crm_status_counts(quotations), "orders": _crm_status_counts(orders), "invoices": _crm_status_counts(invoices), "deliveries": _crm_status_counts(deliveries, field="delivery_status")},
             "totals": {"leads": leads.count(), "quotations": quotations.count(), "orders": orders.count(), "invoices": invoices.count(), "deliveries": deliveries.count(), "new_customers": Customer.objects.filter(date_joined__date__range=(start, end)).count()},
-            "revenue": {"collected": collected, "outstanding": outstanding, "advance_collected": advance, "balance_collected": max(collected - advance, Decimal("0")), "average_order": orders.aggregate(value=Avg("total_amount"))["value"] or 0, "trend": revenue_trend},
+            "revenue": {"collected": collected, "outstanding": outstanding, "advance_collected": advance, "balance_collected": max(collected - advance, Decimal("0")), "average_order": orders.aggregate(value=Avg("total_amount"))["value"] or 0, "trend": revenue_trend, "payments_count": payments.count(), "booked_value": booked_value},
             "funnel": funnel, "customers": customer_rows, "products": product_rows, "occasions": occasions,
             "lead_sources": sources, "delivery_methods": delivery_methods, "timeline": timeline,
         })

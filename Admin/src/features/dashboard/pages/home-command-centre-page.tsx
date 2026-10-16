@@ -200,7 +200,8 @@ function HomeCommandCentrePage() {
           {
             label: "Collected revenue",
             value: inr(analytics.data?.revenue.collected ?? 0),
-            detail: `${analytics.data?.totals.orders ?? 0} orders`,
+            detail: `from ${analytics.data?.revenue.payments_count ?? 0} ${analytics.data?.revenue.payments_count === 1 ? "payment" : "payments"}`,
+            hint: "Payments received in this period, by payment date",
             to: "/reports/analytics",
             icon: IndianRupee,
             tone: "text-primary",
@@ -244,6 +245,7 @@ function HomeCommandCentrePage() {
             <Link
               key={metric.label}
               to={metric.to}
+              title={"hint" in metric ? metric.hint : undefined}
             className="group relative flex min-h-24 items-center gap-3 overflow-hidden bg-card px-4 py-3 transition-colors hover:bg-surface-muted"
           >
             <span
@@ -354,6 +356,11 @@ function HomeCommandCentrePage() {
                 {inr(analytics.data?.revenue.collected ?? 0)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">Collected in the selected period</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                Booked: {inr(analytics.data?.revenue.booked_value ?? 0)} ·{" "}
+                {analytics.data?.totals.orders ?? 0}{" "}
+                {analytics.data?.totals.orders === 1 ? "order" : "orders"} confirmed
+              </p>
             </div>
             <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-surface-muted/50 py-2 text-right">
               <div className="px-3">

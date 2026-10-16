@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -46,6 +47,48 @@ class CRMAnalyticsReportTests(TestCase):
         self.assertEqual(str(response.data["current"]["payments_pending"]["amount"]), "600.00")
         self.assertEqual(str(response.data["current"]["balance_pending"]), "600.00")
         self.assertEqual(order.confirmed_on.date(), timezone.localdate())
+
+    def test_revenue_payments_count_and_booked_value_for_the_range(self):
+        today = timezone.localdate()
+        first = Quotation.objects.create(
+            customer_name="Revenue Customer", phone="9000000031",
+            cake_type="Cake", quantity=1, rate="1000.00", total_amount="1000.00",
+        )
+        second = Quotation.objects.create(
+            customer_name="Revenue Customer Two", phone="9000000032",
+            cake_type="Cake", quantity=1, rate="500.00", total_amount="500.00",
+        )
+        CRMOrder.objects.create(
+            quotation=first, customer_name=first.customer_name, phone=first.phone,
+            total_amount="1000.00", advance_paid="500.00",
+        )
+        CRMOrder.objects.create(
+            quotation=second, customer_name=second.customer_name, phone=second.phone,
+            total_amount="500.00", advance_paid="200.00",
+        )
+        QuotationPayment.objects.create(
+            quotation=first, amount="300.00", payment_date=today, payment_method="Cash",
+        )
+        QuotationPayment.objects.create(
+            quotation=second, amount="200.00", payment_date=today, payment_method="Cash",
+        )
+        QuotationPayment.objects.create(
+            quotation=first, amount="200.00", payment_date=today - timedelta(days=10),
+            payment_method="Cash",
+        )
+
+        response = self.client.get("/reports/crm-analytics", {
+            "from_date": today.isoformat(), "to_date": today.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, 200)
+        revenue = response.data["revenue"]
+        self.assertEqual(revenue["payments_count"], 2)
+        self.assertEqual(Decimal(str(revenue["booked_value"])), Decimal("1500.00"))
+        self.assertEqual(Decimal(str(revenue["collected"])), Decimal("500.00"))
+        self.assertEqual(response.data["totals"]["orders"], 2)
+        for key in ("collected", "outstanding", "advance_collected", "balance_collected", "average_order", "trend"):
+            self.assertIn(key, revenue)
 
     def test_pending_payments_use_order_totals_and_received_amounts(self):
         def make_order(suffix, total, paid, status="Confirmed"):
