@@ -534,7 +534,14 @@ class QuotationSerializer(serializers.ModelSerializer):
         gst_percentage = attrs.get(
             "gst_percentage", self.instance.gst_percentage if self.instance else 0
         ) or 0
-        if rate is not None and quantity is not None:
+        # On an existing quotation, only recompute from the top-level rate x
+        # quantity when this request changes them. Those fields mirror just the
+        # first item of a multi-item quotation, so a partial update (e.g. only
+        # advance_amount) must keep the saved total_amount instead.
+        recompute_from_rate = not self.instance or (
+            ("rate" in attrs or "quantity" in attrs) and not attrs.get("items")
+        )
+        if recompute_from_rate and rate is not None and quantity is not None:
             unit_type = attrs.get("unit_type") or getattr(self.instance, "unit_type", "kg")
             resulting_total = rate * pricing_quantity(quantity, unit_type)
             if gst_enabled:

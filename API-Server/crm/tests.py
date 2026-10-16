@@ -2261,6 +2261,83 @@ class OrderDirectCreationAndCancellationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("advance_amount", response.data)
 
+    def multi_item_direct_order_payload(self, phone, advance_amount):
+        CRMOption.objects.get_or_create(
+            option_type="sale_unit", name="250 Gram",
+            defaults={"is_active": True, "conversion_factor": Decimal("1")},
+        )
+        payload = self.direct_order_payload(phone=phone, advance_amount=advance_amount)
+        payload["items"] = [
+            {"item_name": "Cream Cake", "quantity": 1, "unit_type": "kg", "rate": "1000.00", "gst_percentage": 0},
+            {"item_name": "Cream Cake", "quantity": 1, "unit_type": "250 Gram", "rate": "500.00", "gst_percentage": 0},
+        ]
+        payload["discount_amount"] = "0"
+        return payload
+
+    def test_multi_item_direct_order_accepts_advance_equal_to_full_total(self):
+        client, _ = self._client("direct-order-multi-full-staff")
+        payload = self.multi_item_direct_order_payload("9876511121", "1500.00")
+        response = client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        order = CRMOrder.objects.get(pk=response.data["data"]["id"])
+        self.assertEqual(str(order.total_amount), "1500.00")
+        self.assertEqual(str(order.advance_paid), "1500.00")
+        self.assertEqual(order.items.count(), 2)
+
+    def test_multi_item_direct_order_rejects_advance_above_total(self):
+        client, _ = self._client("direct-order-multi-over-staff")
+        payload = self.multi_item_direct_order_payload("9876511122", "1600.00")
+        response = client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            str(response.data["advance_amount"][0]),
+            "Advance amount cannot exceed the quotation total.",
+        )
+        self.assertFalse(CRMOrder.objects.filter(phone="9876511122").exists())
+
+    def test_single_item_direct_order_with_advance_within_total_still_created(self):
+        client, _ = self._client("direct-order-single-within-staff")
+        payload = self.direct_order_payload(phone="9876511123", advance_amount="1000.00")
+        response = client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        order = CRMOrder.objects.get(pk=response.data["data"]["id"])
+        self.assertEqual(str(order.total_amount), "1000.00")
+        self.assertEqual(str(order.advance_paid), "1000.00")
+
+    def test_partial_update_of_multi_item_quotation_accepts_advance_equal_to_total(self):
+        client, _ = self._client("quotation-multi-partial-staff")
+        self.multi_item_direct_order_payload("9876511124", "0")
+        created = client.post("/crm/quotations/", {
+            "customer_name": "Multi Item Customer", "phone": "9876511124",
+            "items": [
+                {"item_name": "Cream Cake", "quantity": 1, "unit_type": "kg", "rate": "1000.00", "gst_percentage": 0},
+                {"item_name": "Cream Cake", "quantity": 1, "unit_type": "250 Gram", "rate": "500.00", "gst_percentage": 0},
+            ],
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        quotation = Quotation.objects.get(pk=created.data["id"])
+        self.assertEqual(str(quotation.total_amount), "1500.00")
+        response = client.patch(
+            f"/crm/quotations/{quotation.id}/", {"advance_amount": "1500.00"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        quotation.refresh_from_db()
+        self.assertEqual(str(quotation.advance_amount), "1500.00")
+        self.assertEqual(str(quotation.total_amount), "1500.00")
+
+    def test_single_item_quotation_rate_change_below_advance_is_still_rejected(self):
+        client, _ = self._client("quotation-single-rate-change-staff")
+        quotation = Quotation.objects.create(
+            customer_name="Single Item Customer", phone="9876511125",
+            cake_type="Theme Cake", quantity=1, rate="1000.00", total_amount="1000.00",
+            advance_amount="800.00",
+        )
+        response = client.patch(
+            f"/crm/quotations/{quotation.id}/", {"rate": "500.00", "quantity": "1"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("advance_amount", response.data)
+
     def test_direct_order_requires_customer_name_and_phone(self):
         client, _ = self._client("direct-order-missing-customer-staff")
         payload = self.direct_order_payload(phone="9876511114")
