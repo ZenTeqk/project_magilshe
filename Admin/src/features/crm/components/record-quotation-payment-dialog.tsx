@@ -18,6 +18,7 @@ import { useCrmOptions } from "@/features/crm/hooks";
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
+import { NO_ADVANCE_METHOD, isNoAdvance } from "@/features/crm/no-advance";
 
 export function RecordQuotationPaymentDialog({
   quotation,
@@ -38,14 +39,16 @@ export function RecordQuotationPaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const { data: livePaymentMethods } = useCrmOptions("payment_method");
   const paymentMethods = configuredOptions(livePaymentMethods);
+  const paymentMethodOptions = configuredOptions([...paymentMethods, NO_ADVANCE_METHOD]);
+  const noAdvance = isNoAdvance(paymentMethod);
   const createOption = useCreateCrmOptionFromText();
 
   const recordPayment = useRecordQuotationPayment();
 
   const submit = async () => {
     setError(null);
-    const value = Number(amount);
-    if (!value || value <= 0) {
+    const value = noAdvance ? 0 : Number(amount);
+    if (!noAdvance && (!value || value <= 0)) {
       setError("Enter an amount greater than zero.");
       return;
     }
@@ -63,11 +66,11 @@ export function RecordQuotationPaymentDialog({
         amount: value,
         payment_date: paymentDate,
         payment_method: paymentMethod,
-        transaction_reference: transactionReference,
+        transaction_reference: noAdvance ? "" : transactionReference,
         customer_remarks: customerRemarks,
-        ...(proof ? { proof } : {}),
+        ...(proof && !noAdvance ? { proof } : {}),
       });
-      toast.success("Advance payment recorded");
+      toast.success(noAdvance ? "No advance recorded. You can now confirm the order." : "Advance payment recorded");
       onOpenChange(false);
     } catch (err: unknown) {
       const response = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
@@ -97,6 +100,7 @@ export function RecordQuotationPaymentDialog({
               max={balance}
               step={0.01}
               value={amount}
+              disabled={noAdvance}
               onChange={(e) => setAmount(e.target.value)}
             />
           </Field>
@@ -108,12 +112,13 @@ export function RecordQuotationPaymentDialog({
             />
           </Field>
           <Field label="Payment method" required>
-            <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" portal />
+            <OptionCombobox value={paymentMethod} options={paymentMethodOptions} onChange={(value) => { setPaymentMethod(value); if (isNoAdvance(value)) setAmount("0"); }} onCreateOption={createOption("payment_method", paymentMethodOptions)} placeholder="Select or type payment method" portal />
             {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
           </Field>
           <Field label="Transaction reference">
             <Input
               value={transactionReference}
+              disabled={noAdvance}
               onChange={(e) => setTransactionReference(e.target.value)}
             />
           </Field>
@@ -139,7 +144,7 @@ export function RecordQuotationPaymentDialog({
             Cancel
           </Button>
           <Button type="button" onClick={submit} disabled={recordPayment.isPending}>
-            {recordPayment.isPending ? "Recording…" : "Record payment"}
+            {recordPayment.isPending ? "Recording…" : noAdvance ? "Continue without advance" : "Record payment"}
           </Button>
         </DialogFooter>
       </DialogContent>

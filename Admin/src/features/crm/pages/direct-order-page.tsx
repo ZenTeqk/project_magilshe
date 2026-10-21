@@ -20,6 +20,7 @@ import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } f
 import { configuredOptions } from "@/features/crm/config-options";
 import { OptionCombobox } from "@/features/crm/components/option-combobox";
 import { useCreateCrmOptionFromText } from "@/features/crm/options-hooks";
+import { NO_ADVANCE_METHOD, isNoAdvance } from "@/features/crm/no-advance";
 
 const emptyItem: DirectOrderItem = { item_name: "", description: "", flavour: "", weight: "", quantity: "", unit_type: "kg", rate: "", manual_amount: "", gst_percentage: "" };
 
@@ -39,6 +40,7 @@ function DirectOrderPage() {
   const rateOptions = configuredOptions(productRates);
   const gstOptions = configuredOptions(gstRates);
   const paymentMethods = configuredOptions(livePaymentMethods);
+  const paymentMethodOptions = configuredOptions([...paymentMethods, NO_ADVANCE_METHOD]);
   const createOption = useCreateCrmOptionFromText();
   const navigate = useNavigate();
   const createOrder = useCreateDirectOrder();
@@ -61,6 +63,7 @@ function DirectOrderPage() {
   const [saveAddressChecked, setSaveAddressChecked] = useState(false);
   const saveAddressToCustomer = useSaveAddressToCustomer();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const noAdvance = isNoAdvance(paymentMethod);
 
   const applyMatch = (customer: CrmCustomerSearchResult) => {
     setMatched(customer);
@@ -88,7 +91,7 @@ function DirectOrderPage() {
     if (!items.some((it) => it.item_name.trim() && (hasRate(it.rate) ? Number(it.rate) > 0 : Number(it.manual_amount) > 0))) clientErrors["items"] = "Add at least one item with a name and a rate or amount.";
     if (items.some((it) => it.item_name.trim() && it.quantity === "")) clientErrors["items"] = "Quantity is required for every item.";
     const advance = Number(advanceAmount);
-    if (!advance || advance <= 0) clientErrors["advance_amount"] = "Collect the advance payment before confirming this order.";
+    if (!noAdvance && (!advance || advance <= 0)) clientErrors["advance_amount"] = "Collect the advance payment before confirming this order.";
     if (!paymentMethod) clientErrors["payment_method"] = "Select a payment method.";
     setErrors(clientErrors);
     if (Object.keys(clientErrors).length) return;
@@ -105,7 +108,7 @@ function DirectOrderPage() {
         event_date: eventDate || undefined,
         items: items.filter((it) => it.item_name.trim()).map((it) => ({ ...it, quantity: Number(it.quantity) || 1, rate: hasRate(it.rate) ? Number(it.rate) : null, manual_amount: hasRate(it.rate) ? null : Number(it.manual_amount) || 0, gst_percentage: Number(it.gst_percentage) || 0 })),
         discount_amount: discountAmount,
-        advance_amount: advance,
+        advance_amount: noAdvance ? 0 : advance,
         payment_date: paymentDate,
         payment_method: paymentMethod,
         transaction_reference: transactionReference || undefined,
@@ -203,17 +206,17 @@ function DirectOrderPage() {
           </dl>
         </SectionCard>
 
-        <SectionCard title="Advance payment" description="Required to confirm this order">
+        <SectionCard title="Advance payment" description={noAdvance ? "Order will be confirmed without an advance" : "Required to confirm this order"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Advance amount" required error={errors["advance_amount"]}>
-              <Input type="number" min={0} max={total} value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} />
+              <Input type="number" min={0} max={total} value={advanceAmount} disabled={noAdvance} onChange={(e) => setAdvanceAmount(e.target.value)} />
             </Field>
             <Field label="Payment date" required><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /></Field>
             <Field label="Payment method" required error={errors["payment_method"]}>
-              <OptionCombobox value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} onCreateOption={createOption("payment_method", paymentMethods)} placeholder="Select or type payment method" portal />
+              <OptionCombobox value={paymentMethod} options={paymentMethodOptions} onChange={(value) => { setPaymentMethod(value); if (isNoAdvance(value)) setAdvanceAmount("0"); }} onCreateOption={createOption("payment_method", paymentMethodOptions)} placeholder="Select or type payment method" portal />
               {!paymentMethods.length && <p className="text-xs text-warning">Add an active payment method in CRM Settings.</p>}
             </Field>
-            <Field label="Transaction reference"><Input value={transactionReference} onChange={(e) => setTransactionReference(e.target.value)} /></Field>
+            <Field label="Transaction reference"><Input value={transactionReference} disabled={noAdvance} onChange={(e) => setTransactionReference(e.target.value)} /></Field>
             <Field label="Customer remarks" className="sm:col-span-2"><Textarea rows={2} value={customerRemarks} onChange={(e) => setCustomerRemarks(e.target.value)} /></Field>
           </div>
         </SectionCard>

@@ -53,6 +53,7 @@ import { CustomerMatchPicker } from "@/features/crm/components/customer-match-pi
 import { NewCustomerButton } from "@/features/crm/components/new-customer-button";
 import { SaveAddressCheckbox, SavedAddressSelect } from "@/features/crm/components/saved-address-select";
 import { useSaveAddressToCustomer } from "@/features/crm/saved-address";
+import { isNoAdvance } from "@/features/crm/no-advance";
 import { calculateLineItem, hasRate, quantityMin, quantityStep, useSaleUnits } from "@/features/crm/sale-units";
 import { formatTimeOfDay, normalizeTimeOfDayInput } from "@/lib/format-time";
 import { configuredOptions, optionsWithCurrentValues } from "@/features/crm/config-options";
@@ -595,7 +596,7 @@ function QuotationFormPage() {
               )}
               {hasRecordedAdvance && !existingQuotation.order_id && (
                 <Button size="sm" variant="outline" disabled>
-                  Advance Recorded
+                  {isNoAdvance(existingQuotation.payment_method) ? "No Advance" : "Advance Recorded"}
                 </Button>
               )}
               {status === "Advance Received" && hasRecordedAdvance && (

@@ -2338,6 +2338,81 @@ class OrderDirectCreationAndCancellationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("advance_amount", response.data)
 
+    def test_direct_order_with_no_advance_is_created_without_a_payment(self):
+        client, _ = self._client("direct-order-no-advance-staff")
+        payload = self.direct_order_payload(phone="9876511131", advance_amount="500.00")
+        payload["payment_method"] = "No Advance"
+        response = client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        order = CRMOrder.objects.get(pk=response.data["data"]["id"])
+        self.assertEqual(order.status, "Confirmed")
+        self.assertEqual(str(order.total_amount), "1000.00")
+        self.assertEqual(str(order.advance_paid), "0.00")
+        self.assertEqual(str(order.balance_amount), "1000.00")
+        self.assertFalse(QuotationPayment.objects.filter(quotation=order.quotation).exists())
+        self.assertEqual(order.quotation.payment_method, "No Advance")
+
+    def test_direct_order_with_zero_advance_and_a_real_method_is_still_rejected(self):
+        client, _ = self._client("direct-order-zero-cash-staff")
+        payload = self.direct_order_payload(phone="9876511132", advance_amount="0")
+        response = client.post("/crm/orders/direct/", payload, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("advance_amount", response.data)
+        self.assertFalse(CRMOrder.objects.filter(phone="9876511132").exists())
+
+    def _accepted_quotation(self, phone):
+        return Quotation.objects.create(
+            customer_name="No Advance Customer", phone=phone, cake_type="Theme Cake",
+            quantity=1, rate="1000.00", total_amount="1000.00", status="Accepted",
+        )
+
+    def test_quotation_no_advance_skips_payment_and_whatsapp_then_confirms(self):
+        client, _ = self._client("quotation-no-advance-staff")
+        quotation = self._accepted_quotation("9876511133")
+        with patch("crm.views.whatsapp_trigger_event") as trigger:
+            recorded = client.post(
+                f"/crm/quotations/{quotation.id}/record-payment/",
+                {"amount": "250.00", "payment_method": "No Advance",
+                 "payment_date": timezone.localdate().isoformat()},
+                format="json",
+            )
+        self.assertEqual(recorded.status_code, 201, recorded.data)
+        self.assertNotIn("quotation_advance_received", [call.args[0] for call in trigger.call_args_list])
+        quotation.refresh_from_db()
+        self.assertEqual(quotation.status, "Advance Received")
+        self.assertEqual(str(quotation.advance_amount), "0.00")
+        self.assertEqual(quotation.payment_method, "No Advance")
+        self.assertFalse(quotation.payments.exists())
+
+        confirmed = client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+        order = CRMOrder.objects.get(quotation=quotation)
+        self.assertEqual(str(order.advance_paid), "0.00")
+        self.assertEqual(str(order.balance_amount), "1000.00")
+
+    def test_quotation_zero_advance_with_a_real_method_is_still_rejected(self):
+        client, _ = self._client("quotation-zero-cash-staff")
+        quotation = self._accepted_quotation("9876511134")
+        response = client.post(
+            f"/crm/quotations/{quotation.id}/record-payment/",
+            {"amount": "0", "payment_method": "Cash", "payment_date": timezone.localdate().isoformat()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        quotation.refresh_from_db()
+        self.assertEqual(quotation.status, "Accepted")
+
+    def test_confirm_order_without_advance_or_no_advance_choice_is_still_rejected(self):
+        client, _ = self._client("quotation-confirm-zero-staff")
+        quotation = self._accepted_quotation("9876511135")
+        quotation.status = "Advance Received"
+        quotation.advance_received = True
+        quotation.payment_method = "Cash"
+        quotation.save()
+        response = client.post(f"/crm/quotations/{quotation.id}/confirm-order/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CRMOrder.objects.filter(quotation=quotation).exists())
+
     def test_direct_order_requires_customer_name_and_phone(self):
         client, _ = self._client("direct-order-missing-customer-staff")
         payload = self.direct_order_payload(phone="9876511114")

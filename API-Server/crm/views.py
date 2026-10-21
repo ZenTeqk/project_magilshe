@@ -1217,6 +1217,16 @@ class CustomerRecurringEventViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(event).data)
 
 
+# Payment-method choice for confirming an order without collecting an advance.
+# It records no QuotationPayment; the quotation keeps advance_amount 0 and this
+# value in payment_method so confirm-order can tell it apart from a missing advance.
+NO_ADVANCE_METHOD = "No Advance"
+
+
+def _is_no_advance(payment_method):
+    return str(payment_method or "").strip().casefold() == NO_ADVANCE_METHOD.casefold()
+
+
 def _confirm_quotation_order(quotation, user):
     """Create (or fetch) the CRMOrder backing a quotation that already has a
     recorded advance. Shared by QuotationViewSet.confirm_order and
@@ -1506,6 +1516,19 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
             paid = sum(quotation.payments.values_list("amount", flat=True))
             if quotation.advance_received or quotation.advance_amount > 0 or paid > 0:
                 return Response({"message": "Advance has already been recorded."}, status=400)
+            if _is_no_advance(request.data.get("payment_method")):
+                # No payment row and no "advance received" WhatsApp: nothing was paid.
+                quotation.advance_received = True
+                quotation.advance_amount = Decimal("0")
+                quotation.payment_method = NO_ADVANCE_METHOD
+                quotation.transaction_reference = None
+                quotation.status = "Advance Received"
+                quotation.save()
+                QuotationActivity.objects.create(
+                    quotation=quotation, action="No Advance Selected", staff=request.user,
+                    description="Order will be confirmed without an advance payment.",
+                )
+                return Response(self.get_serializer(quotation).data, status=201)
             serializer = QuotationPaymentSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             amount = serializer.validated_data["amount"]
@@ -1538,7 +1561,9 @@ class QuotationViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 return Response(
                     {"message": "Record an advance payment before confirming the order."}, status=400
                 )
-            if not quotation.advance_received or quotation.advance_amount <= 0:
+            if not quotation.advance_received or (
+                quotation.advance_amount <= 0 and not _is_no_advance(quotation.payment_method)
+            ):
                 return Response({"message": "A valid advance payment is required."}, status=400)
             order, created = _confirm_quotation_order(quotation, request.user)
         return Response(
@@ -1621,11 +1646,12 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         Quotation in the UI. Internally builds a minimal manual Quotation and
         runs it through the same order-creation pipeline as confirm_order, so
         the resulting order is indistinguishable from a normal one."""
+        no_advance = _is_no_advance(request.data.get("payment_method"))
         try:
-            advance_value = Decimal(str(request.data.get("advance_amount") or "0"))
+            advance_value = Decimal("0") if no_advance else Decimal(str(request.data.get("advance_amount") or "0"))
         except (InvalidOperation, TypeError):
             return Response({"advance_amount": ["Enter a valid advance amount."]}, status=400)
-        if advance_value <= 0:
+        if advance_value <= 0 and not no_advance:
             return Response({"advance_amount": ["A valid advance payment is required to create a direct order."]}, status=400)
         # Validate the advance payment details (method/date/reference/remarks,
         # collected the same way QuotationViewSet.record_payment does) before
@@ -1634,7 +1660,8 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
         payment_fields = {"payment_date", "payment_method", "transaction_reference", "customer_remarks"}
         payment_data = {"amount": str(advance_value), **{key: request.data.get(key) for key in payment_fields if request.data.get(key) not in (None, "")}}
         payment_serializer = QuotationPaymentSerializer(data=payment_data)
-        payment_serializer.is_valid(raise_exception=True)
+        if not no_advance:
+            payment_serializer.is_valid(raise_exception=True)
         # Create the quotation first (with its items) so total_amount is
         # computed before validating the advance against it — validate()
         # compares advance_amount to a live-computed total that only reflects
@@ -1648,14 +1675,14 @@ class CRMOrderViewSet(ArchivedLifecycleMixin, viewsets.ModelViewSet):
                 customer = sync_customer_from_crm_details(create_serializer.validated_data, request.user)
             quotation = create_serializer.save(created_by=request.user, customer=customer)
             sync_recurring_event(quotation)
-            confirm_serializer = QuotationSerializer(
-                quotation,
-                data={"status": "Advance Received", "advance_received": True, "advance_amount": str(advance_value)},
-                partial=True,
-            )
+            confirm_data = {"status": "Advance Received", "advance_received": True, "advance_amount": str(advance_value)}
+            if no_advance:
+                confirm_data["payment_method"] = NO_ADVANCE_METHOD
+            confirm_serializer = QuotationSerializer(quotation, data=confirm_data, partial=True)
             confirm_serializer.is_valid(raise_exception=True)
             quotation = confirm_serializer.save()
-            payment_serializer.save(quotation=quotation, collected_by=request.user)
+            if not no_advance:
+                payment_serializer.save(quotation=quotation, collected_by=request.user)
             order, created = _confirm_quotation_order(quotation, request.user)
         return Response(
             {"message": "Order created." if created else "Order already exists.",
