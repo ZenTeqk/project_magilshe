@@ -40,7 +40,7 @@ function DirectOrderPage() {
   const rateOptions = configuredOptions(productRates);
   const gstOptions = configuredOptions(gstRates);
   const paymentMethods = configuredOptions(livePaymentMethods);
-  const paymentMethodOptions = configuredOptions([...paymentMethods, NO_ADVANCE_METHOD]);
+  const paymentMethodOptions = configuredOptions([NO_ADVANCE_METHOD, ...paymentMethods]);
   const createOption = useCreateCrmOptionFromText();
   const navigate = useNavigate();
   const createOrder = useCreateDirectOrder();

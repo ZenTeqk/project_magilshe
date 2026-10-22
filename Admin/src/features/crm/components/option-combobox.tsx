@@ -81,11 +81,24 @@ export function OptionCombobox({
     const updatePosition = () => {
       const rect = rootRef.current?.getBoundingClientRect();
       if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - 16;
+      const spaceAbove = rect.top - 16;
+      // Open upwards when the field sits near the bottom of the screen; a fixed
+      // menu running past the viewport edge can't be scrolled into view.
+      if (spaceBelow < 224 && spaceAbove > spaceBelow) {
+        setPortalStyle({
+          bottom: window.innerHeight - rect.top + 4,
+          left: rect.left,
+          width: rect.width,
+          maxHeight: spaceAbove,
+        });
+        return;
+      }
       setPortalStyle({
         top: rect.bottom + 4,
         left: rect.left,
         width: rect.width,
-        maxHeight: Math.max(160, window.innerHeight - rect.bottom - 16),
+        maxHeight: Math.max(160, spaceBelow),
       });
     };
     updatePosition();

@@ -39,7 +39,7 @@ export function RecordQuotationPaymentDialog({
   const [error, setError] = useState<string | null>(null);
   const { data: livePaymentMethods } = useCrmOptions("payment_method");
   const paymentMethods = configuredOptions(livePaymentMethods);
-  const paymentMethodOptions = configuredOptions([...paymentMethods, NO_ADVANCE_METHOD]);
+  const paymentMethodOptions = configuredOptions([NO_ADVANCE_METHOD, ...paymentMethods]);
   const noAdvance = isNoAdvance(paymentMethod);
   const createOption = useCreateCrmOptionFromText();
 
