@@ -25,7 +25,7 @@ function WhatsAppSettingsPage() {
   const { data: occasions } = useCrmOptions("occasion");
   const saveSettings = useSaveWhatsAppSettings();
   const [form, setForm] = useState({
-    waba_id: "", phone_number_id: "", access_token: "", app_secret: "", webhook_verify_token: "",
+    waba_id: "", phone_number_id: "", access_token: "", app_secret: "", app_id: "", webhook_verify_token: "",
     business_display_name: "", business_display_phone: "",
   });
 
@@ -33,7 +33,7 @@ function WhatsAppSettingsPage() {
     if (settings) {
       setForm({
         waba_id: settings.waba_id, phone_number_id: settings.phone_number_id, access_token: "", app_secret: "",
-        webhook_verify_token: settings.webhook_verify_token,
+        app_id: settings.app_id, webhook_verify_token: settings.webhook_verify_token,
         business_display_name: settings.business_display_name, business_display_phone: settings.business_display_phone,
       });
     }
@@ -138,6 +138,9 @@ function WhatsAppSettingsPage() {
               : "From Meta App Dashboard → App settings → Basic. Once saved, only Meta can update message and template status."}
           >
             <Input type="password" value={form.app_secret} placeholder={settings?.has_app_secret ? "••••••••" : ""} onChange={(e) => setForm((f) => ({ ...f, app_secret: e.target.value }))} />
+          </Field>
+          <Field label="Meta App ID" help="From Meta App Dashboard → App settings → Basic. Needed to upload image, video and document headers.">
+            <Input value={form.app_id} onChange={(e) => setForm((f) => ({ ...f, app_id: e.target.value }))} />
           </Field>
           <Field label="Webhook verify token" help="Set this same value when you register the webhook in Meta Business Manager.">
             <Input value={form.webhook_verify_token} onChange={(e) => setForm((f) => ({ ...f, webhook_verify_token: e.target.value }))} />

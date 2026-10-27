@@ -9,16 +9,17 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .event_fields import FIELDS_FOR_EVENT, MODEL_FOR_EVENT
+from .event_fields import FIELD_SAMPLES, FIELDS_FOR_EVENT, MODEL_FOR_EVENT
 from .models import AUTO_SENDABLE_EVENTS, EVENT_CHOICES, EVENT_GROUPS, MessageLog, MessageTemplate, OptOut, WhatsAppSettings
 from .occasion_reminders import due_reminders, reminder_template, send_due_reminders
 from .serializers import MessageLogSerializer, MessageTemplateSerializer, WhatsAppSettingsSerializer
 from .services import (
     WhatsAppAPIError, WhatsAppError, apply_template_review_event, phone_key, send_template_message,
-    submit_template_for_review,
+    submit_template_for_review, upload_header_media,
 )
 
 logger = logging.getLogger("cakery")
@@ -47,7 +48,10 @@ class EventCatalogueView(APIView):
             ],
             "auto_sendable_events": list(AUTO_SENDABLE_EVENTS),
             "fields_by_event": {
-                event: [{"value": key, "label": label} for key, (label, _getter) in fields.items()]
+                event: [
+                    {"value": key, "label": label, "sample": FIELD_SAMPLES.get(key, "")}
+                    for key, (label, _getter) in fields.items()
+                ]
                 for event, fields in FIELDS_FOR_EVENT.items()
             },
         })
@@ -68,13 +72,29 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
             return Response({"message": str(exc)}, status=502)
         return Response(MessageTemplateSerializer(template).data)
 
+    @action(detail=True, methods=["post"], url_path="upload-header", parser_classes=[MultiPartParser])
+    def upload_header(self, request, pk=None):
+        template = self.get_object()
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            return Response({"message": "Choose a file to upload."}, status=400)
+        try:
+            upload_header_media(template, uploaded_file)
+        except WhatsAppError as exc:
+            return Response({"message": str(exc)}, status=400)
+        except WhatsAppAPIError as exc:
+            return Response({"message": str(exc)}, status=502)
+        return Response(MessageTemplateSerializer(template).data)
+
     @action(detail=True, methods=["post"])
     def duplicate(self, request, pk=None):
         template = self.get_object()
         copy = MessageTemplate.objects.create(
             name=f"{template.name}_copy", category=template.category, language=template.language,
             header_type=template.header_type, header_text=template.header_text,
-            header_media_url=template.header_media_url, body=template.body,
+            header_media_url=template.header_media_url, header_media_handle=template.header_media_handle,
+            header_media_key=template.header_media_key, header_media_filename=template.header_media_filename,
+            body=template.body,
             footer_text=template.footer_text, buttons=template.buttons,
             variable_map=template.variable_map, created_by=request.user,
         )

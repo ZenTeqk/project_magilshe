@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Upload } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SectionCard } from "@/components/shared/section-card";
 import { Field } from "@/components/shared/field";
@@ -11,26 +11,27 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  useEventCatalogue, useSaveTemplate, useSubmitTemplate, useTemplate,
+  useEventCatalogue, useSaveTemplate, useSubmitTemplate, useTemplate, useUploadTemplateHeader,
   TEMPLATE_CATEGORIES, HEADER_TYPES, type TemplateButton, type HeaderType,
 } from "@/features/whatsapp/hooks";
+import { TemplatePreview } from "@/features/whatsapp/components/template-preview";
 
 const STATUS_LABEL: Record<string, string> = { draft: "Draft", pending: "Pending", approved: "Active", rejected: "Rejected" };
 const STATUS_TONE: Record<string, "neutral" | "warning" | "success" | "danger"> = {
   draft: "neutral", pending: "warning", approved: "success", rejected: "danger",
 };
 
+const MEDIA_HEADERS: Partial<Record<HeaderType, { accept: string; hint: string }>> = {
+  image: { accept: "image/jpeg,image/png", hint: "JPG or PNG, up to 5 MB." },
+  video: { accept: "video/mp4,video/3gpp", hint: "MP4 or 3GP, up to 16 MB." },
+  document: { accept: "application/pdf", hint: "PDF, up to 16 MB." },
+};
+// Events whose record has its own PDF -- see RECORD_DOCUMENT_EVENTS in whatsapp/services.py.
+const RECORD_DOCUMENT_EVENTS = ["quotation_sent", "quotation_accepted", "quotation_advance_received", "quotation_cancelled", "invoice_generated", "payment_reminder"];
+
 const placeholderKeys = (body: string) =>
   [...new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]).filter((key): key is string => key !== undefined))]
     .sort((a, b) => Number(a) - Number(b));
-
-function resolvePreview(body: string, variableMap: Record<string, string>, fieldLabels: Record<string, string>) {
-  return placeholderKeys(body).reduce((text, key) => {
-    const field = variableMap[key];
-    const sample = field ? `[${fieldLabels[field] ?? field}]` : `{{${key}}}`;
-    return text.replaceAll(`{{${key}}}`, sample);
-  }, body);
-}
 
 const blank = {
   name: "", category: "utility" as (typeof TEMPLATE_CATEGORIES)[number], language: "en",
@@ -41,12 +42,14 @@ const blank = {
 
 function TemplateFormPage() {
   const { id } = useParams<{ id: string }>();
-  const isEdit = id !== "new";
+  // The /new route has no :id param at all, so id is undefined there.
+  const isEdit = Boolean(id);
   const navigate = useNavigate();
   const { data: existing } = useTemplate(isEdit ? id : undefined);
   const { data: catalogue } = useEventCatalogue();
   const saveTemplate = useSaveTemplate();
   const submitTemplate = useSubmitTemplate();
+  const uploadHeader = useUploadTemplateHeader();
   const [form, setForm] = useState(blank);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -65,9 +68,7 @@ function TemplateFormPage() {
 
   const isLocked = isEdit && existing ? !existing.is_editable : false;
   const fieldOptions = catalogue?.fields_by_event[form.event] ?? [];
-  const fieldLabels = useMemo(() => Object.fromEntries(fieldOptions.map((f) => [f.value, f.label])), [fieldOptions]);
   const placeholders = placeholderKeys(form.body);
-  const preview = resolvePreview(form.body, form.variable_map, fieldLabels);
 
   const setButton = (index: number, patch: Partial<TemplateButton>) =>
     setForm((f) => ({ ...f, buttons: f.buttons.map((b, i) => (i === index ? { ...b, ...patch } as TemplateButton : b)) }));
@@ -77,25 +78,44 @@ function TemplateFormPage() {
   const setVariable = (key: string, field: string) =>
     setForm((f) => ({ ...f, variable_map: { ...f.variable_map, [key]: field } }));
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     const clientErrors: Record<string, string> = {};
     if (!/^[a-z0-9_]+$/.test(form.name)) clientErrors["name"] = "Lower-case letters, numbers, and underscores only.";
     if (!form.body.trim()) clientErrors["body"] = "The message body can't be empty.";
     setErrors(clientErrors);
-    if (Object.keys(clientErrors).length) return;
+    if (Object.keys(clientErrors).length) return false;
     try {
       const saved = await saveTemplate.mutateAsync({ id: isEdit ? Number(id) : undefined, ...form });
       toast.success(isEdit ? "Template saved" : "Template created");
       if (!isEdit) navigate(`/whatsapp/templates/${saved.id}/edit`, { replace: true });
+      return true;
     } catch (err: unknown) {
       const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
       if (data) setErrors(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])));
       toast.error("Could not save this template");
+      return false;
     }
   };
 
+  const upload = async (file: File | undefined) => {
+    if (!file || !id || !isEdit) return;
+    try {
+      await uploadHeader.mutateAsync({ id, file });
+      toast.success("Header file uploaded");
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || "Could not upload this file");
+    }
+  };
+
+  const mediaHeader = MEDIA_HEADERS[form.header_type];
+  // Uploads are checked against the saved header type, so a changed type has to be saved first.
+  const headerTypeSaved = isEdit && existing?.header_type === form.header_type;
+
+  // Saves first, so what Meta reviews is what's on screen, not the last save.
   const submit = async () => {
     if (!id || !isEdit) return;
+    if (!(await save())) return;
     try {
       await submitTemplate.mutateAsync(id);
       toast.success("Submitted to Meta for approval");
@@ -158,6 +178,33 @@ function TemplateFormPage() {
             {form.header_type === "text" && (
               <Field label="Header text">
                 <Input value={form.header_text} disabled={isLocked} maxLength={60} onChange={(e) => set("header_text", e.target.value)} />
+              </Field>
+            )}
+            {mediaHeader && (
+              <Field
+                label={`Header ${form.header_type}`}
+                help={`${mediaHeader.hint} Meta reviews this sample, and it is sent with every message from this template.`}
+              >
+                {existing?.has_header_media && headerTypeSaved && (
+                  <p className="text-sm">Uploaded: <span className="font-medium">{existing.header_media_filename}</span></p>
+                )}
+                {!headerTypeSaved ? (
+                  <p className="text-sm text-muted-foreground">Save the draft first, then upload the {form.header_type} file.</p>
+                ) : !isLocked && (
+                  <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
+                    <Upload className="size-4" />
+                    {uploadHeader.isPending ? "Uploading…" : existing?.has_header_media ? "Replace file" : "Upload file"}
+                    <input
+                      type="file" className="sr-only" accept={mediaHeader.accept} disabled={uploadHeader.isPending}
+                      onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }}
+                    />
+                  </label>
+                )}
+                {form.header_type === "document" && RECORD_DOCUMENT_EVENTS.includes(form.event) && (
+                  <p className="text-xs text-warning">
+                    Messages for this event need the record's own PDF, which can't be attached automatically yet, so sends will fail until it can.
+                  </p>
+                )}
               </Field>
             )}
           </SectionCard>
@@ -244,27 +291,26 @@ function TemplateFormPage() {
 
         <div className="flex flex-col gap-4">
           <SectionCard title="Preview">
-            <div className="rounded-2xl bg-[#e5ded6] p-3">
-              <div className="rounded-lg bg-[#dcf8c6] p-3 text-sm shadow-sm">
-                {form.header_type === "text" && form.header_text && <p className="mb-1 font-semibold">{form.header_text}</p>}
-                <p className="whitespace-pre-wrap">{preview || "Your message preview appears here."}</p>
-                {form.footer_text && <p className="mt-1 text-xs text-muted-foreground">{form.footer_text}</p>}
-                {form.buttons.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1 border-t border-black/10 pt-2">
-                    {form.buttons.map((b, i) => <p key={i} className="text-center text-xs font-medium text-primary">{b.text || "Button"}</p>)}
-                  </div>
-                )}
-              </div>
-            </div>
+            <TemplatePreview
+              headerType={form.header_type}
+              headerText={form.header_text}
+              mediaUrl={headerTypeSaved ? existing?.header_media_preview_url : null}
+              mediaFilename={headerTypeSaved ? existing?.header_media_filename : undefined}
+              body={form.body}
+              footer={form.footer_text}
+              buttons={form.buttons}
+              variableMap={form.variable_map}
+              fields={fieldOptions}
+            />
           </SectionCard>
 
           <SectionCard>
             <div className="flex flex-col gap-2">
-              <Button onClick={save} disabled={isLocked || saveTemplate.isPending}>
+              <Button onClick={() => void save()} disabled={isLocked || saveTemplate.isPending}>
                 {saveTemplate.isPending ? "Saving…" : "Save draft"}
               </Button>
               {isEdit && existing?.is_editable && (
-                <Button variant="outline" onClick={submit} disabled={submitTemplate.isPending}>
+                <Button variant="outline" onClick={submit} disabled={saveTemplate.isPending || submitTemplate.isPending}>
                   {submitTemplate.isPending ? "Submitting…" : "Submit for approval"}
                 </Button>
               )}

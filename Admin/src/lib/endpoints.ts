@@ -198,6 +198,7 @@ export const endpoints = {
     template: (id: string | number) => `whatsapp/templates/${id}/`,
     submitTemplate: (id: string | number) => `whatsapp/templates/${id}/submit/`,
     duplicateTemplate: (id: string | number) => `whatsapp/templates/${id}/duplicate/`,
+    uploadTemplateHeader: (id: string | number) => `whatsapp/templates/${id}/upload-header/`,
     messages: "whatsapp/messages/",
     send: "whatsapp/send/",
     settings: "whatsapp/settings/",

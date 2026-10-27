@@ -145,6 +145,34 @@ FIELDS_FOR_EVENT = {
     },
 }
 
+# A realistic value per field, shown in the template editor's preview and
+# sent to Meta as the template's example values -- reviewers reject vague
+# samples like "example1" far more often than real-looking ones.
+FIELD_SAMPLES = {
+    "customer_name": "Priya",
+    "quotation_no": "QT-0012",
+    "order_no": "ORD-0030",
+    "invoice_no": "INV-0045",
+    "delivery_no": "DEL-0018",
+    "lead_no": "LD-0007",
+    "total_amount": "2500.00",
+    "advance_amount": "1000.00",
+    "balance_amount": "1500.00",
+    "valid_until": "05 Nov 2026",
+    "event_date": "08 Nov 2026",
+    "delivery_date": "08 Nov 2026",
+    "follow_up_date": "30 Oct 2026",
+    "delivered_at": "08 Nov 2026",
+    "cake_type": "Chocolate Truffle",
+    "cancellation_reason": "Event postponed",
+    "staff_name": "Anitha",
+    "delivery_person_name": "Ravi",
+    "tracking_link": "https://maps.app.goo.gl/example",
+    "occasion": "birthday",
+    "occasion_date": "19 Oct",
+    "days_until": "7",
+}
+
 # What each kind of CRM record needs for sending and logging, described
 # once per record type rather than once per event.
 _RECORD_TYPES = {

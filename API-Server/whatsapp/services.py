@@ -9,14 +9,19 @@ document (a quotation, an order...), not a generic contact.
 """
 
 import logging
+import os
 import re
+import uuid
 
 import requests
 from django.db import transaction
 from django.utils import timezone
 
+from cakery.common import aws_domain_name, get_s3_file_url
+from cakery.file_upload_to_aws import put_image_to_s3
+
 from .event_fields import (
-    CUSTOMER_NAME_FOR_EVENT, LABEL_FOR_EVENT, RECIPIENT_FOR_EVENT,
+    FIELD_SAMPLES, CUSTOMER_NAME_FOR_EVENT, LABEL_FOR_EVENT, RECIPIENT_FOR_EVENT,
     SOURCE_MODEL_FOR_EVENT, resolve_variables,
 )
 from .models import AUTO_SENDABLE_EVENTS, MessageLog, MessageTemplate, OptOut, WhatsAppSettings
@@ -32,6 +37,22 @@ TEMPLATE_FOOTER_EMOJI_RE = re.compile(
 )
 MAX_TEMPLATE_BUTTONS = 10
 MEDIA_HEADER_TYPES = (MessageTemplate.HEADER_IMAGE, MessageTemplate.HEADER_VIDEO, MessageTemplate.HEADER_DOCUMENT)
+
+_MB = 1024 * 1024
+# What Meta accepts in a template header, per header type: (content types, max size).
+MEDIA_HEADER_RULES = {
+    MessageTemplate.HEADER_IMAGE: (("image/jpeg", "image/png"), 5 * _MB, "a JPG or PNG image up to 5 MB"),
+    MessageTemplate.HEADER_VIDEO: (("video/mp4", "video/3gpp"), 16 * _MB, "an MP4 or 3GP video up to 16 MB"),
+    MessageTemplate.HEADER_DOCUMENT: (("application/pdf",), 16 * _MB, "a PDF up to 16 MB"),
+}
+
+# Events whose record has a PDF of its own (the quotation, the invoice...).
+# A document header on these has to carry that record's PDF, which isn't
+# generated server-side yet -- sending the uploaded sample instead would hand
+# every customer the same wrong document, so those sends are refused.
+RECORD_DOCUMENT_EVENTS = tuple(
+    event for event, source in SOURCE_MODEL_FOR_EVENT.items() if source in ("quotation", "crminvoice")
+)
 
 
 def whatsapp_number(phone):
@@ -71,7 +92,8 @@ def _graph_request(method, path, settings_row, **kwargs):
     if not settings_row.is_connected:
         raise WhatsAppAPIError("WhatsApp Business is not connected yet. Add your credentials in Settings.")
     headers = kwargs.pop("headers", {})
-    headers["Authorization"] = f"Bearer {settings_row.access_token}"
+    # The Resumable Upload API wants "OAuth <token>" instead, so a caller may set it.
+    headers.setdefault("Authorization", f"Bearer {settings_row.access_token}")
     try:
         response = requests.request(method, f"{GRAPH_BASE}/{path}", headers=headers, timeout=20, **kwargs)
     except requests.RequestException as exc:
@@ -126,9 +148,12 @@ def validate_template_payload(fields):
     )
 
 
-def _example_values(text):
+def _example_values(text, variable_map=None):
+    """Meta's required sample for each {{n}}: the mapped field's realistic
+    sample when there is one, else a generic placeholder."""
     keys = sorted({int(m) for m in re.findall(r"\{\{(\d+)\}\}", text or "")})
-    return [f"example{k}" for k in keys] if keys else None
+    variable_map = variable_map or {}
+    return [FIELD_SAMPLES.get(variable_map.get(str(k)), f"example{k}") for k in keys] if keys else None
 
 
 def _template_components(template):
@@ -145,7 +170,7 @@ def _template_components(template):
             "example": {"header_handle": [template.header_media_handle]},
         })
     body = {"type": "BODY", "text": template.body}
-    body_examples = _example_values(template.body)
+    body_examples = _example_values(template.body, template.variable_map)
     if body_examples:
         body["example"] = {"body_text": [body_examples]}
     components.append(body)
@@ -220,6 +245,80 @@ def apply_template_review_event(*, template_name, template_language, event, reas
     return template
 
 
+def upload_header_media(template, uploaded_file):
+    """Stores the sample file for an image/video/document header.
+
+    Two copies, for two different jobs: Meta's Resumable Upload API returns
+    the handle it needs to review the template, and our S3 copy is what each
+    send later points Meta at. Meta goes first -- it's the stricter check,
+    and nothing is kept in S3 for a file Meta wouldn't take.
+    """
+    if not template.is_editable:
+        raise WhatsAppError("Only Draft or Rejected templates can be changed.")
+    rules = MEDIA_HEADER_RULES.get(template.header_type)
+    if rules is None:
+        raise WhatsAppError("Set the header type to Image, Video or Document before uploading a file.")
+    content_types, max_size, description = rules
+    content_type = (uploaded_file.content_type or "").split(";")[0].strip().lower()
+    if content_type not in content_types:
+        raise WhatsAppError(f"{template.get_header_type_display()} headers need {description}.")
+    if uploaded_file.size > max_size:
+        raise WhatsAppError(f"That file is too large: {template.get_header_type_display()} headers need {description}.")
+
+    settings_row = WhatsAppSettings.load()
+    if not settings_row.is_connected:
+        raise WhatsAppError("WhatsApp Business is not connected yet. Add your credentials in Settings.")
+    if not settings_row.app_id:
+        raise WhatsAppError("Add your Meta App ID in WhatsApp Settings before uploading header files.")
+
+    data = uploaded_file.read()
+    filename = os.path.basename(uploaded_file.name or "") or "header"
+    session = _graph_request(
+        "POST", f"{settings_row.app_id}/uploads", settings_row,
+        params={"file_name": filename, "file_length": len(data), "file_type": content_type},
+    )
+    if not session.get("id"):
+        raise WhatsAppAPIError("WhatsApp did not start an upload session for this file.")
+    result = _graph_request(
+        "POST", session["id"], settings_row, data=data,
+        headers={"Authorization": f"OAuth {settings_row.access_token}", "file_offset": "0"},
+    )
+    handle = result.get("h")
+    if not handle:
+        raise WhatsAppAPIError("WhatsApp did not return an upload handle for this file.")
+
+    extension = os.path.splitext(filename)[1].lower()
+    key = f"{aws_domain_name}/whatsapp/templates/{template.pk}/{uuid.uuid4().hex}{extension}"
+    uploaded_file.seek(0)
+    uploaded_file.content_type = content_type
+    if not put_image_to_s3(uploaded_file, key):
+        raise WhatsAppError("Could not store the file. Please try again.")
+
+    template.header_media_handle = handle
+    template.header_media_key = key
+    template.header_media_filename = filename
+    template.save(update_fields=["header_media_handle", "header_media_key", "header_media_filename", "updated_on"])
+    return template
+
+
+def _header_component(template, event_key):
+    """The send-time header for a media template, or None for text/no header.
+    Raises WhatsAppError when the header can't be sent correctly."""
+    if template.header_type not in MEDIA_HEADER_TYPES:
+        return None
+    if template.header_type == MessageTemplate.HEADER_DOCUMENT and event_key in RECORD_DOCUMENT_EVENTS:
+        raise WhatsAppError(
+            "This template's document header needs the record's own PDF, which can't be attached automatically yet."
+        )
+    link = get_s3_file_url(template.header_media_key, expires_in=24 * 3600) if template.header_media_key else None
+    if not link:
+        raise WhatsAppError("This template's header file is missing. Upload it again on the template page.")
+    media = {"link": link}
+    if template.header_type == MessageTemplate.HEADER_DOCUMENT and template.header_media_filename:
+        media["filename"] = template.header_media_filename
+    return {"type": "header", "parameters": [{"type": template.header_type, template.header_type: media}]}
+
+
 # ---------------------------------------------------------------------------
 # Sending
 # ---------------------------------------------------------------------------
@@ -261,8 +360,16 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
         log.save(update_fields=["status", "error_message", "updated_on"])
         return log
 
+    try:
+        header = _header_component(template, event_key)
+    except WhatsAppError as exc:
+        log.status = MessageLog.STATUS_FAILED
+        log.error_message = str(exc)
+        log.save(update_fields=["status", "error_message", "updated_on"])
+        return log
+
     variables = resolve_variables(event_key, template.variable_map, record) if record else {}
-    components = []
+    components = [header] if header else []
     if variables:
         components.append({
             "type": "body",

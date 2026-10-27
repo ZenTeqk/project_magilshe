@@ -36,6 +36,10 @@ export type MessageTemplate = {
   header_type: HeaderType;
   header_text: string;
   header_media_url: string;
+  /** Set only by useUploadTemplateHeader. */
+  header_media_filename: string;
+  has_header_media: boolean;
+  header_media_preview_url: string | null;
   body: string;
   footer_text: string;
   buttons: TemplateButton[];
@@ -52,7 +56,8 @@ export type MessageTemplate = {
 export type EventCatalogue = {
   events: { value: string; label: string; group: string }[];
   auto_sendable_events: string[];
-  fields_by_event: Record<string, { value: string; label: string }[]>;
+  /** sample: a realistic value for the preview -- also what Meta's reviewers see. */
+  fields_by_event: Record<string, { value: string; label: string; sample: string }[]>;
 };
 
 export type MessageLog = {
@@ -80,6 +85,7 @@ export type WhatsAppSettings = {
   business_display_name: string;
   business_display_phone: string;
   has_app_secret: boolean;
+  app_id: string;
   auto_send_enabled: boolean;
   auto_send_events: string[];
   occasion_reminders_enabled: boolean;
@@ -135,6 +141,21 @@ export function useSubmitTemplate() {
   return useMutation({
     mutationFn: async (id: string | number) =>
       (await apiClient.post<MessageTemplate>(endpoints.whatsapp.submitTemplate(id))).data,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp", "templates"] });
+      queryClient.setQueryData(templateKey(data.id), data);
+    },
+  });
+}
+
+export function useUploadTemplateHeader() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string | number; file: File }) => {
+      const body = new FormData();
+      body.append("file", file);
+      return (await apiClient.post<MessageTemplate>(endpoints.whatsapp.uploadTemplateHeader(id), body)).data;
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["whatsapp", "templates"] });
       queryClient.setQueryData(templateKey(data.id), data);

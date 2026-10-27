@@ -527,3 +527,179 @@ class WebhookSecurityAndOptOutTests(TestCase):
         settings_row = WhatsAppSettings.load()
         self.assertEqual(settings_row.app_secret, "s3cret")
         self.assertEqual(settings_row.occasion_reminder_types, ["birthday"])
+
+
+class MediaHeaderTests(TestCase):
+    """Image/video/document headers: the sample file goes to Meta (for
+    review) and to S3 (for sending), and every send hands Meta that file."""
+
+    def setUp(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.file = lambda name="banner.png", content_type="image/png", size=10: SimpleUploadedFile(
+            name, b"x" * size, content_type=content_type,
+        )
+        self.admin = get_user_model().objects.create_superuser(username="media-admin", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def upload(self, template, file):
+        return self.client.post(f"/whatsapp/templates/{template.id}/upload-header/", {"file": file}, format="multipart")
+
+    @patch("whatsapp.services.put_image_to_s3", return_value=True)
+    @patch("whatsapp.services._graph_request")
+    def test_upload_sends_file_to_meta_and_s3_and_unlocks_submit(self, mock_graph, mock_s3):
+        connect(app_id="app-9")
+        mock_graph.side_effect = [{"id": "upload:abc"}, {"h": "handle-123"}]
+        template = make_template(name="occasion_img", header_type=MessageTemplate.HEADER_IMAGE)
+
+        response = self.upload(template, self.file())
+
+        self.assertEqual(response.status_code, 200, response.data)
+        start, transfer = mock_graph.call_args_list
+        self.assertEqual(start.args[1], "app-9/uploads")
+        self.assertEqual(start.kwargs["params"], {"file_name": "banner.png", "file_length": 10, "file_type": "image/png"})
+        self.assertEqual(transfer.args[1], "upload:abc")
+        self.assertEqual(transfer.kwargs["headers"], {"Authorization": "OAuth token", "file_offset": "0"})
+        template.refresh_from_db()
+        self.assertEqual(template.header_media_handle, "handle-123")
+        self.assertEqual(template.header_media_filename, "banner.png")
+        self.assertTrue(template.header_media_key.startswith(f"cakery/whatsapp/templates/{template.id}/"))
+        self.assertTrue(template.header_media_key.endswith(".png"))
+        self.assertEqual(mock_s3.call_args.args[1], template.header_media_key)
+        self.assertTrue(response.data["has_header_media"])
+
+        # The submit payload now carries Meta's handle as the header example.
+        mock_graph.side_effect = None
+        mock_graph.return_value = {"id": "tpl-1"}
+        submit_template_for_review(template)
+        header = mock_graph.call_args.kwargs["json"]["components"][0]
+        self.assertEqual(header, {"type": "HEADER", "format": "IMAGE", "example": {"header_handle": ["handle-123"]}})
+
+    @patch("whatsapp.services._graph_request")
+    def test_wrong_file_type_or_size_is_refused_before_meta(self, mock_graph):
+        connect(app_id="app-9")
+        image = make_template(name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE)
+        document = make_template(name="doc_tpl", header_type=MessageTemplate.HEADER_DOCUMENT)
+
+        self.assertEqual(self.upload(image, self.file("menu.pdf", "application/pdf")).status_code, 400)
+        self.assertEqual(self.upload(document, self.file("banner.png")).status_code, 400)
+        too_big = self.upload(image, self.file(size=5 * 1024 * 1024 + 1))
+        self.assertEqual(too_big.status_code, 400)
+        self.assertIn("5 MB", too_big.data["message"])
+        mock_graph.assert_not_called()
+
+    @patch("whatsapp.services._graph_request")
+    def test_upload_needs_app_id_media_header_and_an_editable_template(self, mock_graph):
+        connect()
+        image = make_template(name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE)
+        response = self.upload(image, self.file())
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("App ID", response.data["message"])
+
+        connect(app_id="app-9")
+        text = make_template(name="text_tpl", header_type=MessageTemplate.HEADER_TEXT, header_text="Hi")
+        self.assertEqual(self.upload(text, self.file()).status_code, 400)
+        approved = make_template(name="live_tpl", header_type=MessageTemplate.HEADER_IMAGE, status=MessageTemplate.STATUS_APPROVED)
+        self.assertEqual(self.upload(approved, self.file()).status_code, 400)
+        mock_graph.assert_not_called()
+
+    def test_changing_header_type_drops_the_uploaded_file(self):
+        template = make_template(
+            name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE,
+            header_media_handle="h", header_media_key="k.png", header_media_filename="banner.png",
+        )
+        self.client.patch(f"/whatsapp/templates/{template.id}/", {"body": "Hi {{1}}, quotation {{2}}."}, format="json")
+        template.refresh_from_db()
+        self.assertEqual(template.header_media_handle, "h")  # unrelated edit keeps it
+
+        self.client.patch(f"/whatsapp/templates/{template.id}/", {"header_type": "document"}, format="json")
+        template.refresh_from_db()
+        self.assertEqual((template.header_media_handle, template.header_media_key, template.header_media_filename), ("", "", ""))
+
+    def test_duplicate_keeps_the_header_file(self):
+        template = make_template(
+            name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE, status=MessageTemplate.STATUS_APPROVED,
+            header_media_handle="h", header_media_key="k.png", header_media_filename="banner.png",
+        )
+        copy = MessageTemplate.objects.get(pk=self.client.post(f"/whatsapp/templates/{template.id}/duplicate/").data["id"])
+        self.assertEqual((copy.header_media_handle, copy.header_media_key, copy.header_media_filename), ("h", "k.png", "banner.png"))
+
+    @patch("whatsapp.services.get_s3_file_url", return_value="https://s3.test/k.png?sig=1")
+    @patch("whatsapp.services._graph_request", return_value={"messages": [{"id": "wamid.9"}]})
+    def test_image_send_carries_the_header_file_ahead_of_the_body(self, mock_graph, _url):
+        connect()
+        quotation = Quotation.objects.create(customer_name="Priya", phone="9876543210", quotation_no="Q/1", quantity=1, rate="500")
+        template = make_template(
+            name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE, status=MessageTemplate.STATUS_APPROVED,
+            header_media_handle="h", header_media_key="k.png",
+        )
+        log = send_template_message(template=template, record=quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT)
+        header, body = mock_graph.call_args.kwargs["json"]["template"]["components"]
+        self.assertEqual(header, {"type": "header", "parameters": [{"type": "image", "image": {"link": "https://s3.test/k.png?sig=1"}}]})
+        self.assertEqual([p["text"] for p in body["parameters"]], ["Priya", "Q/1"])
+
+    @patch("whatsapp.services.get_s3_file_url", return_value="https://s3.test/menu.pdf?sig=1")
+    @patch("whatsapp.services._graph_request", return_value={"messages": [{"id": "wamid.9"}]})
+    def test_document_send_names_the_file(self, mock_graph, _url):
+        connect()
+        template = make_template(
+            name="menu_tpl", header_type=MessageTemplate.HEADER_DOCUMENT, status=MessageTemplate.STATUS_APPROVED,
+            event="", variable_map={}, body="Here is our menu.",
+            header_media_handle="h", header_media_key="menu.pdf", header_media_filename="Menu.pdf",
+        )
+        log = send_template_message(template=template, record=None, event_key="", recipient_phone="9876543210")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT)
+        header = mock_graph.call_args.kwargs["json"]["template"]["components"][0]
+        self.assertEqual(header["parameters"][0]["document"], {"link": "https://s3.test/menu.pdf?sig=1", "filename": "Menu.pdf"})
+
+    @patch("whatsapp.services._graph_request")
+    def test_document_header_on_a_quotation_or_invoice_event_is_not_sent_with_the_sample(self, mock_graph):
+        connect()
+        quotation = Quotation.objects.create(customer_name="Priya", phone="9876543210", quotation_no="Q/1", quantity=1, rate="500")
+        template = make_template(
+            name="quote_doc", header_type=MessageTemplate.HEADER_DOCUMENT, status=MessageTemplate.STATUS_APPROVED,
+            header_media_handle="h", header_media_key="sample.pdf",
+        )
+        log = send_template_message(template=template, record=quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_FAILED)
+        self.assertIn("record's own PDF", log.error_message)
+        mock_graph.assert_not_called()
+
+    @patch("whatsapp.services._graph_request")
+    def test_media_template_without_its_file_fails_with_a_clear_reason(self, mock_graph):
+        connect()
+        template = make_template(
+            name="img_tpl", header_type=MessageTemplate.HEADER_IMAGE, status=MessageTemplate.STATUS_APPROVED,
+            event="", variable_map={}, body="Hello there.",
+        )
+        log = send_template_message(template=template, record=None, event_key="", recipient_phone="9876543210")
+        self.assertEqual(log.status, MessageLog.STATUS_FAILED)
+        self.assertIn("header file is missing", log.error_message)
+        mock_graph.assert_not_called()
+
+    def test_settings_store_the_app_id(self):
+        self.client.patch("/whatsapp/settings/", {"app_id": "app-9"}, format="json")
+        self.assertEqual(WhatsAppSettings.load().app_id, "app-9")
+        self.assertEqual(self.client.get("/whatsapp/settings/").data["app_id"], "app-9")
+
+
+class TemplateExampleValueTests(TestCase):
+    @patch("whatsapp.services._graph_request", return_value={"id": "tpl-1"})
+    def test_submit_sends_realistic_samples_for_mapped_fields(self, mock_graph):
+        connect()
+        template = make_template(
+            body="Hi {{1}}, quotation {{2}} totals {{3}}.",
+            variable_map={"1": "customer_name", "2": "quotation_no"},  # {{3}} left unmapped
+        )
+        submit_template_for_review(template)
+        body = mock_graph.call_args.kwargs["json"]["components"][0]
+        self.assertEqual(body["example"], {"body_text": [["Priya", "QT-0012", "example3"]]})
+
+    def test_event_catalogue_offers_a_sample_for_every_field(self):
+        admin = get_user_model().objects.create_superuser(username="cat-admin", password="x")
+        client = APIClient()
+        client.force_authenticate(admin)
+        fields = client.get("/whatsapp/event-catalogue/").data["fields_by_event"]
+        missing = [(event, f["value"]) for event, entries in fields.items() for f in entries if not f["sample"]]
+        self.assertEqual(missing, [])

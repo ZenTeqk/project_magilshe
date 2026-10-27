@@ -63,7 +63,7 @@ def required_permission(request, view):
         "record_payment": "record_payment",
         "damage_images": "process", "delete_damage_image": "process",
         "import_file": "import", "cancel_order": "cancel", "partial_update": "edit", "update": "edit",
-        "submit": "process", "duplicate": "create",
+        "submit": "process", "duplicate": "create", "upload_header": "edit",
     }
     permission_action = custom.get(action, method_action)
     if path.startswith("whatsapp/send"):

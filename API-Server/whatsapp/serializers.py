@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from cakery.common import get_s3_file_url
 from crm.recurring_events import occasion_key
 
 from .event_fields import FIELDS_FOR_EVENT
@@ -22,7 +23,7 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         model = WhatsAppSettings
         fields = (
             "id", "waba_id", "phone_number_id", "access_token", "has_access_token",
-            "webhook_verify_token", "business_display_name", "business_display_phone",
+            "webhook_verify_token", "app_id", "business_display_name", "business_display_phone",
             "app_secret", "has_app_secret", "auto_send_enabled", "auto_send_events",
             "occasion_reminders_enabled", "occasion_reminder_mode", "occasion_reminder_types",
             "is_connected", "updated_on",
@@ -53,14 +54,29 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
 
 
 class MessageTemplateSerializer(serializers.ModelSerializer):
+    # The header file is set only through the upload-header action, never
+    # by a plain save; these just tell the editor what's there.
+    has_header_media = serializers.SerializerMethodField()
+    header_media_preview_url = serializers.SerializerMethodField()
+
     class Meta:
         model = MessageTemplate
         fields = (
             "id", "name", "category", "language", "status", "header_type", "header_text",
-            "header_media_url", "body", "footer_text", "buttons", "event", "variable_map",
+            "header_media_url", "header_media_filename", "has_header_media", "header_media_preview_url",
+            "body", "footer_text", "buttons", "event", "variable_map",
             "rejection_reason", "submitted_at", "reviewed_at", "created_on", "updated_on", "is_editable",
         )
-        read_only_fields = ("id", "status", "rejection_reason", "submitted_at", "reviewed_at", "created_on", "updated_on", "is_editable")
+        read_only_fields = (
+            "id", "status", "header_media_filename", "rejection_reason", "submitted_at", "reviewed_at",
+            "created_on", "updated_on", "is_editable",
+        )
+
+    def get_has_header_media(self, obj):
+        return bool(obj.header_media_handle and obj.header_media_key)
+
+    def get_header_media_preview_url(self, obj):
+        return get_s3_file_url(obj.header_media_key) if obj.header_media_key else None
 
     def validate(self, attrs):
         if self.instance and not self.instance.is_editable:
@@ -95,6 +111,16 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # A file uploaded for one header type is no good for another (an
+        # image handle can't stand in for a document), so switching drops it.
+        new_type = validated_data.get("header_type", instance.header_type)
+        if new_type != instance.header_type:
+            instance.header_media_handle = ""
+            instance.header_media_key = ""
+            instance.header_media_filename = ""
+        return super().update(instance, validated_data)
 
 
 class MessageLogSerializer(serializers.ModelSerializer):

@@ -66,6 +66,10 @@ class WhatsAppSettings(models.Model):
     # Meta App Secret. When set, webhook calls must carry a matching
     # X-Hub-Signature-256, so only Meta can update template/message status.
     app_secret = models.CharField(max_length=128, blank=True)
+    # Meta App ID. Only needed for image/video/document templates: Meta's
+    # Resumable Upload API, which takes the header's sample file, is
+    # addressed by app rather than by WhatsApp account.
+    app_id = models.CharField("Meta App ID", max_length=64, blank=True)
     business_display_name = models.CharField(max_length=150, blank=True)
     business_display_phone = models.CharField(max_length=20, blank=True)
     # Master switch. Off = nothing auto-sends, whatever auto_send_events says.
@@ -153,6 +157,13 @@ class MessageTemplate(models.Model):
     # as example.header_handle before Meta will accept a media header. Opaque
     # and observed well past 255 chars in practice, so left unbounded.
     header_media_handle = models.TextField(blank=True)
+    # The same header file, kept in our own S3 bucket. Meta's handle is only
+    # good for review; every send has to hand Meta the file again, which it
+    # fetches from a short-lived link to this key.
+    header_media_key = models.CharField(max_length=300, blank=True)
+    # Original file name, shown in the editor and used as the document name
+    # the customer sees for document headers.
+    header_media_filename = models.CharField(max_length=200, blank=True)
     body = models.TextField()
     footer_text = models.CharField(max_length=60, blank=True)
     # [{"type": "URL"|"QUICK_REPLY"|"PHONE_NUMBER", "text": str, "url"?: str, "phone_number"?: str}]
