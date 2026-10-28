@@ -47,8 +47,11 @@ function WhatsAppSettingsPage() {
       await saveSettings.mutateAsync(payload);
       toast.success("WhatsApp settings saved");
       setForm((f) => ({ ...f, access_token: "", app_secret: "" }));
-    } catch {
-      toast.error("Could not save these settings");
+    } catch (err: unknown) {
+      // The server checks a new token with Meta and says why it was refused.
+      const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      const reason = data && Object.values(data).flat().map(String).join(" ");
+      toast.error(reason || "Could not save these settings", { duration: 12000 });
     }
   };
 

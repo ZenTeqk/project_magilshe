@@ -175,9 +175,21 @@ class SendMessageTests(TestCase):
         self._enable_auto_send("quotation_sent")
         make_template(name="quotation_sent_a", status=MessageTemplate.STATUS_APPROVED)
         make_template(name="quotation_sent_b", status=MessageTemplate.STATUS_APPROVED)
+        with patch("whatsapp.services._graph_request") as mock_graph, self.captureOnCommitCallbacks(execute=True):
+            trigger_event("quotation_sent", self.quotation)
+        mock_graph.assert_not_called()
+        log = MessageLog.objects.get()
+        self.assertEqual((log.status, log.phone, log.source_label), (MessageLog.STATUS_FAILED, "9876543210", "Q/1"))
+        self.assertIn("2 Active templates", log.error_message)
+
+    def test_opted_in_event_without_an_active_template_is_logged_not_dropped(self):
+        self._enable_auto_send("quotation_sent")
+        make_template()  # Draft only
         with self.captureOnCommitCallbacks(execute=True):
             trigger_event("quotation_sent", self.quotation)
-        self.assertEqual(MessageLog.objects.count(), 0)
+        log = MessageLog.objects.get()
+        self.assertEqual(log.status, MessageLog.STATUS_FAILED)
+        self.assertIn("no Active template", log.error_message)
 
     def test_manual_only_events_never_auto_send(self):
         self._enable_auto_send("follow_up", "payment_reminder")
@@ -250,6 +262,49 @@ class CRMEventTriggerIntegrationTests(TestCase):
             "amount": "200", "payment_method": "Cash", "payment_date": timezone.localdate().isoformat(),
         })
         self.assertEqual(self.sent("quotation_advance_received"), 1)
+
+    def test_document_templates_attach_each_customers_pdf_end_to_end(self):
+        """Send -> record advance -> confirm -> invoice, through the real
+        buttons, with document templates: each message carries its own PDF."""
+        connect()
+        for event in ("quotation_sent", "quotation_advance_received", "invoice_generated"):
+            make_template(
+                name=f"{event}_doc", event=event, header_type=MessageTemplate.HEADER_DOCUMENT,
+                status=MessageTemplate.STATUS_APPROVED, body="Hi {{1}}, your document is attached.",
+                variable_map={"1": "customer_name"}, header_media_handle="h", header_media_key="sample.pdf",
+            )
+        quotation = self.make_quotation(status="Draft", quotation_no="QT-55")
+        uploads = []
+
+        def meta(method, path, *args, **kwargs):
+            if path.endswith("/media"):
+                uploads.append(kwargs["files"]["file"][0])
+                return {"id": f"media-{len(uploads)}"}
+            return {"messages": [{"id": f"wamid.{len(uploads)}"}]}
+
+        with patch("whatsapp.services._graph_request", side_effect=meta):
+            self.post(f"/crm/quotations/{quotation.id}/workflow-action/", {"action": "send"})
+            self.post(f"/crm/quotations/{quotation.id}/workflow-action/", {"action": "accept"})
+            self.post(f"/crm/quotations/{quotation.id}/record-payment/", {
+                "amount": "200", "payment_method": "Cash", "payment_date": timezone.localdate().isoformat(),
+            })
+            order_id = self.post(f"/crm/quotations/{quotation.id}/confirm-order/").data["data"]["id"]
+            CRMOrder.objects.filter(pk=order_id).update(status="Ready")
+            self.post(f"/crm/orders/{order_id}/generate-invoice/")
+
+        payment = quotation.payments.get()
+        invoice = CRMInvoice.objects.get(order_id=order_id)
+        self.assertEqual(uploads, [
+            "Quotation-QT-55.pdf", f"Receipt-QT-55-R{payment.pk}.pdf", f"Invoice-{invoice.invoice_no.replace('/', '-')}.pdf",
+        ])
+        self.assertEqual(
+            sorted(MessageLog.objects.filter(status="sent").values_list("event", flat=True)),
+            sorted(["quotation_sent", "quotation_advance_received", "invoice_generated"]),
+        )
+        # Events turned on in Settings but without a template are logged, not silently dropped.
+        skipped = MessageLog.objects.exclude(status="sent")
+        self.assertEqual(sorted(skipped.values_list("event", flat=True)), ["order_confirmed", "quotation_accepted"])
+        self.assertTrue(all("no Active template" in log.error_message for log in skipped))
 
     def test_order_processing_ready_and_cancel_buttons(self):
         for event in ("order_processing", "order_ready", "order_cancelled"):
@@ -653,18 +708,83 @@ class MediaHeaderTests(TestCase):
         header = mock_graph.call_args.kwargs["json"]["template"]["components"][0]
         self.assertEqual(header["parameters"][0]["document"], {"link": "https://s3.test/menu.pdf?sig=1", "filename": "Menu.pdf"})
 
-    @patch("whatsapp.services._graph_request")
-    def test_document_header_on_a_quotation_or_invoice_event_is_not_sent_with_the_sample(self, mock_graph):
-        connect()
-        quotation = Quotation.objects.create(customer_name="Priya", phone="9876543210", quotation_no="Q/1", quantity=1, rate="500")
-        template = make_template(
-            name="quote_doc", header_type=MessageTemplate.HEADER_DOCUMENT, status=MessageTemplate.STATUS_APPROVED,
-            header_media_handle="h", header_media_key="sample.pdf",
+    def _doc_template(self, event):
+        return make_template(
+            name=f"{event}_doc", event=event, header_type=MessageTemplate.HEADER_DOCUMENT,
+            status=MessageTemplate.STATUS_APPROVED, body="Hi {{1}}, here is your document.",
+            variable_map={"1": "customer_name"}, header_media_handle="h", header_media_key="sample.pdf",
+            header_media_filename="Sample.pdf",
         )
-        log = send_template_message(template=template, record=quotation, event_key="quotation_sent")
+
+    def _send_capturing(self, template, record, event_key):
+        """Runs a send with Meta mocked; returns (log, media upload call, message payload)."""
+        with patch("whatsapp.services._graph_request") as mock_graph:
+            mock_graph.side_effect = lambda method, path, *a, **kw: (
+                {"id": "media-77"} if path.endswith("/media") else {"messages": [{"id": "wamid.1"}]}
+            )
+            log = send_template_message(template=template, record=record, event_key=event_key)
+        upload = next((c for c in mock_graph.call_args_list if c.args[1].endswith("/media")), None)
+        message = next((c.kwargs["json"] for c in mock_graph.call_args_list if c.args[1].endswith("/messages")), None)
+        return log, upload, message
+
+    def test_quotation_document_is_the_customers_own_pdf(self):
+        connect()
+        quotation = Quotation.objects.create(
+            customer_name="Priya", phone="9876543210", quotation_no="Q/7", quantity=2, rate="500", total_amount="1000",
+        )
+        log, upload, message = self._send_capturing(self._doc_template("quotation_sent"), quotation, "quotation_sent")
+
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        filename, data, content_type = upload.kwargs["files"]["file"]
+        self.assertEqual((filename, content_type), ("Quotation-Q-7.pdf", "application/pdf"))
+        self.assertTrue(data.startswith(b"%PDF"))
+        self.assertEqual(upload.kwargs["data"], {"messaging_product": "whatsapp", "type": "application/pdf"})
+        header, body = message["template"]["components"]
+        self.assertEqual(header["parameters"][0]["document"], {"id": "media-77", "filename": "Quotation-Q-7.pdf"})
+        self.assertEqual(body["parameters"][0]["text"], "Priya")
+
+    def test_advance_sends_the_latest_payment_receipt_and_invoice_sends_the_invoice(self):
+        import datetime
+        from crm.models import QuotationPayment
+        connect()
+        quotation = Quotation.objects.create(
+            customer_name="Priya", phone="9876543210", quotation_no="Q/8", quantity=1, rate="900", total_amount="900",
+            advance_received=True, advance_amount="400", status="Advance Received",
+        )
+        payment = QuotationPayment.objects.create(
+            quotation=quotation, amount="400", payment_date=datetime.date(2026, 10, 28), payment_method="UPI",
+        )
+        log, upload, _ = self._send_capturing(self._doc_template("quotation_advance_received"), quotation, "quotation_advance_received")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        self.assertEqual(upload.kwargs["files"]["file"][0], f"Receipt-Q-8-R{payment.pk}.pdf")
+
+        order = CRMOrder.objects.create(quotation=quotation, customer_name="Priya", phone="9876543210", total_amount="900", advance_paid="400")
+        invoice = CRMInvoice.objects.create(
+            order=order, customer_name="Priya", phone="9876543210", total_amount="900", amount_paid="400", balance_amount="500",
+        )
+        log, upload, _ = self._send_capturing(self._doc_template("invoice_generated"), invoice, "invoice_generated")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        self.assertEqual(upload.kwargs["files"]["file"][0], f"Invoice-{invoice.invoice_no.replace('/', '-')}.pdf")
+
+    def test_pdf_failure_is_logged_and_nothing_is_sent(self):
+        connect()
+        quotation = Quotation.objects.create(customer_name="Priya", phone="9876543210", quotation_no="Q/9", quantity=1, rate="500")
+        with patch("crm.pdf.documents.build_quotation_pdf", side_effect=RuntimeError("disk full")):
+            log, upload, message = self._send_capturing(self._doc_template("quotation_sent"), quotation, "quotation_sent")
         self.assertEqual(log.status, MessageLog.STATUS_FAILED)
-        self.assertIn("record's own PDF", log.error_message)
-        mock_graph.assert_not_called()
+        self.assertIn("Could not build the PDF", log.error_message)
+        self.assertIsNone(upload)
+        self.assertIsNone(message)
+
+    def test_empty_field_value_is_sent_as_a_dash_not_blank(self):
+        connect()
+        quotation = Quotation.objects.create(customer_name="Priya", phone="9876543210", quotation_no="Q/10", quantity=1, rate="500")
+        template = make_template(
+            name="with_event_date", status=MessageTemplate.STATUS_APPROVED, body="Hi {{1}}, event on {{2}}.",
+            variable_map={"1": "customer_name", "2": "event_date"},
+        )
+        _, _, message = self._send_capturing(template, quotation, "quotation_sent")
+        self.assertEqual([p["text"] for p in message["template"]["components"][0]["parameters"]], ["Priya", "-"])
 
     @patch("whatsapp.services._graph_request")
     def test_media_template_without_its_file_fails_with_a_clear_reason(self, mock_graph):
@@ -703,3 +823,66 @@ class TemplateExampleValueTests(TestCase):
         fields = client.get("/whatsapp/event-catalogue/").data["fields_by_event"]
         missing = [(event, f["value"]) for event, entries in fields.items() for f in entries if not f["sample"]]
         self.assertEqual(missing, [])
+
+
+class AccessTokenTests(TestCase):
+    """"Invalid OAuth access token - Cannot parse access token" on Submit:
+    a bad token paste used to be saved unchecked and only fail there."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(get_user_model().objects.create_superuser(username="tok-admin", password="x"))
+
+    def meta_error(self, code, message, status=401):
+        from .services import WhatsAppAPIError
+        return WhatsAppAPIError(message, status_code=status, response_body={"error": {"code": code, "message": message}})
+
+    def test_pasted_prefixes_quotes_and_line_breaks_are_cleaned(self):
+        from .services import clean_access_token
+        self.assertEqual(clean_access_token('  "Bearer EAAB12\n34cd" '), "EAAB1234cd")
+        self.assertEqual(clean_access_token("OAuth EAAxyz"), "EAAxyz")
+        self.assertEqual(clean_access_token("EAA abc\ndef"), "EAAabcdef")
+
+    @patch("whatsapp.services._graph_request", return_value={"display_phone_number": "+91 98765 43210", "verified_name": "Magilshe Cakery"})
+    def test_new_token_is_checked_with_meta_and_fills_the_business_details(self, mock_graph):
+        response = self.client.patch(
+            "/whatsapp/settings/", {"waba_id": "waba-1", "phone_number_id": "phone-1", "access_token": "Bearer EAAgood"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(mock_graph.call_args.args[1], "phone-1")
+        self.assertEqual(mock_graph.call_args.args[2].access_token, "EAAgood")
+        saved = WhatsAppSettings.load()
+        self.assertEqual(saved.access_token, "EAAgood")
+        self.assertEqual(saved.business_display_phone, "+91 98765 43210")
+        self.assertEqual(saved.business_display_name, "Magilshe Cakery")
+
+    @patch("whatsapp.services._graph_request")
+    def test_token_meta_cannot_parse_is_refused_and_not_saved(self, mock_graph):
+        connect(access_token="EAAold")
+        mock_graph.side_effect = self.meta_error(190, "Invalid OAuth access token - Cannot parse access token")
+        response = self.client.patch("/whatsapp/settings/", {"access_token": "not-a-token"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("did not accept this access token", str(response.data["access_token"]))
+        self.assertEqual(WhatsAppSettings.load().access_token, "EAAold")
+
+    @patch("whatsapp.services._graph_request")
+    def test_unchanged_connection_and_other_settings_dont_call_meta(self, mock_graph):
+        connect()
+        response = self.client.patch(
+            "/whatsapp/settings/", {"waba_id": "waba-1", "phone_number_id": "phone-1", "access_token": "", "auto_send_enabled": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_graph.assert_not_called()
+
+    @patch("whatsapp.services.requests.request")
+    def test_token_error_on_submit_says_where_to_fix_it(self, mock_request):
+        connect()
+        mock_request.return_value.status_code = 401
+        mock_request.return_value.json.return_value = {"error": {"code": 190, "message": "Invalid OAuth access token - Cannot parse access token"}}
+        template = make_template()
+        with self.assertRaises(Exception) as ctx:
+            submit_template_for_review(template)
+        self.assertIn("access token saved in WhatsApp Settings", str(ctx.exception))
+        template.refresh_from_db()
+        self.assertEqual(template.status, MessageTemplate.STATUS_PENDING)  # infra error, not a verdict

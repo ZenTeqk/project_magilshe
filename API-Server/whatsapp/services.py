@@ -36,6 +36,8 @@ TEMPLATE_FOOTER_EMOJI_RE = re.compile(
     "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF]"
 )
 MAX_TEMPLATE_BUTTONS = 10
+# Graph API's code for an invalid, expired or unparseable access token.
+TOKEN_ERROR_CODE = 190
 MEDIA_HEADER_TYPES = (MessageTemplate.HEADER_IMAGE, MessageTemplate.HEADER_VIDEO, MessageTemplate.HEADER_DOCUMENT)
 
 _MB = 1024 * 1024
@@ -46,10 +48,9 @@ MEDIA_HEADER_RULES = {
     MessageTemplate.HEADER_DOCUMENT: (("application/pdf",), 16 * _MB, "a PDF up to 16 MB"),
 }
 
-# Events whose record has a PDF of its own (the quotation, the invoice...).
-# A document header on these has to carry that record's PDF, which isn't
-# generated server-side yet -- sending the uploaded sample instead would hand
-# every customer the same wrong document, so those sends are refused.
+# Events whose record has a PDF of its own (the quotation, the receipt, the
+# invoice). A document header on these carries that customer's own PDF, built
+# at send time; the uploaded file is only Meta's review sample.
 RECORD_DOCUMENT_EVENTS = tuple(
     event for event, source in SOURCE_MODEL_FOR_EVENT.items() if source in ("quotation", "crminvoice")
 )
@@ -104,9 +105,47 @@ def _graph_request(method, path, settings_row, **kwargs):
             body = response.json()
         except ValueError:
             pass
-        message = (body or {}).get("error", {}).get("message") or response.text
+        error = (body or {}).get("error", {})
+        message = error.get("message") or response.text
+        if error.get("code") == TOKEN_ERROR_CODE:
+            message = (
+                f"WhatsApp rejected the access token saved in WhatsApp Settings ({message}). "
+                "Paste a valid access token there and save again."
+            )
         raise WhatsAppAPIError(message, status_code=response.status_code, response_body=body)
     return response.json() if response.content else {}
+
+
+def clean_access_token(value):
+    """What people actually paste: "Bearer EAA...", quoted, or wrapped across
+    lines. Meta tokens never contain spaces or quotes, so all of that goes."""
+    token = (value or "").strip().strip("\"'")
+    token = re.sub(r"^(bearer|oauth)\s+", "", token, flags=re.IGNORECASE)
+    return re.sub(r"\s+", "", token).strip("\"'")
+
+
+def verify_connection(*, phone_number_id, access_token):
+    """Asks Meta for the phone number with this token, so a wrong token or
+    phone number ID is caught on Save instead of on the first Submit/send.
+    Returns {"display_phone_number": ..., "verified_name": ...}."""
+    probe = WhatsAppSettings(waba_id="probe", phone_number_id=phone_number_id, access_token=access_token)
+    try:
+        return _graph_request(
+            "GET", phone_number_id, probe, params={"fields": "display_phone_number,verified_name"},
+        )
+    except WhatsAppAPIError as exc:
+        error = (exc.response_body or {}).get("error", {})
+        if error.get("code") == TOKEN_ERROR_CODE:
+            raise WhatsAppError(
+                f"Meta did not accept this access token ({error.get('message')}). Copy the whole token -- it "
+                "starts with EAA -- from Meta Business Settings > System users, or WhatsApp > API Setup."
+            ) from exc
+        if exc.status_code in (400, 404):
+            raise WhatsAppError(
+                f"Meta could not find Phone Number ID {phone_number_id} with this token ({error.get('message') or exc}). "
+                "Check the Phone Number ID, and that the token has access to this WhatsApp account."
+            ) from exc
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -301,15 +340,49 @@ def upload_header_media(template, uploaded_file):
     return template
 
 
-def _header_component(template, event_key):
+def record_document(event_key, record):
+    """(pdf bytes, file name) for the customer's own document on this event:
+    the payment receipt for an advance, the invoice for invoice events, the
+    quotation otherwise."""
+    from crm.pdf.documents import build_invoice_pdf, build_quotation_pdf, build_receipt_pdf, receipt_filename
+
+    if SOURCE_MODEL_FOR_EVENT.get(event_key) == "crminvoice":
+        return build_invoice_pdf(record), f"Invoice-{record.invoice_no}.pdf".replace("/", "-")
+    if event_key == "quotation_advance_received":
+        payment = record.payments.order_by("-payment_date", "-created_on", "-id").first()
+        if payment:
+            return build_receipt_pdf(record, payment), receipt_filename(record, payment)
+    return build_quotation_pdf(record), f"Quotation-{record.quotation_no}.pdf".replace("/", "-")
+
+
+def _upload_message_media(settings_row, data, filename, content_type):
+    """Uploads a file to WhatsApp's media store for sending; returns its id.
+    Used for customer documents so they aren't left on a shareable link."""
+    result = _graph_request(
+        "POST", f"{settings_row.phone_number_id}/media", settings_row,
+        data={"messaging_product": "whatsapp", "type": content_type},
+        files={"file": (filename, data, content_type)},
+    )
+    if not result.get("id"):
+        raise WhatsAppAPIError("WhatsApp did not return a media id for the document.")
+    return result["id"]
+
+
+def _header_component(template, event_key, record, settings_row):
     """The send-time header for a media template, or None for text/no header.
-    Raises WhatsAppError when the header can't be sent correctly."""
+    Raises WhatsAppError/WhatsAppAPIError when the header can't be sent."""
     if template.header_type not in MEDIA_HEADER_TYPES:
         return None
-    if template.header_type == MessageTemplate.HEADER_DOCUMENT and event_key in RECORD_DOCUMENT_EVENTS:
-        raise WhatsAppError(
-            "This template's document header needs the record's own PDF, which can't be attached automatically yet."
-        )
+    if template.header_type == MessageTemplate.HEADER_DOCUMENT and event_key in RECORD_DOCUMENT_EVENTS and record:
+        try:
+            data, filename = record_document(event_key, record)
+        except Exception as exc:
+            logger.exception("Could not build the %s PDF for %s", event_key, getattr(record, "pk", None))
+            raise WhatsAppError(f"Could not build the PDF to attach: {exc}") from exc
+        media_id = _upload_message_media(settings_row, data, filename, "application/pdf")
+        return {"type": "header", "parameters": [
+            {"type": "document", "document": {"id": media_id, "filename": filename}},
+        ]}
     link = get_s3_file_url(template.header_media_key, expires_in=24 * 3600) if template.header_media_key else None
     if not link:
         raise WhatsAppError("This template's header file is missing. Upload it again on the template page.")
@@ -361,8 +434,8 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
         return log
 
     try:
-        header = _header_component(template, event_key)
-    except WhatsAppError as exc:
+        header = _header_component(template, event_key, record, settings_row)
+    except (WhatsAppError, WhatsAppAPIError) as exc:
         log.status = MessageLog.STATUS_FAILED
         log.error_message = str(exc)
         log.save(update_fields=["status", "error_message", "updated_on"])
@@ -373,7 +446,8 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
     if variables:
         components.append({
             "type": "body",
-            "parameters": [{"type": "text", "text": variables.get(str(i), "")} for i in range(1, len(variables) + 1)],
+            # Meta rejects the whole message if any value is empty (e.g. no delivery date yet).
+            "parameters": [{"type": "text", "text": variables.get(str(i)) or "-"} for i in range(1, len(variables) + 1)],
         })
 
     try:
@@ -397,6 +471,16 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
     return log
 
 
+def _log_skipped(event_key, record, reason):
+    MessageLog.objects.create(
+        event=event_key, status=MessageLog.STATUS_FAILED, error_message=reason,
+        customer_name=CUSTOMER_NAME_FOR_EVENT[event_key](record) or "",
+        phone=RECIPIENT_FOR_EVENT[event_key](record) or "",
+        source_model=SOURCE_MODEL_FOR_EVENT.get(event_key, ""), source_id=record.pk,
+        source_label=LABEL_FOR_EVENT[event_key](record) or "",
+    )
+
+
 def trigger_event(event_key, record):
     """Called from crm/views.py at the moment a CRM status actually changes.
 
@@ -404,6 +488,8 @@ def trigger_event(event_key, record):
     Settings, and exactly one Active template is assigned to it. More than
     one Active template for the same event is intentionally not auto-sent --
     that's ambiguous, and is left for a manual Send with a template picker.
+    Either way a skipped send is written to the Message Log with the reason,
+    so "it never arrived" always has an answer there.
 
     The send is deferred until the surrounding transaction commits, so a
     customer is never messaged about a status change that then rolled back,
@@ -417,12 +503,18 @@ def trigger_event(event_key, record):
     if not settings_row.auto_send_enabled or event_key not in (settings_row.auto_send_events or []):
         return
     templates = list(MessageTemplate.objects.filter(event=event_key, status=MessageTemplate.STATUS_APPROVED))
-    if len(templates) != 1:
-        return
 
     def send():
         try:
-            send_template_message(template=templates[0], record=record, event_key=event_key, user=None)
+            if len(templates) == 1:
+                send_template_message(template=templates[0], record=record, event_key=event_key, user=None)
+            elif not templates:
+                _log_skipped(event_key, record, "Auto-send is on for this event, but no Active template is assigned to it.")
+            else:
+                _log_skipped(event_key, record, (
+                    f"{len(templates)} Active templates are assigned to this event; auto-send needs exactly one. "
+                    "Unassign the extras on the Templates page."
+                ))
         except Exception:
             logger.exception("Automatic WhatsApp send failed for %s", event_key)
 

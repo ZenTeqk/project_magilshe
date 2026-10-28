@@ -28,6 +28,9 @@ const MEDIA_HEADERS: Partial<Record<HeaderType, { accept: string; hint: string }
 };
 // Events whose record has its own PDF -- see RECORD_DOCUMENT_EVENTS in whatsapp/services.py.
 const RECORD_DOCUMENT_EVENTS = ["quotation_sent", "quotation_accepted", "quotation_advance_received", "quotation_cancelled", "invoice_generated", "payment_reminder"];
+const RECORD_DOCUMENT_NAME: Record<string, string> = {
+  quotation_advance_received: "payment receipt", invoice_generated: "invoice", payment_reminder: "invoice",
+};
 
 const placeholderKeys = (body: string) =>
   [...new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]).filter((key): key is string => key !== undefined))]
@@ -201,8 +204,8 @@ function TemplateFormPage() {
                   </label>
                 )}
                 {form.header_type === "document" && RECORD_DOCUMENT_EVENTS.includes(form.event) && (
-                  <p className="text-xs text-warning">
-                    Messages for this event need the record's own PDF, which can't be attached automatically yet, so sends will fail until it can.
+                  <p className="text-xs text-muted-foreground">
+                    Each customer receives their own {RECORD_DOCUMENT_NAME[form.event] ?? "quotation"} PDF. The file uploaded here is only the sample Meta reviews.
                   </p>
                 )}
               </Field>

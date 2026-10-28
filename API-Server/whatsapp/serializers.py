@@ -5,7 +5,9 @@ from crm.recurring_events import occasion_key
 
 from .event_fields import FIELDS_FOR_EVENT
 from .models import MessageLog, MessageTemplate, WhatsAppSettings
-from .services import validate_template_payload
+from .services import (
+    WhatsAppAPIError, WhatsAppError, clean_access_token, validate_template_payload, verify_connection,
+)
 
 
 class WhatsAppSettingsSerializer(serializers.ModelSerializer):
@@ -40,6 +42,33 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise serializers.ValidationError("Expected a list of occasion names.")
         return sorted({occasion_key(item) for item in value if item.strip()})
+
+    def validate_access_token(self, value):
+        return clean_access_token(value)
+
+    def validate(self, attrs):
+        # A new token or phone number is checked with Meta before it's saved,
+        # so a bad paste fails here with a clear reason, not later on Submit.
+        phone_changed = attrs.get("phone_number_id", None) not in (None, getattr(self.instance, "phone_number_id", None))
+        if not (attrs.get("access_token") or phone_changed):
+            return attrs
+        token = attrs.get("access_token") or getattr(self.instance, "access_token", "")
+        phone_number_id = attrs.get("phone_number_id", getattr(self.instance, "phone_number_id", ""))
+        if not (token and phone_number_id):
+            return attrs
+        try:
+            info = verify_connection(phone_number_id=phone_number_id, access_token=token)
+        except WhatsAppError as exc:
+            field = "access_token" if attrs.get("access_token") else "phone_number_id"
+            raise serializers.ValidationError({field: str(exc)})
+        except WhatsAppAPIError as exc:
+            raise serializers.ValidationError({"access_token": f"Could not check this token with Meta: {exc}"})
+        # Fill in what Meta knows about the number, unless staff set their own.
+        if not (attrs.get("business_display_phone") or getattr(self.instance, "business_display_phone", "")):
+            attrs["business_display_phone"] = (info.get("display_phone_number") or "")[:20]
+        if not (attrs.get("business_display_name") or getattr(self.instance, "business_display_name", "")):
+            attrs["business_display_name"] = (info.get("verified_name") or "")[:150]
+        return attrs
 
     def update(self, instance, validated_data):
         # An unset/blank access_token on a PATCH means "leave it as is" --
