@@ -86,6 +86,9 @@ export type WhatsAppSettings = {
   business_display_phone: string;
   has_app_secret: boolean;
   app_id: string;
+  /** Sends go through Fenwira; templates are still created and reviewed with Meta. */
+  send_via_fenwira: boolean;
+  has_fenwira_api_key: boolean;
   auto_send_enabled: boolean;
   auto_send_events: string[];
   occasion_reminders_enabled: boolean;
@@ -203,7 +206,9 @@ export function useWhatsAppSettings() {
 export function useSaveWhatsAppSettings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: Partial<WhatsAppSettings> & { access_token?: string; app_secret?: string }) =>
+    mutationFn: async (
+      payload: Partial<WhatsAppSettings> & { access_token?: string; app_secret?: string; fenwira_api_key?: string },
+    ) =>
       (await apiClient.patch<WhatsAppSettings>(endpoints.whatsapp.settings, payload)).data,
     onSuccess: (data) => queryClient.setQueryData(["whatsapp", "settings"], data),
   });

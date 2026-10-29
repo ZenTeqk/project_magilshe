@@ -30,6 +30,9 @@ logger = logging.getLogger("cakery")
 
 GRAPH_API_VERSION = "v21.0"
 GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+# Fenwira's Meta-compatible API: same paths and bodies as GRAPH_BASE, with a
+# Fenwira API key instead of the Meta token. Used for sending only.
+FENWIRA_GRAPH_BASE = os.getenv("FENWIRA_GRAPH_BASE", "https://api.fenwira.com/api/v1/graph").rstrip("/")
 
 TEMPLATE_NAME_RE = re.compile(r"^[a-z0-9_]+$")
 TEMPLATE_FOOTER_EMOJI_RE = re.compile(
@@ -89,16 +92,26 @@ class WhatsAppAPIError(Exception):
         self.response_body = response_body
 
 
-def _graph_request(method, path, settings_row, **kwargs):
-    if not settings_row.is_connected:
-        raise WhatsAppAPIError("WhatsApp Business is not connected yet. Add your credentials in Settings.")
+def _graph_request(method, path, settings_row, via_fenwira=False, **kwargs):
+    """A Graph API call to Meta, or with via_fenwira to Fenwira's
+    Meta-compatible API (same paths and bodies, Fenwira API key)."""
+    if via_fenwira:
+        if not settings_row.fenwira_api_key:
+            raise WhatsAppAPIError(
+                "Send via Fenwira is on, but no Fenwira API key is saved. Add it in WhatsApp Settings."
+            )
+        base, token = FENWIRA_GRAPH_BASE, settings_row.fenwira_api_key
+    else:
+        if not settings_row.is_connected:
+            raise WhatsAppAPIError("WhatsApp Business is not connected yet. Add your credentials in Settings.")
+        base, token = GRAPH_BASE, settings_row.access_token
     headers = kwargs.pop("headers", {})
     # The Resumable Upload API wants "OAuth <token>" instead, so a caller may set it.
-    headers.setdefault("Authorization", f"Bearer {settings_row.access_token}")
+    headers.setdefault("Authorization", f"Bearer {token}")
     try:
-        response = requests.request(method, f"{GRAPH_BASE}/{path}", headers=headers, timeout=20, **kwargs)
+        response = requests.request(method, f"{base}/{path}", headers=headers, timeout=20, **kwargs)
     except requests.RequestException as exc:
-        raise WhatsAppAPIError(f"Could not reach WhatsApp: {exc}") from exc
+        raise WhatsAppAPIError(f"Could not reach {'Fenwira' if via_fenwira else 'WhatsApp'}: {exc}") from exc
     if response.status_code >= 400:
         body = None
         try:
@@ -107,13 +120,24 @@ def _graph_request(method, path, settings_row, **kwargs):
             pass
         error = (body or {}).get("error", {})
         message = error.get("message") or response.text
-        if error.get("code") == TOKEN_ERROR_CODE:
+        if via_fenwira and response.status_code == 401:
+            message = (
+                "Fenwira rejected the API key saved in WhatsApp Settings. "
+                "Create a new key in Fenwira (Integrations > API) and save it there."
+            )
+        elif error.get("code") == TOKEN_ERROR_CODE:
             message = (
                 f"WhatsApp rejected the access token saved in WhatsApp Settings ({message}). "
                 "Paste a valid access token there and save again."
             )
         raise WhatsAppAPIError(message, status_code=response.status_code, response_body=body)
     return response.json() if response.content else {}
+
+
+def _sending_number(settings_row):
+    """The number in a send's path. Fenwira also accepts "default" for the
+    workspace's default number, when no Phone Number ID is saved here."""
+    return settings_row.phone_number_id or ("default" if settings_row.send_via_fenwira else "")
 
 
 def clean_access_token(value):
@@ -144,6 +168,31 @@ def verify_connection(*, phone_number_id, access_token):
             raise WhatsAppError(
                 f"Meta could not find Phone Number ID {phone_number_id} with this token ({error.get('message') or exc}). "
                 "Check the Phone Number ID, and that the token has access to this WhatsApp account."
+            ) from exc
+        raise
+
+
+def verify_fenwira(*, api_key, phone_number_id):
+    """Asks Fenwira for the sending number with this key, so a wrong key, or
+    a number Fenwira doesn't have, is caught on Save instead of on a send."""
+    probe = WhatsAppSettings(phone_number_id=phone_number_id, send_via_fenwira=True, fenwira_api_key=api_key)
+    try:
+        return _graph_request("GET", _sending_number(probe), probe, via_fenwira=True)
+    except WhatsAppAPIError as exc:
+        if exc.status_code == 401:
+            raise WhatsAppError(
+                "Fenwira did not accept this API key. Copy the whole key -- it starts with fw_ -- "
+                "from Fenwira > Integrations > API."
+            ) from exc
+        if exc.status_code == 403:
+            raise WhatsAppError(
+                "This Fenwira API key can't send messages. Create a key with "
+                "\"Reply to conversations\" ticked."
+            ) from exc
+        if exc.status_code == 404:
+            raise WhatsAppError(
+                f"Fenwira has no connected WhatsApp number with Phone Number ID {phone_number_id}. "
+                "Check that this number is connected in the same Fenwira workspace as the key."
             ) from exc
         raise
 
@@ -359,7 +408,7 @@ def _upload_message_media(settings_row, data, filename, content_type):
     """Uploads a file to WhatsApp's media store for sending; returns its id.
     Used for customer documents so they aren't left on a shareable link."""
     result = _graph_request(
-        "POST", f"{settings_row.phone_number_id}/media", settings_row,
+        "POST", f"{_sending_number(settings_row)}/media", settings_row, via_fenwira=settings_row.send_via_fenwira,
         data={"messaging_product": "whatsapp", "type": content_type},
         files={"file": (filename, data, content_type)},
     )
@@ -452,7 +501,8 @@ def send_template_message(*, template, record, event_key, recipient_phone=None, 
 
     try:
         result = _graph_request(
-            "POST", f"{settings_row.phone_number_id}/messages", settings_row,
+            "POST", f"{_sending_number(settings_row)}/messages", settings_row,
+            via_fenwira=settings_row.send_via_fenwira,
             json={
                 "messaging_product": "whatsapp", "to": whatsapp_number(phone), "type": "template",
                 "template": {

@@ -7,6 +7,7 @@ from .event_fields import FIELDS_FOR_EVENT
 from .models import MessageLog, MessageTemplate, WhatsAppSettings
 from .services import (
     WhatsAppAPIError, WhatsAppError, clean_access_token, validate_template_payload, verify_connection,
+    verify_fenwira,
 )
 
 
@@ -19,6 +20,9 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
     # Same treatment as the access token.
     app_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
     has_app_secret = serializers.SerializerMethodField()
+    # Same treatment again.
+    fenwira_api_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_fenwira_api_key = serializers.SerializerMethodField()
     is_connected = serializers.ReadOnlyField()
 
     class Meta:
@@ -26,7 +30,8 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         fields = (
             "id", "waba_id", "phone_number_id", "access_token", "has_access_token",
             "webhook_verify_token", "app_id", "business_display_name", "business_display_phone",
-            "app_secret", "has_app_secret", "auto_send_enabled", "auto_send_events",
+            "app_secret", "has_app_secret", "send_via_fenwira", "fenwira_api_key", "has_fenwira_api_key",
+            "auto_send_enabled", "auto_send_events",
             "occasion_reminders_enabled", "occasion_reminder_mode", "occasion_reminder_types",
             "is_connected", "updated_on",
         )
@@ -38,6 +43,9 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
     def get_has_app_secret(self, obj):
         return bool(obj.app_secret)
 
+    def get_has_fenwira_api_key(self, obj):
+        return bool(obj.fenwira_api_key)
+
     def validate_occasion_reminder_types(self, value):
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise serializers.ValidationError("Expected a list of occasion names.")
@@ -46,16 +54,44 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
     def validate_access_token(self, value):
         return clean_access_token(value)
 
+    def validate_fenwira_api_key(self, value):
+        # Pasted the same ways as a Meta token ("Bearer fw_...", quoted...).
+        return clean_access_token(value)
+
     def validate(self, attrs):
+        self._check_meta(attrs)
+        self._check_fenwira(attrs)
+        return attrs
+
+    def _check_fenwira(self, attrs):
+        """A new key, or turning Send via Fenwira on, is checked with Fenwira
+        before it's saved, so a bad key never silently fails every send."""
+        turning_on = attrs.get("send_via_fenwira") is True and not getattr(self.instance, "send_via_fenwira", False)
+        phone_changed = attrs.get("phone_number_id", None) not in (None, getattr(self.instance, "phone_number_id", None))
+        enabled = attrs.get("send_via_fenwira", getattr(self.instance, "send_via_fenwira", False))
+        if not enabled or not (attrs.get("fenwira_api_key") or turning_on or phone_changed):
+            return
+        api_key = attrs.get("fenwira_api_key") or getattr(self.instance, "fenwira_api_key", "")
+        if not api_key:
+            raise serializers.ValidationError({"fenwira_api_key": "Add the Fenwira API key before turning on Send via Fenwira."})
+        phone_number_id = attrs.get("phone_number_id", getattr(self.instance, "phone_number_id", ""))
+        try:
+            verify_fenwira(api_key=api_key, phone_number_id=phone_number_id)
+        except WhatsAppError as exc:
+            raise serializers.ValidationError({"fenwira_api_key": str(exc)})
+        except WhatsAppAPIError as exc:
+            raise serializers.ValidationError({"fenwira_api_key": f"Could not check this key with Fenwira: {exc}"})
+
+    def _check_meta(self, attrs):
         # A new token or phone number is checked with Meta before it's saved,
         # so a bad paste fails here with a clear reason, not later on Submit.
         phone_changed = attrs.get("phone_number_id", None) not in (None, getattr(self.instance, "phone_number_id", None))
         if not (attrs.get("access_token") or phone_changed):
-            return attrs
+            return
         token = attrs.get("access_token") or getattr(self.instance, "access_token", "")
         phone_number_id = attrs.get("phone_number_id", getattr(self.instance, "phone_number_id", ""))
         if not (token and phone_number_id):
-            return attrs
+            return
         try:
             info = verify_connection(phone_number_id=phone_number_id, access_token=token)
         except WhatsAppError as exc:
@@ -68,7 +104,6 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
             attrs["business_display_phone"] = (info.get("display_phone_number") or "")[:20]
         if not (attrs.get("business_display_name") or getattr(self.instance, "business_display_name", "")):
             attrs["business_display_name"] = (info.get("verified_name") or "")[:150]
-        return attrs
 
     def update(self, instance, validated_data):
         # An unset/blank access_token on a PATCH means "leave it as is" --
@@ -76,7 +111,7 @@ class WhatsAppSettingsSerializer(serializers.ModelSerializer):
         # current value, and clearing a working token by accident on every
         # unrelated settings save (e.g. toggling auto-send) would be a bad
         # failure mode.
-        for secret in ("access_token", "app_secret"):
+        for secret in ("access_token", "app_secret", "fenwira_api_key"):
             if not validated_data.get(secret):
                 validated_data.pop(secret, None)
         return super().update(instance, validated_data)

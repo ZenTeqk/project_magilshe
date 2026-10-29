@@ -70,6 +70,11 @@ class WhatsAppSettings(models.Model):
     # Resumable Upload API, which takes the header's sample file, is
     # addressed by app rather than by WhatsApp account.
     app_id = models.CharField("Meta App ID", max_length=64, blank=True)
+    # Send through Fenwira instead of straight to Meta, so every message shows
+    # in Fenwira's inbox with its delivery status. Only sending moves: the
+    # Meta credentials above still create and submit templates.
+    send_via_fenwira = models.BooleanField(default=False)
+    fenwira_api_key = models.TextField(blank=True)
     business_display_name = models.CharField(max_length=150, blank=True)
     business_display_phone = models.CharField(max_length=20, blank=True)
     # Master switch. Off = nothing auto-sends, whatever auto_send_events says.
