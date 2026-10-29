@@ -886,3 +886,127 @@ class AccessTokenTests(TestCase):
         self.assertIn("access token saved in WhatsApp Settings", str(ctx.exception))
         template.refresh_from_db()
         self.assertEqual(template.status, MessageTemplate.STATUS_PENDING)  # infra error, not a verdict
+
+
+class SendViaFenwiraTests(TestCase):
+    """Send via Fenwira: sends (and their PDFs) go to Fenwira's
+    Meta-compatible API with the Fenwira key, so they show in Fenwira's
+    inbox; template creation and review stay on Meta."""
+
+    def setUp(self):
+        self.quotation = Quotation.objects.create(
+            customer_name="Priya", phone="9876543210", quotation_no="Q/7", quantity=1, rate="500",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(get_user_model().objects.create_superuser(username="fw-admin", password="x"))
+
+    def response(self, status, body):
+        from unittest.mock import MagicMock
+        res = MagicMock(status_code=status, content=b"x")
+        res.json.return_value = body
+        return res
+
+    def test_send_goes_to_fenwira_with_the_fenwira_key(self):
+        from .services import FENWIRA_GRAPH_BASE
+        connect(send_via_fenwira=True, fenwira_api_key="fw_abcd1234_secret")
+        template = make_template(status=MessageTemplate.STATUS_APPROVED)
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(200, {"messages": [{"id": "fenwira-msg-1"}]})
+            log = send_template_message(template=template, record=self.quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        self.assertEqual(log.wa_message_id, "fenwira-msg-1")
+        method, url = mock_request.call_args.args
+        self.assertEqual((method, url), ("POST", f"{FENWIRA_GRAPH_BASE}/phone-1/messages"))
+        self.assertEqual(mock_request.call_args.kwargs["headers"]["Authorization"], "Bearer fw_abcd1234_secret")
+        self.assertEqual(mock_request.call_args.kwargs["json"]["to"], "919876543210")
+
+    def test_without_meta_details_the_default_fenwira_number_sends(self):
+        settings_row = WhatsAppSettings.load()
+        settings_row.send_via_fenwira = True
+        settings_row.fenwira_api_key = "fw_abcd1234_secret"
+        settings_row.save()
+        template = make_template(status=MessageTemplate.STATUS_APPROVED)
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(200, {"messages": [{"id": "fenwira-msg-2"}]})
+            log = send_template_message(template=template, record=self.quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        self.assertTrue(mock_request.call_args.args[1].endswith("/default/messages"))
+
+    def test_the_customers_pdf_is_uploaded_to_fenwira_too(self):
+        from .services import FENWIRA_GRAPH_BASE
+        connect(send_via_fenwira=True, fenwira_api_key="fw_abcd1234_secret")
+        template = make_template(
+            status=MessageTemplate.STATUS_APPROVED, header_type=MessageTemplate.HEADER_DOCUMENT,
+            header_media_handle="h", header_media_key="sample.pdf",
+        )
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.side_effect = [
+                self.response(200, {"id": "fenwira-file-1"}),
+                self.response(200, {"messages": [{"id": "fenwira-msg-3"}]}),
+            ]
+            log = send_template_message(template=template, record=self.quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_SENT, log.error_message)
+        upload, send = mock_request.call_args_list
+        self.assertEqual(upload.args[1], f"{FENWIRA_GRAPH_BASE}/phone-1/media")
+        self.assertEqual(upload.kwargs["files"]["file"][0], "Quotation-Q-7.pdf")
+        header = send.kwargs["json"]["template"]["components"][0]
+        self.assertEqual(header["parameters"][0]["document"]["id"], "fenwira-file-1")
+
+    def test_a_rejected_fenwira_key_says_where_to_fix_it(self):
+        connect(send_via_fenwira=True, fenwira_api_key="fw_abcd1234_revoked")
+        template = make_template(status=MessageTemplate.STATUS_APPROVED)
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(401, {"error": {"code": "UNAUTHENTICATED", "message": "x"}})
+            log = send_template_message(template=template, record=self.quotation, event_key="quotation_sent")
+        self.assertEqual(log.status, MessageLog.STATUS_FAILED)
+        self.assertIn("Fenwira rejected the API key", log.error_message)
+
+    def test_template_review_still_goes_to_meta(self):
+        connect(send_via_fenwira=True, fenwira_api_key="fw_abcd1234_secret")
+        template = make_template()
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(200, {"id": "tpl-1", "status": "PENDING"})
+            submit_template_for_review(template)
+        self.assertTrue(mock_request.call_args.args[1].startswith("https://graph.facebook.com/"))
+        self.assertEqual(mock_request.call_args.kwargs["headers"]["Authorization"], "Bearer token")
+
+    def test_turning_on_checks_the_key_with_fenwira_and_never_shows_it_back(self):
+        from .services import FENWIRA_GRAPH_BASE
+        connect()
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(200, {"id": "phone-1", "display_phone_number": "+91", "verified_name": "M"})
+            response = self.client.patch(
+                "/whatsapp/settings/", {"send_via_fenwira": True, "fenwira_api_key": "Bearer fw_abcd1234_secret"}, format="json",
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(mock_request.call_args.args, ("GET", f"{FENWIRA_GRAPH_BASE}/phone-1"))
+        self.assertNotIn("fenwira_api_key", response.data)
+        self.assertTrue(response.data["has_fenwira_api_key"])
+        saved = WhatsAppSettings.load()
+        self.assertEqual((saved.send_via_fenwira, saved.fenwira_api_key), (True, "fw_abcd1234_secret"))
+
+    def test_a_key_fenwira_refuses_is_not_saved(self):
+        connect()
+        with patch("whatsapp.services.requests.request") as mock_request:
+            mock_request.return_value = self.response(401, {"error": {"code": "UNAUTHENTICATED", "message": "x"}})
+            response = self.client.patch(
+                "/whatsapp/settings/", {"send_via_fenwira": True, "fenwira_api_key": "fw_wrong"}, format="json",
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("did not accept this API key", str(response.data["fenwira_api_key"]))
+        saved = WhatsAppSettings.load()
+        self.assertEqual((saved.send_via_fenwira, saved.fenwira_api_key), (False, ""))
+
+    def test_turning_on_without_a_key_is_refused(self):
+        connect()
+        response = self.client.patch("/whatsapp/settings/", {"send_via_fenwira": True}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Add the Fenwira API key", str(response.data["fenwira_api_key"]))
+
+    @patch("whatsapp.services.requests.request")
+    def test_other_settings_saves_dont_call_fenwira(self, mock_request):
+        connect(send_via_fenwira=True, fenwira_api_key="fw_abcd1234_secret")
+        response = self.client.patch("/whatsapp/settings/", {"auto_send_enabled": True, "fenwira_api_key": ""}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_request.assert_not_called()
+        self.assertEqual(WhatsAppSettings.load().fenwira_api_key, "fw_abcd1234_secret")

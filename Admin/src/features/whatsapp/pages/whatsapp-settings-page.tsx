@@ -18,6 +18,12 @@ import {
 
 const GROUP_ORDER = ["Quotation", "Order", "Invoice", "Delivery"];
 
+/** The server checks new Meta tokens and Fenwira keys, and says why one was refused. */
+function errorReason(err: unknown) {
+  const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
+  return data && Object.values(data).flat().map(String).join(" ");
+}
+
 function WhatsAppSettingsPage() {
   const { data: settings } = useWhatsAppSettings();
   const { data: catalogue } = useEventCatalogue();
@@ -48,10 +54,21 @@ function WhatsAppSettingsPage() {
       toast.success("WhatsApp settings saved");
       setForm((f) => ({ ...f, access_token: "", app_secret: "" }));
     } catch (err: unknown) {
-      // The server checks a new token with Meta and says why it was refused.
-      const data = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
-      const reason = data && Object.values(data).flat().map(String).join(" ");
-      toast.error(reason || "Could not save these settings", { duration: 12000 });
+      toast.error(errorReason(err) || "Could not save these settings", { duration: 12000 });
+    }
+  };
+
+  const [fenwiraKey, setFenwiraKey] = useState("");
+  const viaFenwira = settings?.send_via_fenwira ?? false;
+
+  /** Turns Send via Fenwira on or off, or saves a new key; Fenwira checks the key first. */
+  const saveFenwira = async (enabled: boolean) => {
+    try {
+      await saveSettings.mutateAsync({ send_via_fenwira: enabled, ...(fenwiraKey ? { fenwira_api_key: fenwiraKey } : {}) });
+      setFenwiraKey("");
+      toast.success(enabled ? "Messages now send through Fenwira" : "Messages now send straight to Meta");
+    } catch (err: unknown) {
+      toast.error(errorReason(err) || "Could not update Send via Fenwira", { duration: 12000 });
     }
   };
 
@@ -158,6 +175,50 @@ function WhatsAppSettingsPage() {
         <Button className="mt-4" onClick={saveConnection} disabled={saveSettings.isPending}>
           {saveSettings.isPending ? "Saving…" : "Save connection"}
         </Button>
+      </SectionCard>
+
+      <SectionCard
+        title="Send via Fenwira"
+        description="Send every WhatsApp message through Fenwira, so each one shows in Fenwira's inbox with its delivery status. Templates are still created and submitted with the Meta details above."
+        actions={
+          <StatusChip status={viaFenwira ? "On" : "Off"} tone={viaFenwira ? "success" : "neutral"} />
+        }
+      >
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-surface-muted/40 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Send messages through Fenwira</p>
+            <p className="text-xs text-muted-foreground">
+              {viaFenwira
+                ? "On. Manual, automatic and reminder messages all go through Fenwira."
+                : "Off. Messages go straight to Meta."}
+            </p>
+          </div>
+          <Switch
+            checked={viaFenwira}
+            disabled={(!viaFenwira && !settings?.has_fenwira_api_key && !fenwiraKey) || saveSettings.isPending}
+            onCheckedChange={saveFenwira}
+          />
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1">
+          <Field
+            label="Fenwira API key"
+            help={settings?.has_fenwira_api_key
+              ? "A key is already saved. Enter a new one only to replace it."
+              : "From Fenwira → Integrations → API, with \"Reply to conversations\" ticked. Never shown back once saved."}
+          >
+            <Input
+              type="password"
+              value={fenwiraKey}
+              placeholder={settings?.has_fenwira_api_key ? "••••••••" : "fw_…"}
+              onChange={(e) => setFenwiraKey(e.target.value)}
+            />
+          </Field>
+          </div>
+          <Button variant="outline" onClick={() => saveFenwira(viaFenwira)} disabled={!fenwiraKey || saveSettings.isPending}>
+            Save key
+          </Button>
+        </div>
       </SectionCard>
 
       <SectionCard
